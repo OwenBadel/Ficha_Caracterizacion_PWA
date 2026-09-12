@@ -400,6 +400,7 @@ body {
   opacity: 0.7;
   filter: blur(12px);
   animation: rotateGlow 4s linear infinite;
+  pointer-events: none;
 }
 
 @keyframes rotateGlow {
@@ -450,9 +451,16 @@ body {
   max-width: 280px;
 }
 
-/* Inputs ocultos de cámara */
+/* Inputs ocultos de cámara (accesibles para .click() en móviles sin display:none) */
 .hidden-input {
-  display: none !important;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0.001;
+  pointer-events: none;
+  z-index: -10;
 }
 
 /* ---------------- ACCIONES DE ENCUESTA LISTA ---------------- */

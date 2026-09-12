@@ -57,7 +57,9 @@ Este proyecto está federado al Grafo de Conocimiento mediante el Servidor MCP o
 4. **Reglas de Negocio y Estandarización de Fichas:**
    - **Documento vs Edad:** Si la persona tiene menos de 18 años (`Edad < 18`), el tipo de documento es obligatoriamente **`TI`** (salvo extranjería explícita como `PASAPORTE` o `PERMISO`).
    - **Municipio = Territorio:** Ambos campos se igualan a: `MAHATES`, `TURBANA`, `TURBACO`, `BARRANCO DE LOBA`.
-   - **Encuestadores autorizados:** `PAMELA VERGARA`, `KAREN TORRES`, `WENDY TAPIAS`, `GISEL MORENO`.
+   - **Encuestadores autorizados:** `PAMELA VERGARA`, `KAREN TORRES`, `MAURICIO FORTICH`, `WENDY TAPIAS`, `GISEL MORENO`.
+   - **Uso de condón (relaciones sexuales):** Catálogo cerrado: `SIEMPRE`, `CASI SIEMPRE`, `NUNCA`.
    - **ID y Teléfono:** Dígitos continuos sin espacios, puntos ni guiones.
-   - **Tiempo actividad:** Siempre con la palabra `HORAS` (ej. `2 HORAS`).
+   - **Tiempo actividad:** Siempre con la palabra `HORAS` (ej. `2 HORAS`, `4 HORAS`).
    - **Contexto Temporal 2026:** Si OCR confunde trazo de 2026 con 2020, se estandariza a `2026`.
+   - **Vocabulario Adaptativo y Guía de Coincidencia:** Corrección difusa automática para todas las columnas de texto abierto (`¿Cual?_3` anticonceptivos con `YADEL`, actividades recreativas, barrios, sustancias, etc.).

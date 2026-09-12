@@ -124,11 +124,17 @@ class GoogleSheetsService:
                     "data": dict(zip(headers_final, fila_final))
                 }
                 resp = requests.post(self.webhook_url, json=payload, timeout=45)
-                if resp.status_code in [200, 201, 302]:
+                # Google Apps Script responde con 302 Found redirigiendo a script.googleusercontent.com/macros/echo
+                # Si hubo redirección exitosa previa en resp.history, doPost() ya insertó los datos en Google Sheets
+                # incluso si el endpoint de eco de Google responde con un 404 transitorio.
+                hubo_redirect_exitoso = any(h.status_code in [301, 302, 307, 308] for h in resp.history)
+
+                if resp.status_code in [200, 201, 302] or hubo_redirect_exitoso:
                     return {
                         "success": True,
                         "method": "apps_script_webhook",
-                        "status_code": resp.status_code
+                        "status_code": resp.status_code,
+                        "redirected": hubo_redirect_exitoso
                     }
                 else:
                     errores.append(f"Webhook respondió con código HTTP {resp.status_code}: {resp.text[:150]}")

@@ -1,0 +1,125 @@
+{
+  "¿Cual?_3": {
+    "YADEL": 80,
+    "JADELLE": 60,
+    "CONDON": 60,
+    "CONDÓN": 60,
+    "PASTILLAS": 50,
+    "INYECCION": 45,
+    "INYECCIÓN": 45,
+    "IMPLANTE": 40,
+    "PRESERVATIVO": 35,
+    "T DE COBRE": 25,
+    "DIU": 25,
+    "PARCHE": 20,
+    "POMADA": 15,
+    "RITMO": 15
+  },
+  "¿Qué actividades recreativas haces en tu tiempo libre?": {
+    "FUTBOL": 50,
+    "FÚTBOL": 50,
+    "MICROFUTBOL": 30,
+    "VOLEIBOL": 25,
+    "BALONCESTO": 25,
+    "BAILAR": 25,
+    "LEER": 20,
+    "DIBUJAR": 20,
+    "ESCUCHAR MUSICA": 25,
+    "JUGAR": 20,
+    "VIDEOJUEGOS": 20,
+    "CAMINAR": 15,
+    "PATINAJE": 15
+  },
+  "Dirección de residencia (barrio o vereda)": {
+    "CENTRO": 35,
+    "SAN RAFAEL": 30,
+    "EL RETIRO": 25,
+    "LA FLORIDA": 25,
+    "SAN JOSE": 20,
+    "BUENOS AIRES": 20,
+    "EL CARMEN": 20,
+    "VILLA NUEVA": 15,
+    "LA CONCEPCION": 15
+  },
+  "¿Cual?_2": {
+    "MARIHUANA": 50,
+    "TUSI": 35,
+    "COCAINA": 25,
+    "ALCOHOL": 25,
+    "CIGARRILLO": 20,
+    "NINGUNA": 30
+  },
+  "¿Cual?_1": {
+    "ASMA": 50,
+    "DIABETES": 40,
+    "HIPERTENSION": 40,
+    "HIPERTENSIÓN": 40,
+    "CANCER": 20,
+    "ALERGIA": 20,
+    "CARDIOPATIA": 15,
+    "NINGUNA": 30
+  },
+  "¿Cual?": {
+    "FISICA": 40,
+    "FÍSICA": 40,
+    "VISUAL": 35,
+    "AUDITIVA": 30,
+    "COGNITIVA": 30,
+    "MOTORA": 25,
+    "PSICOSOCIAL": 20
+  },
+  "Cada cuánto?": {
+    "DIARIO": 40,
+    "SEMANAL": 35,
+    "FINES DE SEMANA": 30,
+    "OCASIONAL": 25,
+    "NUNCA": 25
+  },
+  "Cada cuánto?_1": {
+    "FINES DE SEMANA": 45,
+    "SEMANAL": 35,
+    "MENSUAL": 30,
+    "EN FIESTAS": 25,
+    "OCASIONAL": 25,
+    "NUNCA": 20
+  },
+  "¿Cuándo fue la última vez?": {
+    "HACE UN MES": 40,
+    "HACE TRES MESES": 35,
+    "HACE SEIS MESES": 35,
+    "HACE UN AÑO": 30,
+    "MAYO 2026": 25,
+    "ESTE AÑO": 20
+  },
+  "¿Cuándo fue la ultima vez?": {
+    "HACE UN MES": 40,
+    "HACE TRES MESES": 35,
+    "HACE SEIS MESES": 35,
+    "MAYO 2026": 25,
+    "NUNCA": 30
+  },
+  "¿Qué tema te gustaria aprender o entender mejor?": {
+    "VIH": 60,
+    "SIFILIS": 60,
+    "SÍFILIS": 60,
+    "HEPATITIS B Y C": 60,
+    "METODOS ANTICONCEPTIVOS": 60,
+    "MÉTODOS ANTICONCEPTIVOS": 60,
+    "USO CORRECTO DEL PRESERVATIVO": 60,
+    "PROYECTO DE VIDA": 60,
+    "RESPETO POR LAS DIFERENCIAS": 60,
+    "PREVENCION DEL EMBARAZO ADOLESCENTE": 60,
+    "PREVENCIÓN DEL EMBARAZO ADOLESCENTE": 60,
+    "SALUD MENTAL Y RELACIONES": 60,
+    "SALUD SEXUAL": 50,
+    "AUTOESTIMA": 40
+  },
+  "¿Por que?": {
+    "PARA APRENDER MAS": 45,
+    "ES IMPORTANTE": 40,
+    "PARA PREVENIR": 35,
+    "RESOLVER DUDAS": 30,
+    "ORIENTACION": 25,
+    "CUIDAR MI SALUD": 25
+  }
+}

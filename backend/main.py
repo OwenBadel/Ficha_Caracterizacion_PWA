@@ -22,6 +22,7 @@ try:
     from .schema import FichaCaracterizacion, COLUMNAS_FICHA
     from .vision_service import VisionService
     from .sheets_service import GoogleSheetsService
+    from .vocabulary_learner import vocabulary_learner
 except (ImportError, ValueError):
     backend_dir = Path(__file__).resolve().parent
     if str(backend_dir) not in sys.path:
@@ -29,6 +30,7 @@ except (ImportError, ValueError):
     from schema import FichaCaracterizacion, COLUMNAS_FICHA
     from vision_service import VisionService
     from sheets_service import GoogleSheetsService
+    from vocabulary_learner import vocabulary_learner
 
 # Configurar logging y paths
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -84,6 +86,16 @@ def get_columns() -> Dict[str, Any]:
     return {
         "total": len(COLUMNAS_FICHA),
         "columns": COLUMNAS_FICHA
+    }
+
+
+@app.get("/api/vocabulary")
+def get_vocabulary() -> Dict[str, Any]:
+    """Retorna el catálogo de términos y barrios aprendidos por el sistema."""
+    return {
+        "status": "online",
+        "total_columns": len(vocabulary_learner.vocabulario),
+        "vocabulary": vocabulary_learner.vocabulario
     }
 
 
@@ -143,6 +155,13 @@ async def process_survey(
         logger.info("Enviando fila estructurada a Google Sheets...")
         sheets_result = sheets_service.insertar_encuesta(fila_ordenada)
 
+        # 3. Aprendizaje continuo de vocabulario para futuras coincidencias difusas
+        try:
+            vocabulary_learner.aprender_fila(fila_ordenada)
+            logger.info("Vocabulario adaptativo actualizado a partir de la nueva ficha procesada.")
+        except Exception as e:
+            logger.warning(f"No se pudo actualizar vocabulario adaptativo: {e}")
+
         return {
             "success": True,
             "message": "Ficha de caracterización procesada y registrada exitosamente en Google Sheets.",
@@ -172,7 +191,10 @@ if FRONTEND_DIR.exists():
 
     @app.get("/")
     def serve_pwa_index():
-        return FileResponse(FRONTEND_DIR / "index.html")
+        return FileResponse(
+            FRONTEND_DIR / "index.html",
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"}
+        )
 
     @app.get("/manifest.json")
     def serve_manifest():
@@ -180,7 +202,11 @@ if FRONTEND_DIR.exists():
 
     @app.get("/sw.js")
     def serve_sw():
-        return FileResponse(FRONTEND_DIR / "sw.js", media_type="application/javascript")
+        return FileResponse(
+            FRONTEND_DIR / "sw.js",
+            media_type="application/javascript",
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"}
+        )
 
 
 def obtener_ip_local() -> str:

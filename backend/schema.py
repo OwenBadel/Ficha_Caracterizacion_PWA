@@ -7,6 +7,14 @@ import re
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, model_validator
 
+try:
+    from .vocabulary_learner import vocabulary_learner, COLUMNAS_APRENDIZAJE
+except (ImportError, ValueError):
+    try:
+        from vocabulary_learner import vocabulary_learner, COLUMNAS_APRENDIZAJE
+    except ImportError:
+        from backend.vocabulary_learner import vocabulary_learner, COLUMNAS_APRENDIZAJE
+
 
 COLUMNAS_FICHA: List[str] = [
     "NOMBRE COMPLETO DE QUIEN DILIGENCIA LA FICHA",
@@ -61,6 +69,7 @@ COLUMNAS_FICHA: List[str] = [
 ENCUESTADORES_VALIDOS: List[str] = [
     "PAMELA VERGARA",
     "KAREN TORRES",
+    "MAURICIO FORTICH",
     "WENDY TAPIAS",
     "GISEL MORENO"
 ]
@@ -126,6 +135,18 @@ DISCAPACIDADES_VALIDAS: List[str] = [
     "NO"
 ]
 
+TEMAS_INTERES_CANONICOS: List[str] = [
+    "VIH",
+    "SIFILIS",
+    "HEPATITIS B Y C",
+    "METODOS ANTICONCEPTIVOS",
+    "USO CORRECTO DEL PRESERVATIVO",
+    "PROYECTO DE VIDA",
+    "RESPETO POR LAS DIFERENCIAS",
+    "PREVENCION DEL EMBARAZO ADOLESCENTE",
+    "SALUD MENTAL Y RELACIONES"
+]
+
 
 # -------------------------------------------------------------
 # FUNCIONES DE NORMALIZACIÓN POR CAMPO
@@ -157,6 +178,8 @@ def normalizar_quien_diligencia(val: Optional[Any]) -> str:
         return "KAREN TORRES"
     if "WENDY" in s_clean or "TAPIAS" in s_clean:
         return "WENDY TAPIAS"
+    if "MAURICIO" in s_clean or "FORTICH" in s_clean:
+        return "MAURICIO FORTICH"
     if "GISEL" in s_clean or "GISELLE" in s_clean or "MORENO" in s_clean or "GISELE" in s_clean:
         return "GISEL MORENO"
     return s
@@ -377,6 +400,52 @@ def normalizar_si_no(val: Optional[Any]) -> str:
     return s
 
 
+USOS_CONDON_VALIDOS: List[str] = [
+    "SIEMPRE",
+    "CASI SIEMPRE",
+    "NUNCA"
+]
+
+def normalizar_uso_condon(val: Optional[Any]) -> str:
+    """Normaliza la columna 35 ('Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?').
+    Opciones de la ficha física: SIEMPRE, CASI SIEMPRE, NUNCA.
+    """
+    if not val:
+        return ""
+    s = str(val).strip().upper()
+    if not s or s in ["NONE", "NULL", "N/A", "UNDEFINED"]:
+        return ""
+    for u in USOS_CONDON_VALIDOS:
+        if s == u:
+            return u
+    if "CASI" in s or "A VECES" in s:
+        return "CASI SIEMPRE"
+    if "SIEMPRE" in s or s in ["SI", "SÍ"]:
+        return "SIEMPRE"
+    if "NUNCA" in s or s in ["NO", "JAMAS", "JAMÁS"]:
+        return "NUNCA"
+    return s
+
+
+# Lista exacta de columnas dicotómicas (SI / NO) de la ficha de caracterización
+COLUMNAS_DICOTOMICAS_SI_NO: List[str] = [
+    "¿Tienes alguna condición de discapacidad?",
+    "¿Tienes antecedentes de alguna enfermedad personal o familiar importante?",
+    "¿Has asistido al médico en el último año?",
+    "¿Fuiste al odontólogo el último año?",
+    "¿Consumes o has consumido cigarrillo o vapeador?",
+    "¿Consumes o has consumido alcohol?",
+    "¿Has consumido alguna sustancia psicoactiva?",
+    "¿Has vivido situaciones de discriminación, rechazo o violencia?",
+    "¿Has recibido información sobre salud sexual, ITS o métodos de prevención?",
+    "¿Has iniciado tu vida sexual?",
+    "¿Conoces algún método anticonceptico?",
+    "¿Has vivido o conoces algún caso cercano de embarazo adolescente?",
+    "¿Te han entregado preservativos en la EPS o institución de salud?",
+    "¿Te gustaria que en tu institución educativa se hicieran mas espacios para dialogar de estos temas?"
+]
+
+
 def normalizar_tiempo_horas(val: Optional[Any]) -> str:
     """Para la columna 25 ('¿Qué tiempo empleas en esta actividad?'):
     Asegura que cualquier número o texto lleve la palabra 'HORAS'.
@@ -427,19 +496,134 @@ def normalizar_sin_espacios(val: Optional[Any]) -> str:
     return re.sub(r"[\s\.\,\-\(\)\_]+", "", s)
 
 
+def normalizar_temas_interes(val: Any) -> str:
+    """
+    Normaliza las opciones seleccionadas en '¿Qué tema te gustaria aprender o entender mejor?'.
+    Garantiza que múltiples opciones queden separadas estrictamente por coma y espacio (', ').
+    Ejemplo: 'VIH; SIFILIS' -> 'VIH, SIFILIS'.
+             ['VIH', 'METODOS ANTICONCEPTIVOS'] -> 'VIH, METODOS ANTICONCEPTIVOS'.
+    """
+    if not val:
+        return ""
+
+    elementos: List[str] = []
+
+    # 1. Si es lista de Python
+    if isinstance(val, (list, tuple, set)):
+        for item in val:
+            item_str = str(item).strip()
+            if item_str:
+                elementos.append(item_str)
+    else:
+        texto = str(val).strip()
+        if not texto or texto.lower() in ["none", "null", "n/a", "undefined"]:
+            return ""
+
+        # Si vino como string JSON o representación de lista: "['VIH', 'SIFILIS']"
+        if (texto.startswith("[") and texto.endswith("]")) or (texto.startswith("(") and texto.endswith(")")):
+            try:
+                parsed = json.loads(texto)
+                if isinstance(parsed, list):
+                    return normalizar_temas_interes(parsed)
+            except Exception:
+                texto = texto.strip("[]()\"' ")
+
+        # Si ya contiene delimitadores explícitos (coma, punto y coma, salto de línea, pipe, slash, guion largo)
+        if any(d in texto for d in [",", ";", "\n", "\r", "|"]) or " - " in texto or " / " in texto:
+            partes = re.split(r"[,;\n\r|]+|\s+-\s+|\s+/\s+", texto)
+            for p in partes:
+                p_clean = p.strip()
+                if p_clean:
+                    elementos.append(p_clean)
+        else:
+            # Si vino todo junto sin comas o como texto continuo
+            texto_upper = texto.upper()
+            encontrados = []
+            temas_ordenados = sorted(TEMAS_INTERES_CANONICOS, key=len, reverse=True)
+            for tema in temas_ordenados:
+                tema_regex = r"\b" + re.escape(tema) + r"\b"
+                if re.search(tema_regex, texto_upper):
+                    encontrados.append(tema)
+                    texto_upper = re.sub(tema_regex, " ", texto_upper)
+
+            texto_restante = re.sub(r"\s+", " ", texto_upper).strip()
+            if len(encontrados) > 1:
+                encontrados.sort(key=lambda t: texto.upper().find(t))
+                if texto_restante and len(texto_restante) > 2:
+                    encontrados.append(texto_restante)
+                elementos = encontrados
+            else:
+                elementos = [texto]
+
+    # 2. Normalizar cada elemento contra el catálogo canónico (removiendo tildes y espacios duplicados)
+    resultado_final: List[str] = []
+    tildes = {"Á": "A", "É": "E", "Í": "I", "Ó": "O", "Ú": "U"}
+
+    for el in elementos:
+        el_clean = str(el).strip().upper()
+        for a, b in tildes.items():
+            el_clean = el_clean.replace(a, b)
+        el_clean = re.sub(r"\s+", " ", el_clean).strip()
+        if not el_clean:
+            continue
+
+        # Mapear a canónico
+        canonico = None
+        for tema in TEMAS_INTERES_CANONICOS:
+            if el_clean == tema:
+                canonico = tema
+                break
+
+        if not canonico:
+            if el_clean in ["SIFILIS", "SÍFILIS"]:
+                canonico = "SIFILIS"
+            elif "EMBARAZO ADOLESCENTE" in el_clean:
+                canonico = "PREVENCION DEL EMBARAZO ADOLESCENTE"
+            elif "USO" in el_clean and "PRESERVATIVO" in el_clean:
+                canonico = "USO CORRECTO DEL PRESERVATIVO"
+            elif "METODOS ANTICONCEPTIVOS" in el_clean or "METODO ANTICONCEPTIVO" in el_clean:
+                canonico = "METODOS ANTICONCEPTIVOS"
+            elif "SALUD MENTAL" in el_clean:
+                canonico = "SALUD MENTAL Y RELACIONES"
+            elif "RESPETO" in el_clean and "DIFERENCIA" in el_clean:
+                canonico = "RESPETO POR LAS DIFERENCIAS"
+            elif "HEPATITIS" in el_clean:
+                canonico = "HEPATITIS B Y C"
+            elif "PROYECTO DE VIDA" in el_clean:
+                canonico = "PROYECTO DE VIDA"
+
+        final_val = canonico if canonico else el_clean
+        if final_val and final_val not in resultado_final:
+            resultado_final.append(final_val)
+
+    return ", ".join(resultado_final)
+
+
 def normalizar_campo_por_columna(col: str, val: Any) -> str:
     """Aplica la normalización correspondiente según el nombre canónico de la columna."""
+    col_l = col.lower()
+
+    # Columna 41: Temas de interés (puede ser lista o string, múltiples opciones separadas por coma)
+    if col == "¿Qué tema te gustaria aprender o entender mejor?" or "tema te gustaria" in col_l or "tema te gustaría" in col_l or "aprender o entender" in col_l:
+        return normalizar_temas_interes(val)
+
     v = normalizar_valor_mayusculas(val)
     if not v:
         return ""
-    col_l = col.lower()
+
+    # 1. Casillas dicotómicas estrictas (SI / NO) prioritarias
+    # (Evita que columnas como '¿Te han entregado preservativos en la EPS...' se confundan con la pregunta de EPS)
+    if col in COLUMNAS_DICOTOMICAS_SI_NO:
+        return normalizar_si_no(v)
+
+    # 2. Casillas con catálogos cerrados específicos
     if col == "NOMBRE COMPLETO DE QUIEN DILIGENCIA LA FICHA" or "quien diligencia" in col_l:
         return normalizar_quien_diligencia(v)
-    if col == "TERRITORIO" or "territorio" in col_l:
+    if col == "TERRITORIO" or col_l == "territorio":
         return normalizar_territorio(v)
-    if col == "Municipio" or "municipio" in col_l:
+    if col == "Municipio" or col_l == "municipio":
         return normalizar_territorio(v)
-    if col == "Tipo de documento identidad" or "tipo de documento" in col_l:
+    if col == "Tipo de documento identidad" or col_l in ["tipo de documento", "tipo de documento identidad"]:
         return normalizar_tipo_documento(v)
     if col == "Numero de documento identidad" or "documento identidad" in col_l or "numero de documento" in col_l:
         return normalizar_sin_espacios(v)
@@ -447,11 +631,11 @@ def normalizar_campo_por_columna(col: str, val: Any) -> str:
         return normalizar_sin_espacios(v)
     if col == "Grado escolar" or "grado escolar" in col_l:
         return normalizar_grado_escolar(v)
-    if col == "Zona" or "zona" in col_l:
+    if col == "Zona" or col_l in ["zona", "zona rural o urbana"]:
         return normalizar_zona(v)
-    if col == "EPS (si tienes)" or "eps" in col_l:
+    if col == "EPS (si tienes)" or col_l in ["eps", "eps (si tienes)"]:
         return normalizar_eps(v)
-    if col == "Régimen" or "régimen" in col_l or "regimen" in col_l:
+    if col == "Régimen" or col_l in ["régimen", "regimen"]:
         return normalizar_regimen(v)
     if col == "Sexo con el que te identificas" or "sexo con el que" in col_l:
         return normalizar_sexo(v)
@@ -459,13 +643,84 @@ def normalizar_campo_por_columna(col: str, val: Any) -> str:
         return normalizar_identidad_genero(v)
     if col == "¿Perteneces a alguna población o grupo étnico?" or "grupo étnico" in col_l or "grupo etnico" in col_l:
         return normalizar_etnia(v)
-    if col == "¿Tienes alguna condición de discapacidad?" or "condición de discapacidad" in col_l or "condicion de discapacidad" in col_l:
-        return normalizar_si_no(v)
+    if "usas condón o preservativo" in col_l or "usas condon" in col_l:
+        return normalizar_uso_condon(v)
     if col == "¿Qué tiempo empleas en esta actividad?" or "tiempo empleas" in col_l:
         return normalizar_tiempo_horas(v)
     if "cuándo fue la" in col_l or "cuando fue la" in col_l:
-        return normalizar_fecha_periodo(v)
+        v = normalizar_fecha_periodo(v)
+
+    # Corrección difusa de vocabulario adaptativo para columnas abiertas aprendidas
+    if col in COLUMNAS_APRENDIZAJE:
+        v = vocabulary_learner.corregir_valor(col, v)
+
     return v
+
+
+def canonicalizar_clave_columna(k: str) -> str:
+    """Mapea claves con variaciones de tildes, espacios o redacción a la columna canónica exacta de COLUMNAS_FICHA."""
+    if not k:
+        return ""
+    if k in COLUMNAS_FICHA:
+        return k
+    k_strip = str(k).strip()
+    if k_strip in COLUMNAS_FICHA:
+        return k_strip
+
+    # Limpieza para comparación fonética/estructural
+    k_clean = re.sub(r"[^\w\s]", "", k_strip.lower())
+    k_clean = re.sub(r"\s+", " ", k_clean).strip()
+    tildes = {"á": "a", "é": "e", "í": "i", "ó": "o", "ú": "u", "ñ": "n"}
+    for a, b in tildes.items():
+        k_clean = k_clean.replace(a, b)
+
+    # 1. Búsqueda directa sin tildes contra COLUMNAS_FICHA
+    for col in COLUMNAS_FICHA:
+        col_clean = re.sub(r"[^\w\s]", "", col.lower())
+        col_clean = re.sub(r"\s+", " ", col_clean).strip()
+        for a, b in tildes.items():
+            col_clean = col_clean.replace(a, b)
+        if k_clean == col_clean:
+            return col
+
+    # 2. Casos especiales de Casilla 39 (Preservativos EPS)
+    if "entregado" in k_clean and "preservativo" in k_clean:
+        return "¿Te han entregado preservativos en la EPS o institución de salud?"
+    if "preservativos en la eps" in k_clean or "preservativo en la eps" in k_clean:
+        return "¿Te han entregado preservativos en la EPS o institución de salud?"
+
+    # Casilla 38 (Embarazo adolescente)
+    if "embarazo adolescente" in k_clean or "caso cercano de embarazo" in k_clean:
+        return "¿Has vivido o conoces algún caso cercano de embarazo adolescente?"
+
+    # Casilla 33 (Prevención ITS / Salud sexual)
+    if ("prevencion de its" in k_clean or "salud sexual its" in k_clean or "informacion sobre salud sexual" in k_clean) and "embarazo" not in k_clean:
+        return "¿Has recibido información sobre salud sexual, ITS o métodos de prevención?"
+
+    # Casilla 35 (Uso de condón en relaciones)
+    if ("usas condon" in k_clean or "usas preservativo" in k_clean or "relaciones sexuales" in k_clean) and "iniciado" not in k_clean:
+        return "Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?"
+
+    # Casilla 36 (Conoce método anticonceptivo)
+    if "conoces algun metodo" in k_clean:
+        return "¿Conoces algún método anticonceptico?"
+
+    # Casilla 37 (Cuál método anticonceptivo)
+    if "cual" in k_clean and ("anticonceptivo" in k_clean or "3" in k_strip):
+        return "¿Cual?_3"
+
+    # Columna 40 vs 22 (Cuándo fue la última vez)
+    if "cuando fue" in k_clean:
+        if "preservativo" in k_clean or "_1" in k_strip or "40" in k_strip or "eps" in k_clean:
+            return "¿Cuándo fue la ultima vez?"
+        if "medico" in k_clean or "22" in k_strip:
+            return "¿Cuándo fue la última vez?"
+
+    # Casilla 41 (Temas de interés)
+    if "tema te gustaria" in k_clean or "aprender o entender" in k_clean or "temas de interes" in k_clean or "tema de interes" in k_clean:
+        return "¿Qué tema te gustaria aprender o entender mejor?"
+
+    return k_strip
 
 
 class FichaCaracterizacion(BaseModel):
@@ -525,7 +780,8 @@ class FichaCaracterizacion(BaseModel):
         if isinstance(data, dict):
             normalizado = {}
             for k, v in data.items():
-                normalizado[k] = normalizar_campo_por_columna(k, v)
+                clave_canonica = canonicalizar_clave_columna(k)
+                normalizado[clave_canonica] = normalizar_campo_por_columna(clave_canonica, v)
 
             # Regla de negocio: El municipio es el mismo que el territorio
             terr = normalizado.get("TERRITORIO") or normalizado.get("territorio")
@@ -544,6 +800,11 @@ class FichaCaracterizacion(BaseModel):
                 normalizado["Tipo de documento identidad"] = td_norm
                 normalizado["tipo_documento"] = td_norm
 
+            # Regla de fidelidad: Si no asistió al médico en el último año, ¿Cuándo fue la última vez? debe estar vacío
+            asistio_medico = normalizado.get("¿Has asistido al médico en el último año?", "")
+            if asistio_medico == "NO":
+                normalizado["¿Cuándo fue la última vez?"] = ""
+
             return normalizado
         return data
 
@@ -555,6 +816,10 @@ class FichaCaracterizacion(BaseModel):
             dump.get("Tipo de documento identidad", ""),
             dump.get("Edad", "")
         )
+        # Regla de fidelidad: Si no asistió al médico, la última vez debe ser vacía
+        if dump.get("¿Has asistido al médico en el último año?") == "NO":
+            dump["¿Cuándo fue la última vez?"] = ""
+
         fila = []
         for col in COLUMNAS_FICHA:
             if col in ["Municipio", "TERRITORIO"] and terr:
@@ -574,6 +839,10 @@ class FichaCaracterizacion(BaseModel):
             dump.get("Tipo de documento identidad", ""),
             dump.get("Edad", "")
         )
+        # Regla de fidelidad: Si no asistió al médico, la última vez debe ser vacía
+        if dump.get("¿Has asistido al médico en el último año?") == "NO":
+            dump["¿Cuándo fue la última vez?"] = ""
+
         res = {}
         for col in COLUMNAS_FICHA:
             if col in ["Municipio", "TERRITORIO"] and terr:

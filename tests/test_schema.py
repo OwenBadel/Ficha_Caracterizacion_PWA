@@ -104,7 +104,10 @@ def test_encuestadores_autorizados():
         ("gisel", "GISEL MORENO"),
         ("giselle", "GISEL MORENO"),
         ("moreno", "GISEL MORENO"),
-        ("GISEL MORENO", "GISEL MORENO")
+        ("GISEL MORENO", "GISEL MORENO"),
+        ("mauricio", "MAURICIO FORTICH"),
+        ("mauricio fortich", "MAURICIO FORTICH"),
+        ("fortich", "MAURICIO FORTICH")
     ]
 
     for entrada, esperado in casos:
@@ -222,6 +225,128 @@ def test_menor_de_18_es_ti():
         )
 
 
+def test_fuzzy_matching_vocabulario():
+    # 1. Método anticonceptivo ¿Cual?_3: reconocimiento de YADEL / JADELLE y variantes fonéticas
+    for var in ["YADEL", "YADUL", "YADOL", "JADEL", "JADELLE", "YADELL", "JADUL", "YADLE"]:
+        f = FichaCaracterizacion.model_validate({"¿Cual?_3": var})
+        assert f.to_canonical_dict()["¿Cual?_3"] == "YADEL", f"Fallo con variante de Jadelle: {var}"
+
+    # 2. Otros métodos anticonceptivos
+    f_condon = FichaCaracterizacion.model_validate({"¿Cual?_3": "PRESERBATIBO"})
+    assert f_condon.to_canonical_dict()["¿Cual?_3"] == "PRESERVATIVO"
+
+    # 3. Dirección / Barrios aprendidos
+    f_barrio = FichaCaracterizacion.model_validate({"Dirección de residencia (barrio o vereda)": "BARRIO SAN RAFAELL"})
+    assert "SAN RAFAEL" in f_barrio.to_canonical_dict()["Dirección de residencia (barrio o vereda)"]
+
+    # 4. Actividades de ocio y sustancias
+    f_act = FichaCaracterizacion.model_validate({"¿Qué actividades recreativas haces en tu tiempo libre?": "FUTBOLL"})
+    assert "FUTBOL" in f_act.to_canonical_dict()["¿Qué actividades recreativas haces en tu tiempo libre?"]
+
+    f_sust = FichaCaracterizacion.model_validate({"¿Cual?_2": "MARIHUANNA"})
+    assert f_sust.to_canonical_dict()["¿Cual?_2"] == "MARIHUANA"
+
+    # 5. Campos personales NUNCA deben alterarse por fuzzy matching
+    f_pers = FichaCaracterizacion.model_validate({
+        "Nombre completo del participante": "YADUL PEREZ",
+        "Numero de documento identidad": "1045678901"
+    })
+    d_pers = f_pers.to_canonical_dict()
+    assert d_pers["Nombre completo del participante"] == "YADUL PEREZ"
+    assert d_pers["Numero de documento identidad"] == "1045678901"
+
+
+def test_uso_condon_y_dicotomicas():
+    col_condon = "Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?"
+    casos_condon = [
+        ("siempre", "SIEMPRE"),
+        ("SIEMPRE", "SIEMPRE"),
+        ("casi siempre", "CASI SIEMPRE"),
+        ("a veces", "CASI SIEMPRE"),
+        ("nunca", "NUNCA"),
+        ("NUNCA", "NUNCA"),
+        ("", "")
+    ]
+    for entrada, esperado in casos_condon:
+        f = FichaCaracterizacion.model_validate({col_condon: entrada})
+        assert f.to_canonical_dict()[col_condon] == esperado, f"Para condón entrada '{entrada}', se esperaba '{esperado}'"
+
+    # Dicotómicas estandarizadas a SI / NO
+    f_dico = FichaCaracterizacion.model_validate({
+        "¿Has vivido situaciones de discriminación, rechazo o violencia?": "si",
+        "¿Has iniciado tu vida sexual?": "no",
+        "¿Has recibido información sobre salud sexual, ITS o métodos de prevención?": "si",
+        "¿Conoces algún método anticonceptico?": "si"
+    })
+    d_dico = f_dico.to_canonical_dict()
+    assert d_dico["¿Has vivido situaciones de discriminación, rechazo o violencia?"] == "SI"
+    assert d_dico["¿Has iniciado tu vida sexual?"] == "NO"
+    assert d_dico["¿Has recibido información sobre salud sexual, ITS o métodos de prevención?"] == "SI"
+    assert d_dico["¿Conoces algún método anticonceptico?"] == "SI"
+
+
+def test_casilla_39_y_no_alucinacion_fecha():
+    # 1. Casilla 39 con diversas variaciones de claves generadas por OCR
+    variantes_casilla_39 = [
+        ("¿Te han entregado preservativos en la EPS o institución de salud?", "si", "SI"),
+        ("¿Te han entregado preservativos en la EPS o institucion de salud?", "si", "SI"),
+        ("¿Te han entregado preservativos en la EPS?", "no", "NO"),
+        ("¿Te han entregado preservativos en la EPS o institución de salud? ", "si", "SI"),
+        ("entregado preservativos en la eps", "si", "SI")
+    ]
+    for k, v, esperado in variantes_casilla_39:
+        f = FichaCaracterizacion.model_validate({k: v})
+        res = f.to_canonical_dict()["¿Te han entregado preservativos en la EPS o institución de salud?"]
+        assert res == esperado, f"Para clave '{k}' con valor '{v}', se esperaba '{esperado}' pero se obtuvo '{res}'"
+        row = f.to_ordered_row()
+        assert row[38] == esperado, f"En fila ordenada col 39 (índice 38) se esperaba '{esperado}', obtenido '{row[38]}'"
+
+    # 2. No alucinación en Columna 22 (¿Cuándo fue la última vez?)
+    # Si la persona no asistió al médico, la fecha debe ser vacía ""
+    f_no_medico = FichaCaracterizacion.model_validate({
+        "¿Has asistido al médico en el último año?": "NO",
+        "¿Cuándo fue la última vez?": "MAYO 2026"
+    })
+    assert f_no_medico.to_canonical_dict()["¿Cuándo fue la última vez?"] == ""
+    assert f_no_medico.to_ordered_row()[21] == ""
+
+    # Si vino vacío, debe mantenerse estrictamente vacío ""
+    f_vacio = FichaCaracterizacion.model_validate({
+        "¿Cuándo fue la última vez?": ""
+    })
+    assert f_vacio.to_canonical_dict()["¿Cuándo fue la última vez?"] == ""
+    assert f_vacio.to_ordered_row()[21] == ""
+
+
+def test_temas_interes_separador_coma():
+    casos = [
+        # (entrada, esperado)
+        ("VIH, SIFILIS, METODOS ANTICONCEPTIVOS", "VIH, SIFILIS, METODOS ANTICONCEPTIVOS"),
+        ("VIH; SIFILIS; METODOS ANTICONCEPTIVOS", "VIH, SIFILIS, METODOS ANTICONCEPTIVOS"),
+        ("VIH - SIFILIS", "VIH, SIFILIS"),
+        ("VIH / SÍFILIS", "VIH, SIFILIS"),
+        (["VIH", "USO CORRECTO DEL PRESERVATIVO"], "VIH, USO CORRECTO DEL PRESERVATIVO"),
+        ("VIH\nSIFILIS", "VIH, SIFILIS"),
+        ("VIH SIFILIS", "VIH, SIFILIS"),
+        ("VIH, SIFILIS, AUTOESTIMA Y DERECHOS", "VIH, SIFILIS, AUTOESTIMA Y DERECHOS"),
+        ("VIH", "VIH"),
+        ("", ""),
+    ]
+
+    for entrada, esperado in casos:
+        f = FichaCaracterizacion.model_validate({
+            "¿Qué tema te gustaria aprender o entender mejor?": entrada
+        })
+        res_dict = f.to_canonical_dict()["¿Qué tema te gustaria aprender o entender mejor?"]
+        assert res_dict == esperado, (
+            f"Para entrada '{entrada}', se esperaba '{esperado}' pero se obtuvo '{res_dict}'"
+        )
+        res_row = f.to_ordered_row()[40]
+        assert res_row == esperado, (
+            f"En fila ordenada col 41 (índice 40), se esperaba '{esperado}' pero se obtuvo '{res_row}'"
+        )
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -232,4 +357,8 @@ if __name__ == "__main__":
     test_estandarizacion_catalogos_completos()
     test_campos_sin_espacios_telefono_e_id()
     test_menor_de_18_es_ti()
-    print("OK: Todas las pruebas de esquema y normalizacion a mayusculas pasaron exitosamente.")
+    test_fuzzy_matching_vocabulario()
+    test_uso_condon_y_dicotomicas()
+    test_casilla_39_y_no_alucinacion_fecha()
+    test_temas_interes_separador_coma()
+    print("OK: Todas las pruebas de esquema, fuzzy matching y normalizacion pasaron exitosamente.")

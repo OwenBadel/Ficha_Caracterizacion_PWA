@@ -3,12 +3,11 @@
  * Digitalizador de Fichas de Caracterización (Lemon Fábrica)
  */
 
-document.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener('DOMContentLoaded', () => {
   // -------------------------------------------------------------
   // ESTADO DE LA APLICACIÓN
   // -------------------------------------------------------------
   const state = {
-    mode: 'inmediato', // 'inmediato' | 'cola'
     currentStep: 1,    // 1: Foto Anverso, 2: Foto Reverso, 3: Completa
     foto1Blob: null,
     foto2Blob: null,
@@ -20,9 +19,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   // -------------------------------------------------------------
   // REFERENCIAS DOM
   // -------------------------------------------------------------
-  const tabInmediato = document.getElementById('tabModoInmediato');
-  const tabCola = document.getElementById('tabModoCola');
-
   const stepTag = document.getElementById('stepTag');
   const stepTitle = document.getElementById('stepTitle');
   const stepDesc = document.getElementById('stepDesc');
@@ -71,15 +67,90 @@ document.addEventListener('DOMContentLoaded', async () => {
   const toastContainer = document.getElementById('toastContainer');
 
   // -------------------------------------------------------------
-  // REGISTRO DE SERVICE WORKER (PWA OFFLINE)
+  // TOASTS DE NOTIFICACIÓN
   // -------------------------------------------------------------
-  if ('serviceWorker' in navigator) {
+  function showToast(message, type = 'success') {
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.innerHTML = `
+      <span>${type === 'success' ? '✅' : (type === 'error' ? '❌' : 'ℹ️')}</span>
+      <span>${message}</span>
+    `;
+    toastContainer.appendChild(toast);
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateY(-10px)';
+      setTimeout(() => toast.remove(), 300);
+    }, 4000);
+  }
+
+  // -------------------------------------------------------------
+  // DISPARADOR DE CÁMARA ROBUSTO (SINCRÓNICO E INMEDIATO)
+  // -------------------------------------------------------------
+  function dispararCamara() {
     try {
-      await navigator.serviceWorker.register('/sw.js');
-      console.log('Service Worker registrado correctamente');
-    } catch (e) {
-      console.warn('Fallo registrando Service Worker:', e);
+      if (state.currentStep === 1) {
+        if (cameraInput1) {
+          cameraInput1.value = '';
+          cameraInput1.click();
+        }
+      } else if (state.currentStep === 2) {
+        if (cameraInput2) {
+          cameraInput2.value = '';
+          cameraInput2.click();
+        }
+      } else {
+        showToast('Fotos listas. Elige "Sincronizar Ahora" o "Mandar a la Cola" abajo.', 'info');
+      }
+    } catch (err) {
+      console.error('Error al abrir la cámara:', err);
+      showToast('Error al abrir la cámara: ' + err.message, 'error');
     }
+  }
+
+  if (btnMainCamera) {
+    btnMainCamera.addEventListener('click', (e) => {
+      e.preventDefault();
+      dispararCamara();
+    });
+  }
+
+  if (slotFoto1) {
+    slotFoto1.addEventListener('click', () => {
+      if (cameraInput1) {
+        cameraInput1.value = '';
+        cameraInput1.click();
+      }
+    });
+  }
+
+  if (slotFoto2) {
+    slotFoto2.addEventListener('click', () => {
+      if (cameraInput2) {
+        cameraInput2.value = '';
+        cameraInput2.click();
+      }
+    });
+  }
+
+  if (btnRetake1) {
+    btnRetake1.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (cameraInput1) {
+        cameraInput1.value = '';
+        cameraInput1.click();
+      }
+    });
+  }
+
+  if (btnRetake2) {
+    btnRetake2.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (cameraInput2) {
+        cameraInput2.value = '';
+        cameraInput2.click();
+      }
+    });
   }
 
   // -------------------------------------------------------------
@@ -101,85 +172,30 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateNetworkStatus();
 
   // -------------------------------------------------------------
-  // TOASTS DE NOTIFICACIÓN
+  // REGISTRO DE SERVICE WORKER (PWA OFFLINE - EN SEGUNDO PLANO)
   // -------------------------------------------------------------
-  function showToast(message, type = 'success') {
-    const toast = document.createElement('div');
-    toast.className = `toast toast-${type}`;
-    toast.innerHTML = `
-      <span>${type === 'success' ? '✅' : (type === 'error' ? '❌' : 'ℹ️')}</span>
-      <span>${message}</span>
-    `;
-    toastContainer.appendChild(toast);
-    setTimeout(() => {
-      toast.style.opacity = '0';
-      toast.style.transform = 'translateY(-10px)';
-      setTimeout(() => toast.remove(), 300);
-    }, 4000);
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js')
+      .then(() => console.log('Service Worker registrado correctamente'))
+      .catch((e) => console.warn('Fallo registrando Service Worker:', e));
   }
 
   // -------------------------------------------------------------
-  // SELECTOR DE MODO (INMEDIATO vs COLA)
-  // -------------------------------------------------------------
-  tabInmediato.addEventListener('click', () => setMode('inmediato'));
-  tabCola.addEventListener('click', () => setMode('cola'));
-
-  function setMode(newMode) {
-    state.mode = newMode;
-    if (newMode === 'inmediato') {
-      tabInmediato.classList.add('active');
-      tabCola.classList.remove('active');
-    } else {
-      tabCola.classList.add('active');
-      tabInmediato.classList.remove('active');
-    }
-  }
-
-  // -------------------------------------------------------------
-  // ACTUALIZACIÓN DE LA COLA LOCAL (INDEXEDDB)
+  // ACTUALIZACIÓN DE LA COLA LOCAL (INDEXEDDB - EN SEGUNDO PLANO)
   // -------------------------------------------------------------
   async function actualizarContadorCola() {
     try {
-      const count = await window.surveyDB.contarPendientes();
-      queueCountBadge.textContent = count;
-      queueLabel.textContent = `${count} ${count === 1 ? 'encuesta pendiente' : 'encuestas pendientes'}`;
-      btnSyncAllNow.disabled = (count === 0 || !navigator.onLine || state.isSyncing);
+      if (window.surveyDB) {
+        const count = await window.surveyDB.contarPendientes();
+        queueCountBadge.textContent = count;
+        queueLabel.textContent = `${count} ${count === 1 ? 'encuesta pendiente' : 'encuestas pendientes'}`;
+        btnSyncAllNow.disabled = (count === 0 || !navigator.onLine || state.isSyncing);
+      }
     } catch (err) {
       console.error('Error consultando cola:', err);
     }
   }
-  await actualizarContadorCola();
-
-  // -------------------------------------------------------------
-  // FLUJO DE CAPTURA DE CÁMARA (2 PASOS)
-  // -------------------------------------------------------------
-  btnMainCamera.addEventListener('click', () => {
-    if (state.currentStep === 1) {
-      cameraInput1.click();
-    } else if (state.currentStep === 2) {
-      cameraInput2.click();
-    } else {
-      showToast('Fotos listas. Elige "Sincronizar Ahora" o "Mandar a la Cola" abajo.', 'info');
-    }
-  });
-
-  slotFoto1.addEventListener('click', () => {
-    cameraInput1.click();
-  });
-
-  slotFoto2.addEventListener('click', () => {
-    cameraInput2.click();
-  });
-
-  btnRetake1.addEventListener('click', (e) => {
-    e.stopPropagation();
-    cameraInput1.click();
-  });
-
-  btnRetake2.addEventListener('click', (e) => {
-    e.stopPropagation();
-    cameraInput2.click();
-  });
+  actualizarContadorCola();
 
   // Procesamiento Foto 1 (Anverso)
   cameraInput1.addEventListener('change', async (e) => {

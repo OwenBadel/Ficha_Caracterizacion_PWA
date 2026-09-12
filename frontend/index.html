@@ -7,7 +7,7 @@
   <meta name="description" content="PWA Mobile-First para captura fotográfica de fichas de caracterización, extracción con IA de Visión y sincronización en Google Sheets.">
   <meta name="theme-color" content="#10b981">
   <link rel="manifest" href="/manifest.json">
-  <link rel="stylesheet" href="/static/css/styles.css">
+  <link rel="stylesheet" href="/static/css/styles.css?v=5">
   <link rel="icon" href="https://cdn.jsdelivr.net/npm/@tabler/icons@3.2.0/icons/outline/clipboard-heart.svg" type="image/svg+xml">
 </head>
 <body>
@@ -38,24 +38,6 @@
             <span id="netStatusText">Online</span>
           </div>
         </div>
-      </div>
-
-      <!-- SELECTOR DE MODOS (TABS) -->
-      <div class="mode-selector">
-        <button id="tabModoInmediato" class="mode-tab active" type="button">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M13 3l0 7l6 0l-8 11l0 -7l-6 0z" />
-          </svg>
-          ⚡ Modo Inmediato
-        </button>
-        <button id="tabModoCola" class="mode-tab" type="button">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M4 4m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z" />
-            <path d="M4 12h16" />
-            <path d="M12 4v16" />
-          </svg>
-          📦 Modo Cola
-        </button>
       </div>
     </header>
 
@@ -214,7 +196,7 @@
 
   </div>
 
-  <script src="/static/js/db.js"></script>
-  <script src="/static/js/app.js"></script>
+  <script src="/static/js/db.js?v=5"></script>
+  <script src="/static/js/app.js?v=5"></script>
 </body>
 </html>

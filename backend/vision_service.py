@@ -27,14 +27,16 @@ REGLAS OBLIGATORIAS E INVIOLABLES DE ESTANDARIZACIÓN:
 2. DETECCIÓN RIGUROSA DE CASILLAS (CHECKBOXES / OPCIONES):
    - Para las casillas de verificación marcadas con una "X", visto bueno ✔, trazo, sombreado o relleno manuscrito, extrae la opción marcada en MAYÚSCULAS ("SI" o "NO").
    - ATENCIÓN CRÍTICA A LA CASILLA 38: En "¿Has vivido o conoces algún caso cercano de embarazo adolescente?", examina con máxima atención las opciones "SI" y "NO". Si hay cualquier marca sobre o dentro del recuadro "SI", extrae "SI". Si la marca está en "NO", extrae "NO". NUNCA devuelvas cadena vacía si hay una marca visible.
+   - ATENCIÓN CRÍTICA A LA CASILLA 39: En "¿Te han entregado preservativos en la EPS o institución de salud?", examina minuciosamente las casillas "SI" y "NO". Si hay una "X", visto bueno ✔, punto, raya, cruz o cualquier marca visible en "SI", extrae OBLIGATORIAMENTE "SI". Si la marca está en "NO", extrae OBLIGATORIAMENTE "NO". NUNCA dejes esta casilla vacía si hay una marca visible en la foto.
    - Aplica esta misma exhaustividad a todas las casillas dicotómicas (médico, odontólogo, cigarrillo, alcohol, sustancias psicoactivas, discriminación, salud sexual, vida sexual, condón, métodos anticonceptivos, preservativos EPS, espacios de diálogo).
 3. CATÁLOGO CERRADO - CAMPO 1 (NOMBRE COMPLETO DE QUIEN DILIGENCIA LA FICHA):
-   - ÚNICAMENTE pueden existir las siguientes 4 personas autorizadas:
+   - ÚNICAMENTE pueden existir las siguientes 5 personas autorizadas:
      * PAMELA VERGARA
      * KAREN TORRES
+     * MAURICIO FORTICH
      * WENDY TAPIAS
      * GISEL MORENO
-   Identifica la caligrafía o abreviatura y escribe EXACTAMENTE una de estas cuatro opciones.
+   Identifica la caligrafía o abreviatura y escribe EXACTAMENTE una de estas cinco opciones.
 4. CATÁLOGO CERRADO - TERRITORIO Y MUNICIPIO:
    - "TERRITORIO" solo puede ser uno de estos 4 valores:
      * MAHATES
@@ -51,17 +53,18 @@ REGLAS OBLIGATORIAS E INVIOLABLES DE ESTANDARIZACIÓN:
      * PERMISO
    - REGLA ESTRICTA DE EDAD: Si la persona tiene menos de 18 años (Edad < 18), su tipo de documento es SIEMPRE "TI" (Tarjeta de Identidad). NUNCA coloques "CC" para menores de 18 años.
 6. FORMATO ESTRICTO - GRADO ESCOLAR:
-   - Debe ser el número seguido del símbolo de grado ° (ejemplos: 1°, 2°, 3°, 4°, 5°, 6°, 7°, 8°, 9°, 10°, 11°).
+   - Debe ser el número seguido del símbolo de grado ° (ejemplos: 8°, 9°, 10°, 11°).
 7. CATÁLOGO CERRADO - ZONA:
    - Solo puede ser: RURAL o URBANA.
 8. CATÁLOGO CERRADO - EPS (SI TIENES):
    - Solo puede ser una de las siguientes opciones (o dejar vacío si no tiene):
-     * SANITAS
-     * SURA
-     * SALUD TOTAL
-     * MUTUAL SER
-     * COOSALUD
      * NUEVA EPS
+     * COOSALUD
+     * MUTUAL SER
+     * SALUD TOTAL
+     * SURA
+     * SANITAS
+     * O el nombre de otra EPS escrita a mano en "Otros".
 9. CATÁLOGO CERRADO - RÉGIMEN:
    - Solo puede ser: CONTRIBUTIVO, SUBSIDIADO o NINGUNO.
 10. CATÁLOGO CERRADO - SEXO CON EL QUE TE IDENTIFICAS:
@@ -82,29 +85,82 @@ REGLAS OBLIGATORIAS E INVIOLABLES DE ESTANDARIZACIÓN:
      * NO
 13. CATÁLOGO CERRADO - CONDICIÓN DE DISCAPACIDAD:
    - Solo puede ser: SI o NO.
-14. CONTEXTO TEMPORAL Y AÑO ACTUAL 2026 (FECHAS Y PERÍODOS):
-   - Todas estas encuestas se están realizando y diligenciando en el año 2026.
-   - En preguntas de fecha o período (como "¿Cuándo fue la última vez?"), los años diligenciados son 2026 (ejemplo: "MAYO 2026", "2026").
-   - ATENCIÓN AL DÍGITO 6: NUNCA interpretes el número '6' manuscrito como un '0' ni cambies '2026' por '2020'. Extrae con total fidelidad "MAYO 2026".
-15. CAMPO 25 (TIEMPO EMPLEADO):
-   - En la pregunta "¿Qué tiempo empleas en esta actividad?", extrae el número e incluye siempre la palabra HORAS en mayúsculas (ejemplo: si escribió "2" o "2h", devuelve "2 HORAS"; si escribió "1", devuelve "1 HORA").
-16. CAMPOS DE TELÉFONO Y NÚMERO DE DOCUMENTO (PEGADOS SIN ESPACIOS):
+14. CATÁLOGO CERRADO - USO DE CONDÓN O PRESERVATIVO ("Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?"):
+   - Solo puede ser una de las 3 opciones impresas en la ficha física:
+     * SIEMPRE
+     * CASI SIEMPRE
+     * NUNCA
+     (Si no respondió o no ha iniciado vida sexual, devuelve string vacío "").
+15. TEMAS DE INTERÉS ("¿Qué tema te gustaria aprender o entender mejor?"):
+   - En esta pregunta el participante puede marcar una o varias opciones (con "X", visto o círculo).
+   - REGLA ESTRICTA DE SEPARADOR POR COMA: Por cada opción que el participante elija, DEBES separarla OBLIGATORIAMENTE con una coma y un espacio (", ").
+     * Ejemplo correcto: "VIH, SIFILIS, METODOS ANTICONCEPTIVOS"
+     * Ejemplo correcto: "VIH, PROYECTO DE VIDA, USO CORRECTO DEL PRESERVATIVO"
+     * Ejemplo con Otros: "VIH, SIFILIS, AUTOESTIMA"
+   - Las opciones impresas en el formulario son:
+     * VIH
+     * SIFILIS
+     * HEPATITIS B Y C
+     * METODOS ANTICONCEPTIVOS
+     * USO CORRECTO DEL PRESERVATIVO
+     * PROYECTO DE VIDA
+     * RESPETO POR LAS DIFERENCIAS
+     * PREVENCION DEL EMBARAZO ADOLESCENTE
+     * SALUD MENTAL Y RELACIONES
+     * O el texto que hayan escrito a mano en "Otros" (agrégalo al final también separado por coma).
+   - Si no marcó ninguna opción, devuelve string vacío "".
+16. FIDELIDAD ESTRICTA EN FECHAS Y PERÍODOS (PROHIBIDO ALUCINAR O ASUMIR FECHAS):
+   - En preguntas de fecha o período como "¿Cuándo fue la última vez?" (tanto para médico Columna 22 como para preservativos Columna 40):
+     * Si la casilla, línea o renglón está vacío, en blanco o sin texto manuscrito visible, devuelve OBLIGATORIAMENTE cadena vacía "".
+     * ESTÁ TERMINANTEMENTE PROHIBIDO inventar, suponer o colocar meses o años (como "MAYO 2026", "JUNIO 2026", "2026" o "HACE UN MES") si el participante dejó el espacio en blanco.
+     * Si en la pregunta anterior "¿Has asistido al médico en el último año?" respondieron "NO", la fecha en "¿Cuándo fue la última vez?" DEBE ser "".
+     * ÚNICAMENTE extrae una fecha o período cuando veas trazos manuscritos reales escritos a mano por el participante.
+     * Si el participante sí escribió una fecha y el año es 2026, nunca confundas el trazo del 6 manuscrito con un 0 (no cambiar 2026 por 2020).
+17. CAMPO 25 (TIEMPO EMPLEADO):
+   - En la pregunta "¿Qué tiempo empleas en esta actividad?", extrae el número e incluye siempre la palabra HORAS en mayúsculas (ejemplo: si escribió "2" o "2h", devuelve "2 HORAS"; si escribió "4", devuelve "4 HORAS").
+18. CAMPOS DE TELÉFONO Y NÚMERO DE DOCUMENTO (PEGADOS SIN ESPACIOS):
    - En "Numero de documento identidad" y "Teléfono de contacto", escribe los números completamente unidos, continuos y sin espacios, sin puntos, sin guiones ni paréntesis (ejemplos: si en la imagen se lee "1 045 678 901" o "1.045.678.901", escribe "1045678901"; si se lee "300 123 4567" o "300-123-4567", escribe "3001234567"). Aunque en la imagen física se vean separados o en casillas individuales, van pegados sin espacios.
-17. CAMPOS NO RESPONDIDOS:
+19. CAMPOS NO RESPONDIDOS:
    - Si una casilla o pregunta no fue respondida o está en blanco, devuelve un string vacío "". NUNCA pongas null, None, o "N/A".
-18. Devuelve ÚNICAMENTE un objeto JSON válido, sin bloques de texto explicativo, sin introducciones ni saludos.
-19. Usa EXACTAMENTE las siguientes 43 claves JSON:
+20. Devuelve ÚNICAMENTE un objeto JSON válido, sin bloques de texto explicativo, sin introducciones ni saludos.
+21. Usa EXACTAMENTE las siguientes 43 claves JSON:
 """
 
 PROMPT_JSON_TEMPLATE = json.dumps({col: "" for col in COLUMNAS_FICHA}, indent=2, ensure_ascii=False)
 
-USER_PROMPT = f"""{SYSTEM_PROMPT}
+
+def obtener_user_prompt() -> str:
+    """Construye el prompt agregando dinámicamente la GUÍA DE COINCIDENCIAS por columna aprendida del historial."""
+    try:
+        from .vocabulary_learner import vocabulary_learner
+    except (ImportError, ValueError):
+        try:
+            from vocabulary_learner import vocabulary_learner
+        except ImportError:
+            from backend.vocabulary_learner import vocabulary_learner
+
+    resumen_guia = vocabulary_learner.generar_resumen_guia_todas_columnas(limite_por_columna=6)
+    pistas_vocabulario = ""
+    if resumen_guia:
+        pistas_vocabulario = f"""
+20. GUÍA DE COINCIDENCIAS Y LECTURA DE CALIGRAFÍA DIFÍCIL (APRENDIZAJE DE OTRAS RESPUESTAS):
+    Usa esta guía de términos frecuentes si la caligrafía manuscrita es confusa, borrosa o parece contener faltas ortográficas.
+    Compara lo que ves en la imagen con las respuestas que suelen dar los demás participantes en esa misma columna para descifrar lo que quisieron escribir:
+{resumen_guia}
+    * ATENCIÓN ESPECIAL EN ANTICONCEPTIVOS ("¿Cual?_3"):
+      En Colombia es muy frecuente que las participantes nombren el implante subdérmico Jadelle y lo escriban como "YADEL", "YADUL", "YADOL", "JADEL", "JADELLE" o "YADELL". Si ves trazos similares a esto, extrae SIEMPRE "YADEL".
+"""
+
+    return f"""{SYSTEM_PROMPT}{pistas_vocabulario}
 
 ESTRUCTURA EXACTA REQUERIDA (JSON):
 {PROMPT_JSON_TEMPLATE}
 
 Analiza minuciosamente el anverso (Página 1) y reverso (Página 2) adjuntos y genera el JSON estricto.
 """
+
+
+USER_PROMPT = obtener_user_prompt()
 
 
 def _limpiar_bloque_json(texto: str) -> str:
@@ -168,13 +224,14 @@ class VisionService:
             primary_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
             candidate_models = [primary_model, "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.7-flash"]
             models_to_try = list(dict.fromkeys(candidate_models))
+            prompt_actual = obtener_user_prompt()
 
             last_err = None
             for m_name in models_to_try:
                 try:
                     response = client.models.generate_content(
                         model=m_name,
-                        contents=[USER_PROMPT, part_1, part_2],
+                        contents=[prompt_actual, part_1, part_2],
                         config=types.GenerateContentConfig(
                             temperature=0.1,
                             response_mime_type="application/json"
@@ -196,8 +253,9 @@ class VisionService:
                 model_name=model_name,
                 generation_config={"temperature": 0.1, "response_mime_type": "application/json"}
             )
+            prompt_actual = obtener_user_prompt()
             contents = [
-                USER_PROMPT,
+                prompt_actual,
                 {"mime_type": mime1, "data": img1},
                 {"mime_type": mime2, "data": img2}
             ]
@@ -213,6 +271,7 @@ class VisionService:
         client = OpenAI(api_key=self.openai_api_key)
         b64_1 = base64.b64encode(img1).decode("utf-8")
         b64_2 = base64.b64encode(img2).decode("utf-8")
+        prompt_actual = obtener_user_prompt()
 
         response = client.chat.completions.create(
             model=os.getenv("OPENAI_MODEL", "gpt-4o"),
@@ -226,7 +285,7 @@ class VisionService:
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": USER_PROMPT},
+                        {"type": "text", "text": prompt_actual},
                         {
                             "type": "image_url",
                             "image_url": {"url": f"data:{mime1};base64,{b64_1}"}

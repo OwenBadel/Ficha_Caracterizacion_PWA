@@ -4,7 +4,7 @@ credentials.json
 *.key
 *.pem
 
-# Python
+# Python y caché
 __pycache__/
 *.py[cod]
 *$py.class
