@@ -1,0 +1,24 @@
+# Entorno y credenciales sensibles
+.env
+credentials.json
+*.key
+*.pem
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv/
+.pytest_cache/
+
+# IDEs y SO
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+.DS_Store
