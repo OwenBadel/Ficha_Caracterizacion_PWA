@@ -387,6 +387,56 @@ def test_todos_los_municipios_autorizados():
         assert d2["TERRITORIO"] == esperado, f"Fallback de Territorio desde Municipio falló para '{entrada}'"
 
 
+def test_casilla_34_vida_sexual():
+    col_vida_sexual = "¿Has iniciado tu vida sexual?"
+
+    # 1. Variaciones de clave generadas por OCR
+    claves_variantes = [
+        "¿Has iniciado tu vida sexual?",
+        "¿Has iniciado tus relaciones sexuales?",
+        "¿Has iniciado tu relacion sexual?",
+        "Has empezado tu relacion sexual",
+        "empezado tu relacion sexual",
+        "iniciaste tu vida sexual",
+        "iniciaste relaciones sexuales",
+        "iniciado tu vida sexual",
+        "vida sexual",
+        "iniciado vida sexual"
+    ]
+    for k in claves_variantes:
+        f = FichaCaracterizacion.model_validate({k: "si"})
+        d = f.to_canonical_dict()
+        assert d[col_vida_sexual] == "SI", f"Fallo al mapear clave '{k}' a SI"
+        # En fila ordenada col 34 (índice 33)
+        row = f.to_ordered_row()
+        assert row[33] == "SI", f"En fila ordenada col 34 (índice 33) falló para clave '{k}'"
+
+    # 2. Regla de coherencia: Si marcó SIEMPRE o CASI SIEMPRE en condón, se infiere SI en vida sexual
+    f_condon = FichaCaracterizacion.model_validate({
+        "¿Has iniciado tu vida sexual?": "no",
+        "Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?": "siempre"
+    })
+    d_condon = f_condon.to_canonical_dict()
+    assert d_condon[col_vida_sexual] == "SI", "Inconsistencia: Si usa condón en relaciones, vida sexual DEBE ser SI"
+    assert f_condon.to_ordered_row()[33] == "SI"
+
+    # 3. Regla de coherencia: Si indicó método anticonceptivo (ej. YADEL), se infiere SI en vida sexual
+    f_metodo = FichaCaracterizacion.model_validate({
+        "¿Has iniciado tu vida sexual?": "no",
+        "¿Cual?_3": "YADEL"
+    })
+    d_metodo = f_metodo.to_canonical_dict()
+    assert d_metodo[col_vida_sexual] == "SI", "Inconsistencia: Si tiene método anticonceptivo activo, vida sexual DEBE ser SI"
+    assert f_metodo.to_ordered_row()[33] == "SI"
+
+    # 4. Caso genuino NO: No ha iniciado vida sexual y sin condón ni anticonceptivo
+    f_no = FichaCaracterizacion.model_validate({
+        "¿Has iniciado tu vida sexual?": "no"
+    })
+    assert f_no.to_canonical_dict()[col_vida_sexual] == "NO"
+    assert f_no.to_ordered_row()[33] == "NO"
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -400,6 +450,7 @@ if __name__ == "__main__":
     test_menor_de_18_es_ti()
     test_fuzzy_matching_vocabulario()
     test_uso_condon_y_dicotomicas()
+    test_casilla_34_vida_sexual()
     test_casilla_39_y_no_alucinacion_fecha()
     test_temas_interes_separador_coma()
-    print("OK: Todas las pruebas de esquema, municipios, fuzzy matching y normalizacion pasaron exitosamente.")
+    print("OK: Todas las pruebas de esquema, municipios, Casilla 34, fuzzy matching y normalizacion pasaron exitosamente.")

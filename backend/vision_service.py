@@ -29,6 +29,10 @@ REGLAS OBLIGATORIAS E INVIOLABLES DE ESTANDARIZACIÓN:
 1. TODO EN MAYÚSCULAS: Convierte absolutamente TODAS las respuestas (texto, nombres, selecciones, números, fechas, descripciones) a MAYÚSCULAS SIN EXCEPCIÓN. NUNCA devuelvas texto en minúsculas.
 2. DETECCIÓN RIGUROSA DE CASILLAS (CHECKBOXES / OPCIONES):
    - Para las casillas de verificación marcadas con una "X", visto bueno ✔, trazo, sombreado o relleno manuscrito, extrae la opción marcada en MAYÚSCULAS ("SI" o "NO").
+   - ATENCIÓN CRÍTICA A LA CASILLA 34: En "¿Has iniciado tu vida sexual?", examina con máxima atención las opciones "SI" y "NO".
+     * Si hay una "X", visto bueno ✔, raya, punto, cruz o cualquier marca visible sobre o dentro de "SI", extrae OBLIGATORIAMENTE "SI". NUNCA asumas "NO" si hay trazo en "SI".
+     * Si el participante respondió a la pregunta siguiente sobre condón marcando "SIEMPRE", "CASI SIEMPRE" o "NUNCA", o si indicó algún método anticonceptivo, esto confirma categóricamente que SÍ ha iniciado su vida sexual, por lo que en "¿Has iniciado tu vida sexual?" DEBES extraer "SI".
+     * Solo extrae "NO" si la marca manuscrita está clara y explícitamente en el recuadro "NO".
    - ATENCIÓN CRÍTICA A LA CASILLA 38: En "¿Has vivido o conoces algún caso cercano de embarazo adolescente?", examina con máxima atención las opciones "SI" y "NO". Si hay cualquier marca sobre o dentro del recuadro "SI", extrae "SI". Si la marca está en "NO", extrae "NO". NUNCA devuelvas cadena vacía si hay una marca visible.
    - ATENCIÓN CRÍTICA A LA CASILLA 39: En "¿Te han entregado preservativos en la EPS o institución de salud?", examina minuciosamente las casillas "SI" y "NO". Si hay una "X", visto bueno ✔, punto, raya, cruz o cualquier marca visible en "SI", extrae OBLIGATORIAMENTE "SI". Si la marca está en "NO", extrae OBLIGATORIAMENTE "NO". NUNCA dejes esta casilla vacía si hay una marca visible en la foto.
    - Aplica esta misma exhaustividad a todas las casillas dicotómicas (médico, odontólogo, cigarrillo, alcohol, sustancias psicoactivas, discriminación, salud sexual, vida sexual, condón, métodos anticonceptivos, preservativos EPS, espacios de diálogo).

@@ -718,8 +718,13 @@ def canonicalizar_clave_columna(k: str) -> str:
     if ("prevencion de its" in k_clean or "salud sexual its" in k_clean or "informacion sobre salud sexual" in k_clean) and "embarazo" not in k_clean:
         return "¿Has recibido información sobre salud sexual, ITS o métodos de prevención?"
 
+    # Casilla 34 (¿Has iniciado tu vida sexual?)
+    if any(t in k_clean for t in ["vida sexual", "iniciado tu vida", "iniciado vida", "iniciaste vida sexual", "inicio vida sexual"]) or \
+       (("iniciado" in k_clean or "empezado" in k_clean or "inicio" in k_clean or "iniciaste" in k_clean or "comenzado" in k_clean) and ("sexual" in k_clean or "relacion" in k_clean)):
+        return "¿Has iniciado tu vida sexual?"
+
     # Casilla 35 (Uso de condón en relaciones)
-    if ("usas condon" in k_clean or "usas preservativo" in k_clean or "relaciones sexuales" in k_clean) and "iniciado" not in k_clean:
+    if ("usas condon" in k_clean or "usas preservativo" in k_clean or "condon o preservativo" in k_clean or "preservativo en tus relaciones" in k_clean or "relaciones sexuales" in k_clean) and not ("iniciado" in k_clean or "empezado" in k_clean or "inicio" in k_clean):
         return "Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?"
 
     # Casilla 36 (Conoce método anticonceptivo)
@@ -826,6 +831,14 @@ class FichaCaracterizacion(BaseModel):
             if asistio_medico == "NO":
                 normalizado["¿Cuándo fue la última vez?"] = ""
 
+            # Regla de coherencia vida sexual: Si respondió sobre uso de condón en relaciones
+            # (SIEMPRE o CASI SIEMPRE) o indicó un método anticonceptivo, es porque SÍ ha iniciado vida sexual.
+            condon_val = normalizado.get("Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?", "")
+            metodo_val = normalizado.get("¿Cual?_3", "")
+            if condon_val in ["SIEMPRE", "CASI SIEMPRE"] or (metodo_val and metodo_val not in ["NO", "NINGUNO"]):
+                normalizado["¿Has iniciado tu vida sexual?"] = "SI"
+                normalizado["iniciado_vida_sexual"] = "SI"
+
             return normalizado
         return data
 
@@ -840,6 +853,12 @@ class FichaCaracterizacion(BaseModel):
         # Regla de fidelidad: Si no asistió al médico, la última vez debe ser vacía
         if dump.get("¿Has asistido al médico en el último año?") == "NO":
             dump["¿Cuándo fue la última vez?"] = ""
+
+        # Regla de coherencia para vida sexual
+        condon_val = dump.get("Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?", "")
+        metodo_val = dump.get("¿Cual?_3", "")
+        if condon_val in ["SIEMPRE", "CASI SIEMPRE"] or (metodo_val and metodo_val not in ["NO", "NINGUNO"]):
+            dump["¿Has iniciado tu vida sexual?"] = "SI"
 
         fila = []
         for col in COLUMNAS_FICHA:
@@ -863,6 +882,12 @@ class FichaCaracterizacion(BaseModel):
         # Regla de fidelidad: Si no asistió al médico, la última vez debe ser vacía
         if dump.get("¿Has asistido al médico en el último año?") == "NO":
             dump["¿Cuándo fue la última vez?"] = ""
+
+        # Regla de coherencia para vida sexual
+        condon_val = dump.get("Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?", "")
+        metodo_val = dump.get("¿Cual?_3", "")
+        if condon_val in ["SIEMPRE", "CASI SIEMPRE"] or (metodo_val and metodo_val not in ["NO", "NINGUNO"]):
+            dump["¿Has iniciado tu vida sexual?"] = "SI"
 
         res = {}
         for col in COLUMNAS_FICHA:
