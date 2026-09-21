@@ -6,11 +6,15 @@ utilizando Google Gemini (Google GenAI) o OpenAI GPT-4o.
 
 from __future__ import annotations
 import os
+import io
 import json
 import re
 import base64
+import logging
 from typing import Tuple, Dict, Any, Optional
 from dotenv import load_dotenv
+
+logger = logging.getLogger("vision_service")
 
 try:
     from .schema import FichaCaracterizacion, COLUMNAS_FICHA
@@ -184,6 +188,32 @@ def _limpiar_bloque_json(texto: str) -> str:
     return texto
 
 
+def _optimizar_imagen(img_bytes: bytes, mime_type: str = "image/jpeg", max_dim: int = 1800) -> Tuple[bytes, str]:
+    """
+    Optimiza imágenes de alta resolución capturadas en teléfonos móviles para acelerar el OCR
+    y evitar errores 503 por payload excesivo en la API de Google Gemini.
+    """
+    if not img_bytes:
+        return img_bytes, mime_type
+    try:
+        from PIL import Image
+        img = Image.open(io.BytesIO(img_bytes))
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+        w, h = img.size
+        if max(w, h) > max_dim:
+            ratio = max_dim / float(max(w, h))
+            new_size = (int(w * ratio), int(h * ratio))
+            img = img.resize(new_size, Image.Resampling.LANCZOS)
+            logger.info(f"Imagen redimensionada de {w}x{h} a {new_size[0]}x{new_size[1]} para optimización de OCR.")
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=85, optimize=True)
+        return buf.getvalue(), "image/jpeg"
+    except Exception as e:
+        logger.warning(f"No se pudo optimizar la imagen con PIL ({e}), utilizando bytes originales.")
+        return img_bytes, mime_type
+
+
 class VisionService:
     """Controlador de extracción multimodal para fichas físicas."""
 
@@ -214,9 +244,13 @@ class VisionService:
         return ficha.to_canonical_dict()
 
     def _procesar_con_gemini(self, img1: bytes, img2: bytes, mime1: str, mime2: str) -> str:
-        """Invoca Google Gemini 2.0 / 1.5 Flash."""
+        """Invoca Google Gemini con fallback inteligente a modelos estables no saturados."""
         if not self.gemini_api_key:
             raise ValueError("GEMINI_API_KEY no está configurada en las variables de entorno.")
+
+        # Optimizar peso y dimensiones de imágenes antes de enviar a Google
+        img1, mime1 = _optimizar_imagen(img1, mime1)
+        img2, mime2 = _optimizar_imagen(img2, mime2)
 
         # Intentar con el SDK oficial más reciente google-genai
         try:
@@ -227,14 +261,24 @@ class VisionService:
             part_1 = types.Part.from_bytes(data=img1, mime_type=mime1)
             part_2 = types.Part.from_bytes(data=img2, mime_type=mime2)
 
-            primary_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
-            candidate_models = [primary_model, "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.7-flash"]
+            primary_model = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
+            candidate_models = [
+                primary_model,
+                "gemini-flash-latest",
+                "gemini-flash-lite-latest",
+                "gemini-3.6-flash",
+                "gemini-3.5-flash-lite",
+                "gemini-3.5-flash",
+                "gemini-3.8-flash",
+                "gemini-3.7-flash"
+            ]
             models_to_try = list(dict.fromkeys(candidate_models))
             prompt_actual = obtener_user_prompt()
 
             last_err = None
             for m_name in models_to_try:
                 try:
+                    logger.info(f"Enviando solicitud multimodal a Gemini con modelo: {m_name}...")
                     response = client.models.generate_content(
                         model=m_name,
                         contents=[prompt_actual, part_1, part_2],
@@ -243,9 +287,11 @@ class VisionService:
                             response_mime_type="application/json"
                         )
                     )
+                    logger.info(f"Extracción exitosa completada con modelo: {m_name}")
                     return response.text
                 except Exception as e:
                     last_err = e
+                    logger.warning(f"Modelo {m_name} no disponible ({e}). Intentando con modelo alternativo...")
                     continue
 
             if last_err:
