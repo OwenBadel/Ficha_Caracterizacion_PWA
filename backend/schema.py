@@ -695,23 +695,40 @@ def canonicalizar_clave_columna(k: str) -> str:
     for a, b in tildes.items():
         k_clean = k_clean.replace(a, b)
 
-    # 1. Búsqueda directa sin tildes contra COLUMNAS_FICHA
-    for col in COLUMNAS_FICHA:
-        col_clean = re.sub(r"[^\w\s]", "", col.lower())
-        col_clean = re.sub(r"\s+", " ", col_clean).strip()
-        for a, b in tildes.items():
-            col_clean = col_clean.replace(a, b)
-        if k_clean == col_clean:
-            return col
+    # Desambiguación explícita Columna 40 vs 22 (Cuándo fue la última vez) ANTES del matching ciego:
+    # La Columna 22 es "¿Cuándo fue la última vez?" (médico, con tilde)
+    # La Columna 40 es "¿Cuándo fue la ultima vez?" (preservativos EPS, sin tilde)
+    if "cuando fue" in k_clean or "ultima vez" in k_clean:
+        if any(w in k_clean for w in ["preservativo", "condon", "eps", "salud", "metodo"]) or any(w in k_strip for w in ["_1", "40"]):
+            return "¿Cuándo fue la ultima vez?"
+        if any(w in k_clean for w in ["medico", "doctor", "cita", "consulta", "medica"]) or "22" in k_strip:
+            return "¿Cuándo fue la última vez?"
+        if "última" in k_strip:
+            return "¿Cuándo fue la última vez?"
+        if "ultima" in k_strip:
+            return "¿Cuándo fue la ultima vez?"
 
-    # 2. Casos especiales de Casilla 39 (Preservativos EPS)
-    if "entregado" in k_clean and "preservativo" in k_clean:
+    # 1. Búsqueda directa sin tildes contra COLUMNAS_FICHA
+    # (Evitamos "cuando fue la ultima vez" porque colisiona 22 con 40 y ya fue tratada arriba)
+    if k_clean != "cuando fue la ultima vez":
+        for col in COLUMNAS_FICHA:
+            col_clean = re.sub(r"[^\w\s]", "", col.lower())
+            col_clean = re.sub(r"\s+", " ", col_clean).strip()
+            for a, b in tildes.items():
+                col_clean = col_clean.replace(a, b)
+            if k_clean == col_clean:
+                return col
+
+    # 2. Casilla 39 (Preservativos en EPS o institución de salud)
+    if ("entregado" in k_clean or "entrega" in k_clean or "recibido" in k_clean) and \
+       ("preservativo" in k_clean or "condon" in k_clean) and \
+       ("eps" in k_clean or "salud" in k_clean or "institucion" in k_clean):
         return "¿Te han entregado preservativos en la EPS o institución de salud?"
-    if "preservativos en la eps" in k_clean or "preservativo en la eps" in k_clean:
+    if ("preservativos en la eps" in k_clean or "preservativo en la eps" in k_clean or "condon en la eps" in k_clean or "condones en la eps" in k_clean):
         return "¿Te han entregado preservativos en la EPS o institución de salud?"
 
     # Casilla 38 (Embarazo adolescente)
-    if "embarazo adolescente" in k_clean or "caso cercano de embarazo" in k_clean:
+    if "embarazo" in k_clean and ("adolescente" in k_clean or "adolescentes" in k_clean or "cercano" in k_clean or "caso" in k_clean):
         return "¿Has vivido o conoces algún caso cercano de embarazo adolescente?"
 
     # Casilla 33 (Prevención ITS / Salud sexual)
@@ -719,34 +736,131 @@ def canonicalizar_clave_columna(k: str) -> str:
         return "¿Has recibido información sobre salud sexual, ITS o métodos de prevención?"
 
     # Casilla 34 (¿Has iniciado tu vida sexual?)
-    if any(t in k_clean for t in ["vida sexual", "iniciado tu vida", "iniciado vida", "iniciaste vida sexual", "inicio vida sexual"]) or \
+    if any(t in k_clean for t in ["vida sexual", "iniciado tu vida", "iniciado vida", "iniciaste vida sexual", "inicio vida sexual", "iniciaste tu vida sexual"]) or \
        (("iniciado" in k_clean or "empezado" in k_clean or "inicio" in k_clean or "iniciaste" in k_clean or "comenzado" in k_clean) and ("sexual" in k_clean or "relacion" in k_clean)):
         return "¿Has iniciado tu vida sexual?"
 
-    # Casilla 35 (Uso de condón en relaciones)
-    if ("usas condon" in k_clean or "usas preservativo" in k_clean or "condon o preservativo" in k_clean or "preservativo en tus relaciones" in k_clean or "relaciones sexuales" in k_clean) and not ("iniciado" in k_clean or "empezado" in k_clean or "inicio" in k_clean):
+    # Casilla 35 (Uso de condón en relaciones sexuales)
+    if any(t in k_clean for t in ["usas condon", "usas preservativo", "condon o preservativo", "preservativo en tus relaciones", "condon en tus relaciones", "si respondiste si", "uso de condon", "uso de preservativo"]) and not any(t in k_clean for t in ["iniciado", "empezado", "inicio vida"]):
+        return "Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?"
+    if "relaciones sexuales" in k_clean and ("condon" in k_clean or "preservativo" in k_clean):
         return "Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?"
 
-    # Casilla 36 (Conoce método anticonceptivo)
-    if "conoces algun metodo" in k_clean:
-        return "¿Conoces algún método anticonceptico?"
-
-    # Casilla 37 (Cuál método anticonceptivo)
-    if "cual" in k_clean and ("anticonceptivo" in k_clean or "3" in k_strip):
+    # Casilla 37 (Cuál método anticonceptivo - Campo abierto para el nombre del método)
+    if (any(w in k_clean for w in ["cual", "que metodo", "nombre metodo", "especifique metodo", "cual metodo", "tipo de metodo"]) and any(w in k_clean for w in ["anticoncepti", "metodo", "3"])) or \
+       ("3" in k_strip and ("cual" in k_clean or "metodo" in k_clean)):
         return "¿Cual?_3"
 
-    # Columna 40 vs 22 (Cuándo fue la última vez)
-    if "cuando fue" in k_clean:
-        if "preservativo" in k_clean or "_1" in k_strip or "40" in k_strip or "eps" in k_clean:
-            return "¿Cuándo fue la ultima vez?"
-        if "medico" in k_clean or "22" in k_strip:
-            return "¿Cuándo fue la última vez?"
+    # Casilla 36 (Conoce algún método anticonceptivo - Pregunta dicotómica SI/NO)
+    if (any(w in k_clean for w in ["conoce", "conoces", "conozca", "sabe"]) and any(w in k_clean for w in ["metodo", "anticoncepti"])) or \
+       ("metodo anticoncepti" in k_clean and not any(w in k_clean for w in ["cual", "que", "nombre", "tipo", "especifique", "3"])) or \
+       ("conoces algun metodo" in k_clean):
+        return "¿Conoces algún método anticonceptico?"
 
-    # Casilla 41 (Temas de interés)
-    if "tema te gustaria" in k_clean or "aprender o entender" in k_clean or "temas de interes" in k_clean or "tema de interes" in k_clean:
+    # Casilla 41 (Temas de interés / aprender o entender mejor)
+    if any(t in k_clean for t in ["tema te gustaria", "temas te gustaria", "aprender o entender", "temas de interes", "tema de interes", "tema a aprender", "temas interes", "gustaria aprender"]):
         return "¿Qué tema te gustaria aprender o entender mejor?"
 
+    # Casilla 42 (Espacios de diálogo en institución educativa)
+    if any(t in k_clean for t in ["espacios para dialogar", "espacios de dialogo", "dialogar de estos temas", "mas espacios", "institucion educativa se hicieran mas espacios", "espacios en tu institucion", "espacios educativos"]):
+        return "¿Te gustaria que en tu institución educativa se hicieran mas espacios para dialogar de estos temas?"
+
+    # Casilla 43 (¿Por que?)
+    if k_clean in ["por que", "porque", "por que razon", "motivo", "razon", "por que_1", "porque_1"] or \
+       ("por que" in k_clean and not any(t in k_clean for t in ["asistio", "odontologo", "actividad", "fuma", "alcohol", "sustancia"])):
+        return "¿Por que?"
+
     return k_strip
+
+
+def aplicar_reglas_coherencia(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Aplica reglas transversales de fidelidad, coherencia lógica y dependencias entre casillas (cols 1 a 43)."""
+    res = dict(data)
+
+    # 1. Regla de negocio: El municipio es el mismo que el territorio
+    terr = res.get("TERRITORIO") or res.get("territorio") or res.get("Municipio") or res.get("municipio")
+    if terr:
+        terr_norm = normalizar_territorio(terr)
+        res["TERRITORIO"] = terr_norm
+        res["territorio"] = terr_norm
+        res["Municipio"] = terr_norm
+        res["municipio"] = terr_norm
+
+    # 2. Regla de negocio: Si tiene menos de 18 años, el tipo de documento es TI
+    edad_val = res.get("Edad") or res.get("edad")
+    td_val = res.get("Tipo de documento identidad") or res.get("tipo_documento")
+    td_norm = normalizar_tipo_documento_segun_edad(td_val, edad_val)
+    if td_norm:
+        res["Tipo de documento identidad"] = td_norm
+        res["tipo_documento"] = td_norm
+
+    # 3. Fidelidad médico (Cols 21 y 22):
+    # Si no asistió al médico en el último año, ¿Cuándo fue la última vez? debe estar vacío.
+    # Si tiene fecha de última vez del médico, asistió al médico debe ser SI.
+    asistio_medico = res.get("¿Has asistido al médico en el último año?", "")
+    cuando_medico = res.get("¿Cuándo fue la última vez?", "")
+    if asistio_medico == "NO":
+        res["¿Cuándo fue la última vez?"] = ""
+        res["cuando_medico"] = ""
+    elif cuando_medico and cuando_medico not in ["", "NINGUNA", "NO", "N/A", "NINGUNO"]:
+        res["¿Has asistido al médico en el último año?"] = "SI"
+        res["asistio_medico"] = "SI"
+
+    # 4. Coherencia Vida Sexual y Condón (Cols 34 y 35):
+    # En la encuesta física la casilla 35 pregunta: 'Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?'
+    # a) Si respondió condón (SIEMPRE o CASI SIEMPRE) o indicó un método anticonceptivo activo (ej: YADEL, IMPLANTE, PASTILLAS):
+    #    Confirma categóricamente que SÍ ha iniciado vida sexual -> Col 34 = SI.
+    condon_val = res.get("Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?", "")
+    metodo_val = res.get("¿Cual?_3", "")
+    iniciado_sexual = res.get("¿Has iniciado tu vida sexual?", "")
+
+    if condon_val in ["SIEMPRE", "CASI SIEMPRE"] or (metodo_val and metodo_val not in ["", "NO", "NINGUNO", "NINGUNA", "N/A", "NO SE", "NO CONOCE"]):
+        res["¿Has iniciado tu vida sexual?"] = "SI"
+        res["iniciado_vida_sexual"] = "SI"
+        iniciado_sexual = "SI"
+
+    # b) Si la persona explícitamente marcó NO en Col 34 (no ha iniciado vida sexual):
+    #    Por fidelidad a la pregunta ('Si respondiste Si...'), la casilla 35 DEBE SER VACÍA.
+    if iniciado_sexual == "NO":
+        res["Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?"] = ""
+        res["usa_condon"] = ""
+
+    # 5. Coherencia Conocimiento de Métodos Anticonceptivos (Cols 36 y 37):
+    # a) Si el participante escribió un método anticonceptivo real en Col 37 (¿Cual?_3),
+    #    es indiscutible que SÍ conoce un método anticonceptivo -> Col 36 = SI.
+    conoce_metodo = res.get("¿Conoces algún método anticonceptico?", "")
+    if metodo_val and metodo_val not in ["", "NO", "NINGUNO", "NINGUNA", "N/A", "NO CONOCE", "NO SE"]:
+        res["¿Conoces algún método anticonceptico?"] = "SI"
+        res["conoce_anticonceptivo"] = "SI"
+    elif conoce_metodo == "NO":
+        # b) Si marcó NO en conocer algún método, no puede haber método en Col 37.
+        res["¿Cual?_3"] = ""
+        res["cual_anticonceptivo"] = ""
+
+    # 6. Fidelidad y Coherencia Preservativos EPS (Cols 39 y 40):
+    # a) Si en Col 39 respondió NO (no le han entregado preservativos en la EPS):
+    #    La fecha de Col 40 ('¿Cuándo fue la ultima vez?') DEBE SER VACÍA.
+    entregado_pres = res.get("¿Te han entregado preservativos en la EPS o institución de salud?", "")
+    cuando_pres = res.get("¿Cuándo fue la ultima vez?", "")
+    if entregado_pres == "NO":
+        res["¿Cuándo fue la ultima vez?"] = ""
+        res["cuando_preservativos"] = ""
+    elif cuando_pres and cuando_pres not in ["", "NINGUNA", "NO", "N/A", "NINGUNO"]:
+        # b) Si hay una fecha o período de entrega registrado en Col 40, confirma que SÍ le han entregado -> Col 39 = SI.
+        res["¿Te han entregado preservativos en la EPS o institución de salud?"] = "SI"
+        res["entregado_preservativos"] = "SI"
+
+    # 7. Coherencia Espacios de Diálogo en Institución Educativa (Cols 42 y 43):
+    # Si Col 42 no fue extraído o está vacío, pero en Col 43 ('¿Por que?') el estudiante dio una respuesta
+    # sustantiva afirmativa (ej: 'PORQUE ES IMPORTANTE PARA EL FUTURO', 'PARA APRENDER MAS'):
+    # Se infiere inequívocamente que la respuesta en Col 42 es SI.
+    espacios = res.get("¿Te gustaria que en tu institución educativa se hicieran mas espacios para dialogar de estos temas?", "")
+    por_que = res.get("¿Por que?", "")
+    if not espacios and por_que and por_que not in ["", "NO", "NINGUNO", "NINGUNA", "N/A"]:
+        res["¿Te gustaria que en tu institución educativa se hicieran mas espacios para dialogar de estos temas?"] = "SI"
+        res["espacios_dialogo"] = "SI"
+
+    return res
 
 
 class FichaCaracterizacion(BaseModel):
@@ -809,56 +923,20 @@ class FichaCaracterizacion(BaseModel):
                 clave_canonica = canonicalizar_clave_columna(k)
                 normalizado[clave_canonica] = normalizar_campo_por_columna(clave_canonica, v)
 
-            # Regla de negocio: El municipio es el mismo que el territorio
-            terr = normalizado.get("TERRITORIO") or normalizado.get("territorio") or normalizado.get("Municipio") or normalizado.get("municipio")
-            if terr:
-                terr_norm = normalizar_territorio(terr)
-                normalizado["TERRITORIO"] = terr_norm
-                normalizado["territorio"] = terr_norm
-                normalizado["Municipio"] = terr_norm
-                normalizado["municipio"] = terr_norm
-
-            # Regla de negocio: Si tiene menos de 18 años, el tipo de documento es TI
-            edad_val = normalizado.get("Edad") or normalizado.get("edad")
-            td_val = normalizado.get("Tipo de documento identidad") or normalizado.get("tipo_documento")
-            td_norm = normalizar_tipo_documento_segun_edad(td_val, edad_val)
-            if td_norm:
-                normalizado["Tipo de documento identidad"] = td_norm
-                normalizado["tipo_documento"] = td_norm
-
-            # Regla de fidelidad: Si no asistió al médico en el último año, ¿Cuándo fue la última vez? debe estar vacío
-            asistio_medico = normalizado.get("¿Has asistido al médico en el último año?", "")
-            if asistio_medico == "NO":
-                normalizado["¿Cuándo fue la última vez?"] = ""
-
-            # Regla de coherencia vida sexual: Si respondió sobre uso de condón en relaciones
-            # (SIEMPRE o CASI SIEMPRE) o indicó un método anticonceptivo, es porque SÍ ha iniciado vida sexual.
-            condon_val = normalizado.get("Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?", "")
-            metodo_val = normalizado.get("¿Cual?_3", "")
-            if condon_val in ["SIEMPRE", "CASI SIEMPRE"] or (metodo_val and metodo_val not in ["NO", "NINGUNO"]):
-                normalizado["¿Has iniciado tu vida sexual?"] = "SI"
-                normalizado["iniciado_vida_sexual"] = "SI"
-
+            # Aplicar reglas de coherencia lógica y dependencias
+            normalizado = aplicar_reglas_coherencia(normalizado)
             return normalizado
         return data
 
     def to_ordered_row(self) -> List[str]:
         """Convierte los valores a una lista ordenada de strings para Google Sheets asegurando MAYÚSCULAS y estandarización."""
         dump = self.model_dump(by_alias=True)
+        dump = aplicar_reglas_coherencia(dump)
         terr = normalizar_territorio(dump.get("TERRITORIO") or dump.get("Municipio", ""))
         tipo_doc = normalizar_tipo_documento_segun_edad(
             dump.get("Tipo de documento identidad", ""),
             dump.get("Edad", "")
         )
-        # Regla de fidelidad: Si no asistió al médico, la última vez debe ser vacía
-        if dump.get("¿Has asistido al médico en el último año?") == "NO":
-            dump["¿Cuándo fue la última vez?"] = ""
-
-        # Regla de coherencia para vida sexual
-        condon_val = dump.get("Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?", "")
-        metodo_val = dump.get("¿Cual?_3", "")
-        if condon_val in ["SIEMPRE", "CASI SIEMPRE"] or (metodo_val and metodo_val not in ["NO", "NINGUNO"]):
-            dump["¿Has iniciado tu vida sexual?"] = "SI"
 
         fila = []
         for col in COLUMNAS_FICHA:
@@ -874,20 +952,12 @@ class FichaCaracterizacion(BaseModel):
     def to_canonical_dict(self) -> Dict[str, str]:
         """Devuelve un diccionario exacto con las 43 claves en mayúsculas y estandarizadas."""
         dump = self.model_dump(by_alias=True)
+        dump = aplicar_reglas_coherencia(dump)
         terr = normalizar_territorio(dump.get("TERRITORIO") or dump.get("Municipio", ""))
         tipo_doc = normalizar_tipo_documento_segun_edad(
             dump.get("Tipo de documento identidad", ""),
             dump.get("Edad", "")
         )
-        # Regla de fidelidad: Si no asistió al médico, la última vez debe ser vacía
-        if dump.get("¿Has asistido al médico en el último año?") == "NO":
-            dump["¿Cuándo fue la última vez?"] = ""
-
-        # Regla de coherencia para vida sexual
-        condon_val = dump.get("Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?", "")
-        metodo_val = dump.get("¿Cual?_3", "")
-        if condon_val in ["SIEMPRE", "CASI SIEMPRE"] or (metodo_val and metodo_val not in ["NO", "NINGUNO"]):
-            dump["¿Has iniciado tu vida sexual?"] = "SI"
 
         res = {}
         for col in COLUMNAS_FICHA:

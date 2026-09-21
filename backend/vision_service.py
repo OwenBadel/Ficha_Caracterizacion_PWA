@@ -29,13 +29,22 @@ REGLAS OBLIGATORIAS E INVIOLABLES DE ESTANDARIZACIÓN:
 1. TODO EN MAYÚSCULAS: Convierte absolutamente TODAS las respuestas (texto, nombres, selecciones, números, fechas, descripciones) a MAYÚSCULAS SIN EXCEPCIÓN. NUNCA devuelvas texto en minúsculas.
 2. DETECCIÓN RIGUROSA DE CASILLAS (CHECKBOXES / OPCIONES):
    - Para las casillas de verificación marcadas con una "X", visto bueno ✔, trazo, sombreado o relleno manuscrito, extrae la opción marcada en MAYÚSCULAS ("SI" o "NO").
-   - ATENCIÓN CRÍTICA A LA CASILLA 34: En "¿Has iniciado tu vida sexual?", examina con máxima atención las opciones "SI" y "NO".
-     * Si hay una "X", visto bueno ✔, raya, punto, cruz o cualquier marca visible sobre o dentro de "SI", extrae OBLIGATORIAMENTE "SI". NUNCA asumas "NO" si hay trazo en "SI".
-     * Si el participante respondió a la pregunta siguiente sobre condón marcando "SIEMPRE", "CASI SIEMPRE" o "NUNCA", o si indicó algún método anticonceptivo, esto confirma categóricamente que SÍ ha iniciado su vida sexual, por lo que en "¿Has iniciado tu vida sexual?" DEBES extraer "SI".
-     * Solo extrae "NO" si la marca manuscrita está clara y explícitamente en el recuadro "NO".
-   - ATENCIÓN CRÍTICA A LA CASILLA 38: En "¿Has vivido o conoces algún caso cercano de embarazo adolescente?", examina con máxima atención las opciones "SI" y "NO". Si hay cualquier marca sobre o dentro del recuadro "SI", extrae "SI". Si la marca está en "NO", extrae "NO". NUNCA devuelvas cadena vacía si hay una marca visible.
-   - ATENCIÓN CRÍTICA A LA CASILLA 39: En "¿Te han entregado preservativos en la EPS o institución de salud?", examina minuciosamente las casillas "SI" y "NO". Si hay una "X", visto bueno ✔, punto, raya, cruz o cualquier marca visible en "SI", extrae OBLIGATORIAMENTE "SI". Si la marca está en "NO", extrae OBLIGATORIAMENTE "NO". NUNCA dejes esta casilla vacía si hay una marca visible en la foto.
-   - Aplica esta misma exhaustividad a todas las casillas dicotómicas (médico, odontólogo, cigarrillo, alcohol, sustancias psicoactivas, discriminación, salud sexual, vida sexual, condón, métodos anticonceptivos, preservativos EPS, espacios de diálogo).
+   - ATENCIÓN CRÍTICA A LA CASILLA 34 Y 35: En "¿Has iniciado tu vida sexual?", examina con máxima atención las opciones "SI" y "NO".
+      * Si hay una "X", visto bueno, raya, punto, cruz o cualquier marca visible sobre o dentro de "SI", extrae OBLIGATORIAMENTE "SI". NUNCA asumas "NO" si hay trazo en "SI".
+      * Si el participante respondió a la pregunta siguiente sobre condón marcando "SIEMPRE", "CASI SIEMPRE" o "NUNCA", o si indicó algún método anticonceptivo en "¿Cual?_3", esto confirma categóricamente que SÍ ha iniciado su vida sexual, por lo que en "¿Has iniciado tu vida sexual?" DEBES extraer "SI".
+      * Solo extrae "NO" si la marca manuscrita está clara y explícitamente en el recuadro "NO". En tal caso, la casilla 35 ("Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?") DEBE quedar vacía "".
+    - ATENCIÓN CRÍTICA A LAS CASILLAS 36 Y 37: En "¿Conoces algún método anticonceptico?" y "¿Cual?_3":
+      * Si el participante escribió un método anticonceptivo manuscrito en "¿Cual?_3" (ej: "YADEL", "CONDON", "PASTILLAS", "INYECCION", "IMPLANTE"), esto confirma categóricamente que SÍ conoce un método, por lo que en "¿Conoces algún método anticonceptico?" DEBES extraer "SI".
+      * Si la casilla 36 fue marcada en "NO", la casilla 37 "¿Cual?_3" DEBE quedar vacía "".
+    - ATENCIÓN CRÍTICA A LA CASILLA 38: En "¿Has vivido o conoces algún caso cercano de embarazo adolescente?", examina con máxima atención las opciones "SI" y "NO". Si hay cualquier marca sobre o dentro del recuadro "SI", extrae "SI". Si la marca está en "NO", extrae "NO". NUNCA devuelvas cadena vacía si hay una marca visible.
+    - ATENCIÓN CRÍTICA A LAS CASILLAS 39 Y 40: En "¿Te han entregado preservativos en la EPS o institución de salud?" y "¿Cuándo fue la ultima vez?":
+      * Si hay una marca visible en "SI", extrae OBLIGATORIAMENTE "SI". Si la marca está en "NO", extrae OBLIGATORIAMENTE "NO".
+      * Si en la casilla 39 marcaron "NO", la fecha en casilla 40 "¿Cuándo fue la ultima vez?" DEBE quedar vacía "".
+      * Si el participante escribió una fecha o período visible en la casilla 40, extrae "SI" en la casilla 39.
+    - ATENCIÓN CRÍTICA A LAS CASILLAS 42 Y 43: En "¿Te gustaria que en tu institución educativa se hicieran mas espacios para dialogar de estos temas?" y "¿Por que?":
+      * Si el estudiante marcó "SI" o si escribió una razón o motivo afirmativo en "¿Por que?" (ej: "PORQUE ES IMPORTANTE", "PARA APRENDER MAS"), extrae "SI" en la casilla 42.
+      * Si marcó "NO", extrae "NO".
+    - Aplica esta misma exhaustividad a todas las casillas dicotómicas (médico, odontólogo, cigarrillo, alcohol, sustancias psicoactivas, discriminación, salud sexual, vida sexual, condón, métodos anticonceptivos, preservativos EPS, espacios de diálogo).
 3. CATÁLOGO CERRADO - CAMPO 1 (NOMBRE COMPLETO DE QUIEN DILIGENCIA LA FICHA):
    - ÚNICAMENTE pueden existir las siguientes 5 personas autorizadas:
      * PAMELA VERGARA

@@ -437,6 +437,110 @@ def test_casilla_34_vida_sexual():
     assert f_no.to_ordered_row()[33] == "NO"
 
 
+def test_coherencia_casillas_34_a_43():
+    """Valida exhaustivamente consistencia, mapeo difuso y coherencia lógica de columnas 34 a 43."""
+    # 1. Casilla 34 y 35: Si no ha iniciado vida sexual, casilla 35 debe limpiarse (vacía)
+    f_no_sex = FichaCaracterizacion.model_validate({
+        "¿Has iniciado tu vida sexual?": "no",
+        "Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?": "nunca"
+    })
+    d_no_sex = f_no_sex.to_canonical_dict()
+    assert d_no_sex["¿Has iniciado tu vida sexual?"] == "NO"
+    assert d_no_sex["Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?"] == "", \
+        "Inconsistencia: Si vida sexual es NO, la casilla de condón en relaciones debe estar vacía"
+
+    # Si casilla 35 tiene SIEMPRE o CASI SIEMPRE pero no se especificó vida sexual, se infiere SI
+    f_siempre = FichaCaracterizacion.model_validate({
+        "Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?": "siempre"
+    })
+    assert f_siempre.to_canonical_dict()["¿Has iniciado tu vida sexual?"] == "SI"
+
+    # 2. Casilla 36 y 37: Métodos anticonceptivos
+    # Variantes de clave
+    for k_var in ["conoce algun metodo anticonceptivo", "conoce metodo anticonceptivo", "metodo anticonceptivo"]:
+        f = FichaCaracterizacion.model_validate({k_var: "si"})
+        assert f.to_canonical_dict()["¿Conoces algún método anticonceptico?"] == "SI"
+
+    for k_var in ["cual metodo", "cual_3", "que metodo anticonceptivo", "nombre metodo anticonceptivo"]:
+        f = FichaCaracterizacion.model_validate({"¿Conoces algún método anticonceptico?": "si", k_var: "pastillas"})
+        assert f.to_canonical_dict()["¿Cual?_3"] == "PASTILLAS"
+
+    # Coherencia: Si tiene método pero casilla 36 venía vacía o NO -> infiere SI
+    f_met = FichaCaracterizacion.model_validate({
+        "¿Conoces algún método anticonceptico?": "no",
+        "¿Cual?_3": "IMPLANTE"
+    })
+    d_met = f_met.to_canonical_dict()
+    assert d_met["¿Conoces algún método anticonceptico?"] == "SI"
+    assert d_met["¿Cual?_3"] == "IMPLANTE"
+
+    # Coherencia: Si casilla 36 es NO genuino -> limpia casilla 37
+    f_no_met = FichaCaracterizacion.model_validate({
+        "¿Conoces algún método anticonceptico?": "no",
+        "¿Cual?_3": ""
+    })
+    assert f_no_met.to_canonical_dict()["¿Conoces algún método anticonceptico?"] == "NO"
+    assert f_no_met.to_canonical_dict()["¿Cual?_3"] == ""
+
+    # 3. Casilla 38: Embarazo adolescente
+    for k_var in ["embarazo en adolescentes", "embarazos adolescentes", "caso cercano de embarazo"]:
+        f = FichaCaracterizacion.model_validate({k_var: "si"})
+        assert f.to_canonical_dict()["¿Has vivido o conoces algún caso cercano de embarazo adolescente?"] == "SI"
+
+    # 4. Casilla 39 y 40: Preservativos EPS y desambiguación vs Col 22
+    f_ambas = FichaCaracterizacion.model_validate({
+        "¿Has asistido al médico en el último año?": "si",
+        "¿Cuándo fue la última vez?": "enero 2026",
+        "¿Te han entregado preservativos en la EPS o institución de salud?": "si",
+        "¿Cuándo fue la ultima vez?": "junio 2026"
+    })
+    d_ambas = f_ambas.to_canonical_dict()
+    row_ambas = f_ambas.to_ordered_row()
+    # Col 22 (médico, índice 21)
+    assert d_ambas["¿Cuándo fue la última vez?"] == "ENERO 2026"
+    assert row_ambas[21] == "ENERO 2026"
+    # Col 40 (preservativos, índice 39)
+    assert d_ambas["¿Cuándo fue la ultima vez?"] == "JUNIO 2026"
+    assert row_ambas[39] == "JUNIO 2026"
+
+    # Si casilla 39 es NO -> casilla 40 debe quedar vacía
+    f_no_pres = FichaCaracterizacion.model_validate({
+        "¿Te han entregado preservativos en la EPS o institución de salud?": "no",
+        "¿Cuándo fue la ultima vez?": "hace un mes"
+    })
+    d_no_pres = f_no_pres.to_canonical_dict()
+    assert d_no_pres["¿Te han entregado preservativos en la EPS o institución de salud?"] == "NO"
+    assert d_no_pres["¿Cuándo fue la ultima vez?"] == "", "Inconsistencia: Si no le han entregado preservativos, la fecha debe ser vacía"
+
+    # Si casilla 40 tiene fecha pero casilla 39 venía vacía -> infiere SI
+    f_fecha_pres = FichaCaracterizacion.model_validate({
+        "¿Cuándo fue la ultima vez?": "febrero 2026"
+    })
+    assert f_fecha_pres.to_canonical_dict()["¿Te han entregado preservativos en la EPS o institución de salud?"] == "SI"
+
+    # 5. Casilla 41: Temas de interés
+    for k_var in ["temas que te gustaria aprender", "temas de interes", "tema a aprender"]:
+        f = FichaCaracterizacion.model_validate({k_var: "vih, sifilis"})
+        assert "VIH" in f.to_canonical_dict()["¿Qué tema te gustaria aprender o entender mejor?"]
+
+    # 6. Casilla 42 y 43: Espacios de diálogo y Por qué
+    for k_var in ["espacios para dialogar", "espacios de dialogo", "mas espacios para dialogar"]:
+        f = FichaCaracterizacion.model_validate({k_var: "si"})
+        assert f.to_canonical_dict()["¿Te gustaria que en tu institución educativa se hicieran mas espacios para dialogar de estos temas?"] == "SI"
+
+    for k_var in ["porque", "motivo", "razon"]:
+        f = FichaCaracterizacion.model_validate({k_var: "para estar mas informados"})
+        assert f.to_canonical_dict()["¿Por que?"] == "PARA ESTAR MAS INFORMADOS"
+
+    # Coherencia: Si casilla 42 viene vacía pero en Por qué hay una justificación -> infiere SI
+    f_esp_inf = FichaCaracterizacion.model_validate({
+        "¿Por que?": "porque nos ayuda a cuidarnos mejor"
+    })
+    d_esp_inf = f_esp_inf.to_canonical_dict()
+    assert d_esp_inf["¿Te gustaria que en tu institución educativa se hicieran mas espacios para dialogar de estos temas?"] == "SI"
+    assert d_esp_inf["¿Por que?"] == "PORQUE NOS AYUDA A CUIDARNOS MEJOR"
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -453,4 +557,5 @@ if __name__ == "__main__":
     test_casilla_34_vida_sexual()
     test_casilla_39_y_no_alucinacion_fecha()
     test_temas_interes_separador_coma()
-    print("OK: Todas las pruebas de esquema, municipios, Casilla 34, fuzzy matching y normalizacion pasaron exitosamente.")
+    test_coherencia_casillas_34_a_43()
+    print("OK: Todas las pruebas de esquema, municipios, Casilla 34, fuzzy matching, coherencia casillas 34-43 y normalizacion pasaron exitosamente.")
