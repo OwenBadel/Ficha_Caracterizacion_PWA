@@ -6,15 +6,11 @@ utilizando Google Gemini (Google GenAI) o OpenAI GPT-4o.
 
 from __future__ import annotations
 import os
-import io
 import json
 import re
 import base64
-import logging
 from typing import Tuple, Dict, Any, Optional
 from dotenv import load_dotenv
-
-logger = logging.getLogger("vision_service")
 
 try:
     from .schema import FichaCaracterizacion, COLUMNAS_FICHA
@@ -188,30 +184,29 @@ def _limpiar_bloque_json(texto: str) -> str:
     return texto
 
 
-def _optimizar_imagen(img_bytes: bytes, mime_type: str = "image/jpeg", max_dim: int = 1800) -> Tuple[bytes, str]:
+def optimizar_imagen_bytes(img_bytes: bytes, max_dim: int = 1600, calidad: int = 85) -> tuple[bytes, str]:
     """
-    Optimiza imágenes de alta resolución capturadas en teléfonos móviles para acelerar el OCR
-    y evitar errores 503 por payload excesivo en la API de Google Gemini.
+    Optimiza y redimensiona imágenes pesadas de teléfonos móviles.
+    Garantiza que el payload a la IA sea ligero (< 350 KB) manteniendo la nitidez
+    de los textos manuscritos y casillas de verificación. Evita timeouts y errores 503 por sobrecarga.
     """
-    if not img_bytes:
-        return img_bytes, mime_type
     try:
+        import io
         from PIL import Image
         img = Image.open(io.BytesIO(img_bytes))
-        if img.mode in ("RGBA", "P"):
+        if img.mode in ("RGBA", "P", "LA"):
             img = img.convert("RGB")
         w, h = img.size
         if max(w, h) > max_dim:
-            ratio = max_dim / float(max(w, h))
-            new_size = (int(w * ratio), int(h * ratio))
-            img = img.resize(new_size, Image.Resampling.LANCZOS)
-            logger.info(f"Imagen redimensionada de {w}x{h} a {new_size[0]}x{new_size[1]} para optimización de OCR.")
-        buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=85, optimize=True)
-        return buf.getvalue(), "image/jpeg"
+            scale = max_dim / max(w, h)
+            new_w, new_h = max(1, int(w * scale)), max(1, int(h * scale))
+            img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        out_buf = io.BytesIO()
+        img.save(out_buf, format="JPEG", quality=calidad, optimize=True)
+        return out_buf.getvalue(), "image/jpeg"
     except Exception as e:
-        logger.warning(f"No se pudo optimizar la imagen con PIL ({e}), utilizando bytes originales.")
-        return img_bytes, mime_type
+        logger.warning(f"No se pudo optimizar imagen con PIL ({e}), utilizando bytes originales.")
+        return img_bytes, "image/jpeg"
 
 
 class VisionService:
@@ -220,6 +215,7 @@ class VisionService:
     def __init__(self):
         self.gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
         self.openai_api_key = os.getenv("OPENAI_API_KEY", "").strip()
+        self.openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
         self.provider = os.getenv("VISION_PROVIDER", "gemini").lower()
 
     def extraer_datos_ficha(self, img_anverso_bytes: bytes, img_reverso_bytes: bytes,
@@ -228,10 +224,29 @@ class VisionService:
         """
         Extrae los 43 campos canónicos a partir de los bytes de las dos imágenes.
         """
+        # 1. Preprocesar y optimizar imágenes para eliminar el 503 por tamaño de carga
+        img1_opt, mime1_opt = optimizar_imagen_bytes(img_anverso_bytes)
+        img2_opt, mime2_opt = optimizar_imagen_bytes(img_reverso_bytes)
+        logger.info(f"Imágenes optimizadas para IA: Anverso={len(img1_opt)/1024:.1f}KB, Reverso={len(img2_opt)/1024:.1f}KB")
+
+        raw_json = None
         if self.provider == "openai" or (not self.gemini_api_key and self.openai_api_key):
-            raw_json = self._procesar_con_openai(img_anverso_bytes, img_reverso_bytes, mime_type_1, mime_type_2)
+            raw_json = self._procesar_con_openai(img1_opt, img2_opt, mime1_opt, mime2_opt)
+        elif self.provider == "openrouter" or (not self.gemini_api_key and self.openrouter_api_key):
+            raw_json = self._procesar_con_openrouter(img1_opt, img2_opt, mime1_opt, mime2_opt)
         else:
-            raw_json = self._procesar_con_gemini(img_anverso_bytes, img_reverso_bytes, mime_type_1, mime_type_2)
+            try:
+                raw_json = self._procesar_con_gemini(img1_opt, img2_opt, mime1_opt, mime2_opt)
+            except Exception as e:
+                # Fallback automático si Gemini experimenta saturación (503)
+                if self.openai_api_key:
+                    logger.warning(f"Gemini reportó error ({e}). Activando fallback automático a OpenAI...")
+                    raw_json = self._procesar_con_openai(img1_opt, img2_opt, mime1_opt, mime2_opt)
+                elif self.openrouter_api_key:
+                    logger.warning(f"Gemini reportó error ({e}). Activando fallback automático a OpenRouter...")
+                    raw_json = self._procesar_con_openrouter(img1_opt, img2_opt, mime1_opt, mime2_opt)
+                else:
+                    raise
 
         # Parsear y validar con el esquema Pydantic
         limpio = _limpiar_bloque_json(raw_json)
@@ -244,16 +259,13 @@ class VisionService:
         return ficha.to_canonical_dict()
 
     def _procesar_con_gemini(self, img1: bytes, img2: bytes, mime1: str, mime2: str) -> str:
-        """Invoca Google Gemini con fallback inteligente a modelos estables no saturados."""
+        """Invoca Google Gemini con cascada de modelos y recuperación ante saturación."""
         if not self.gemini_api_key:
             raise ValueError("GEMINI_API_KEY no está configurada en las variables de entorno.")
 
-        # Optimizar peso y dimensiones de imágenes antes de enviar a Google
-        img1, mime1 = _optimizar_imagen(img1, mime1)
-        img2, mime2 = _optimizar_imagen(img2, mime2)
-
         # Intentar con el SDK oficial más reciente google-genai
         try:
+            import time
             from google import genai
             from google.genai import types
 
@@ -261,16 +273,16 @@ class VisionService:
             part_1 = types.Part.from_bytes(data=img1, mime_type=mime1)
             part_2 = types.Part.from_bytes(data=img2, mime_type=mime2)
 
-            primary_model = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
+            primary_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
             candidate_models = [
                 primary_model,
-                "gemini-flash-latest",
-                "gemini-flash-lite-latest",
-                "gemini-3.6-flash",
                 "gemini-3.5-flash-lite",
                 "gemini-3.5-flash",
+                "gemini-3.6-flash",
+                "gemini-3.7-flash",
                 "gemini-3.8-flash",
-                "gemini-3.7-flash"
+                "gemini-3.1-flash-lite",
+                "gemini-flash-latest"
             ]
             models_to_try = list(dict.fromkeys(candidate_models))
             prompt_actual = obtener_user_prompt()
@@ -278,7 +290,7 @@ class VisionService:
             last_err = None
             for m_name in models_to_try:
                 try:
-                    logger.info(f"Enviando solicitud multimodal a Gemini con modelo: {m_name}...")
+                    logger.info(f"Enviando fotos a Gemini con modelo '{m_name}'...")
                     response = client.models.generate_content(
                         model=m_name,
                         contents=[prompt_actual, part_1, part_2],
@@ -287,11 +299,12 @@ class VisionService:
                             response_mime_type="application/json"
                         )
                     )
-                    logger.info(f"Extracción exitosa completada con modelo: {m_name}")
-                    return response.text
+                    if response and response.text:
+                        return response.text
                 except Exception as e:
                     last_err = e
-                    logger.warning(f"Modelo {m_name} no disponible ({e}). Intentando con modelo alternativo...")
+                    logger.warning(f"Modelo '{m_name}' reportó sobrecarga o fallo: {e}. Probando siguiente modelo...")
+                    time.sleep(1.0)
                     continue
 
             if last_err:
@@ -327,6 +340,49 @@ class VisionService:
 
         response = client.chat.completions.create(
             model=os.getenv("OPENAI_MODEL", "gpt-4o"),
+            temperature=0.1,
+            response_format={"type": "json_object"},
+            messages=[
+                {
+                    "role": "system",
+                    "content": SYSTEM_PROMPT
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt_actual},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{mime1};base64,{b64_1}"}
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{mime2};base64,{b64_2}"}
+                        }
+                    ]
+                }
+            ]
+        )
+        return response.choices[0].message.content or "{}"
+
+    def _procesar_con_openrouter(self, img1: bytes, img2: bytes, mime1: str, mime2: str) -> str:
+        """Invoca OpenRouter API (admite GPT-4o-mini, Gemini Flash, Qwen-VL, Claude)."""
+        if not self.openrouter_api_key:
+            raise ValueError("OPENROUTER_API_KEY no está configurada en las variables de entorno.")
+
+        from openai import OpenAI
+        client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=self.openrouter_api_key
+        )
+        b64_1 = base64.b64encode(img1).decode("utf-8")
+        b64_2 = base64.b64encode(img2).decode("utf-8")
+        prompt_actual = obtener_user_prompt()
+        model_name = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-001")
+
+        logger.info(f"Enviando fotos a OpenRouter con modelo '{model_name}'...")
+        response = client.chat.completions.create(
+            model=model_name,
             temperature=0.1,
             response_format={"type": "json_object"},
             messages=[

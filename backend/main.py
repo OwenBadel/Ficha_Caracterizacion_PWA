@@ -66,6 +66,7 @@ def health_check() -> Dict[str, Any]:
     """Verifica el estado del sistema, proveedores de IA y conexión a Google Sheets."""
     gemini_ok = bool(vision_service.gemini_api_key)
     openai_ok = bool(vision_service.openai_api_key)
+    openrouter_ok = bool(vision_service.openrouter_api_key)
     sheets_ok = bool(sheets_service._gspread_client or sheets_service.webhook_url)
 
     return {
@@ -74,6 +75,7 @@ def health_check() -> Dict[str, Any]:
         "vision_provider": vision_service.provider,
         "gemini_configured": gemini_ok,
         "openai_configured": openai_ok,
+        "openrouter_configured": openrouter_ok,
         "sheets_configured": sheets_ok,
         "sheets_method": "gspread_api" if sheets_service._gspread_client else ("webhook" if sheets_service.webhook_url else "none"),
         "columnas_count": len(COLUMNAS_FICHA)
