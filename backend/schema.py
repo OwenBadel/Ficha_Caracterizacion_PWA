@@ -794,9 +794,30 @@ def aplicar_reglas_coherencia(data: Dict[str, Any]) -> Dict[str, Any]:
         res["Tipo de documento identidad"] = td_norm
         res["tipo_documento"] = td_norm
 
-    # 3. Fidelidad médico (Cols 21 y 22):
+    # 3. Fidelidad Discapacidad (Cols 17 y 18):
+    # Si no tiene condición de discapacidad, la casilla ¿Cual? debe estar vacía.
+    discapacidad = res.get("¿Tienes alguna condición de discapacidad?", "")
+    cual_discapacidad = res.get("¿Cual?", "")
+    if discapacidad == "NO":
+        res["¿Cual?"] = ""
+        res["cual_discapacidad"] = ""
+    elif cual_discapacidad and cual_discapacidad not in ["", "NO", "NINGUNA", "NINGUNO", "N/A"]:
+        res["¿Tienes alguna condición de discapacidad?"] = "SI"
+        res["discapacidad"] = "SI"
+
+    # 4. Fidelidad Enfermedades importantes (Cols 19 y 20):
+    # Si no tiene antecedentes de enfermedad, la casilla ¿Cual?_1 debe estar vacía.
+    enfermedad = res.get("¿Tienes antecedentes de alguna enfermedad personal o familiar importante?", "")
+    cual_enfermedad = res.get("¿Cual?_1", "")
+    if enfermedad == "NO":
+        res["¿Cual?_1"] = ""
+        res["cual_enfermedad"] = ""
+    elif cual_enfermedad and cual_enfermedad not in ["", "NO", "NINGUNA", "NINGUNO", "N/A"]:
+        res["¿Tienes antecedentes de alguna enfermedad personal o familiar importante?"] = "SI"
+        res["antecedentes_enfermedad"] = "SI"
+
+    # 5. Fidelidad Médico (Cols 21 y 22):
     # Si no asistió al médico en el último año, ¿Cuándo fue la última vez? debe estar vacío.
-    # Si tiene fecha de última vez del médico, asistió al médico debe ser SI.
     asistio_medico = res.get("¿Has asistido al médico en el último año?", "")
     cuando_medico = res.get("¿Cuándo fue la última vez?", "")
     if asistio_medico == "NO":
@@ -806,9 +827,41 @@ def aplicar_reglas_coherencia(data: Dict[str, Any]) -> Dict[str, Any]:
         res["¿Has asistido al médico en el último año?"] = "SI"
         res["asistio_medico"] = "SI"
 
-    # 4. Coherencia Vida Sexual y Condón (Cols 34 y 35):
-    # En la encuesta física la casilla 35 pregunta: 'Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?'
-    # a) Si respondió condón (SIEMPRE o CASI SIEMPRE) o indicó un método anticonceptivo activo (ej: YADEL, IMPLANTE, PASTILLAS):
+    # 6. Fidelidad Cigarrillo o Vapeador (Cols 26 y 27):
+    # Si no consume cigarrillo, la frecuencia Cada cuánto? debe estar vacía.
+    cigarrillo = res.get("¿Consumes o has consumido cigarrillo o vapeador?", "")
+    cada_cuanto_fuma = res.get("Cada cuánto?", "")
+    if cigarrillo == "NO":
+        res["Cada cuánto?"] = ""
+        res["cada_cuanto_fuma"] = ""
+    elif cada_cuanto_fuma and cada_cuanto_fuma not in ["", "NO", "NUNCA", "NINGUNO", "N/A"]:
+        res["¿Consumes o has consumido cigarrillo o vapeador?"] = "SI"
+        res["cigarrillo_vapeador"] = "SI"
+
+    # 7. Fidelidad Consumo de Alcohol (Cols 28 y 29):
+    # Si no consume alcohol, la frecuencia Cada cuánto?_1 debe estar vacía.
+    alcohol = res.get("¿Consumes o has consumido alcohol?", "")
+    cada_cuanto_alcohol = res.get("Cada cuánto?_1", "")
+    if alcohol == "NO":
+        res["Cada cuánto?_1"] = ""
+        res["cada_cuanto_alcohol"] = ""
+    elif cada_cuanto_alcohol and cada_cuanto_alcohol not in ["", "NO", "NUNCA", "NINGUNO", "N/A"]:
+        res["¿Consumes o has consumido alcohol?"] = "SI"
+        res["consume_alcohol"] = "SI"
+
+    # 8. Fidelidad Sustancias Psicoactivas (Cols 30 y 31):
+    # Si no ha consumido sustancias, la casilla ¿Cual?_2 debe estar vacía.
+    sustancia = res.get("¿Has consumido alguna sustancia psicoactiva?", "")
+    cual_sustancia = res.get("¿Cual?_2", "")
+    if sustancia == "NO":
+        res["¿Cual?_2"] = ""
+        res["cual_sustancia"] = ""
+    elif cual_sustancia and cual_sustancia not in ["", "NO", "NINGUNA", "NINGUNO", "N/A"]:
+        res["¿Has consumido alguna sustancia psicoactiva?"] = "SI"
+        res["sustancia_psicoactiva"] = "SI"
+
+    # 9. Coherencia Vida Sexual y Condón (Cols 34 y 35):
+    # a) Si respondió condón (SIEMPRE o CASI SIEMPRE) o indicó un método anticonceptivo activo:
     #    Confirma categóricamente que SÍ ha iniciado vida sexual -> Col 34 = SI.
     condon_val = res.get("Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?", "")
     metodo_val = res.get("¿Cual?_3", "")
@@ -825,9 +878,8 @@ def aplicar_reglas_coherencia(data: Dict[str, Any]) -> Dict[str, Any]:
         res["Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?"] = ""
         res["usa_condon"] = ""
 
-    # 5. Coherencia Conocimiento de Métodos Anticonceptivos (Cols 36 y 37):
-    # a) Si el participante escribió un método anticonceptivo real en Col 37 (¿Cual?_3),
-    #    es indiscutible que SÍ conoce un método anticonceptivo -> Col 36 = SI.
+    # 10. Coherencia Conocimiento de Métodos Anticonceptivos (Cols 36 y 37):
+    # a) Si el participante escribió un método anticonceptivo real en Col 37 (¿Cual?_3) -> Col 36 = SI.
     conoce_metodo = res.get("¿Conoces algún método anticonceptico?", "")
     if metodo_val and metodo_val not in ["", "NO", "NINGUNO", "NINGUNA", "N/A", "NO CONOCE", "NO SE"]:
         res["¿Conoces algún método anticonceptico?"] = "SI"
@@ -837,23 +889,20 @@ def aplicar_reglas_coherencia(data: Dict[str, Any]) -> Dict[str, Any]:
         res["¿Cual?_3"] = ""
         res["cual_anticonceptivo"] = ""
 
-    # 6. Fidelidad y Coherencia Preservativos EPS (Cols 39 y 40):
-    # a) Si en Col 39 respondió NO (no le han entregado preservativos en la EPS):
-    #    La fecha de Col 40 ('¿Cuándo fue la ultima vez?') DEBE SER VACÍA.
+    # 11. Fidelidad y Coherencia Preservativos EPS (Cols 39 y 40):
+    # a) Si en Col 39 respondió NO -> la fecha de Col 40 DEBE SER VACÍA.
     entregado_pres = res.get("¿Te han entregado preservativos en la EPS o institución de salud?", "")
     cuando_pres = res.get("¿Cuándo fue la ultima vez?", "")
     if entregado_pres == "NO":
         res["¿Cuándo fue la ultima vez?"] = ""
         res["cuando_preservativos"] = ""
     elif cuando_pres and cuando_pres not in ["", "NINGUNA", "NO", "N/A", "NINGUNO"]:
-        # b) Si hay una fecha o período de entrega registrado en Col 40, confirma que SÍ le han entregado -> Col 39 = SI.
+        # b) Si hay una fecha o período de entrega en Col 40 -> Col 39 = SI.
         res["¿Te han entregado preservativos en la EPS o institución de salud?"] = "SI"
         res["entregado_preservativos"] = "SI"
 
-    # 7. Coherencia Espacios de Diálogo en Institución Educativa (Cols 42 y 43):
-    # Si Col 42 no fue extraído o está vacío, pero en Col 43 ('¿Por que?') el estudiante dio una respuesta
-    # sustantiva afirmativa (ej: 'PORQUE ES IMPORTANTE PARA EL FUTURO', 'PARA APRENDER MAS'):
-    # Se infiere inequívocamente que la respuesta en Col 42 es SI.
+    # 12. Coherencia Espacios de Diálogo en Institución Educativa (Cols 42 y 43):
+    # Si Col 42 está vacío pero en Col 43 ('¿Por que?') hay justificación afirmativa -> Col 42 = SI.
     espacios = res.get("¿Te gustaria que en tu institución educativa se hicieran mas espacios para dialogar de estos temas?", "")
     por_que = res.get("¿Por que?", "")
     if not espacios and por_que and por_que not in ["", "NO", "NINGUNO", "NINGUNA", "N/A"]:

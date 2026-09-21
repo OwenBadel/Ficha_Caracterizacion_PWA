@@ -1,7 +1,7 @@
 """
 Servicio de Visión Artificial Multimodal (OCR Especializado).
 Procesa las dos fotografías (Anverso y Reverso) de la Ficha de Caracterización
-utilizando Google Gemini (Google GenAI) o OpenAI GPT-4o.
+utilizando Google Gemini (Google GenAI), OpenAI GPT-4o o OpenRouter.
 """
 
 from __future__ import annotations
@@ -22,167 +22,97 @@ except (ImportError, ValueError):
 
 load_dotenv()
 
-SYSTEM_PROMPT = """Eres un sistema experto en OCR y digitalización de documentos físicos oficiales de salud y caracterización ciudadana.
-Tu misión es extraer la información de las 2 imágenes proporcionadas (Página 1: Anverso y Página 2: Reverso).
+SYSTEM_PROMPT = """Eres un sistema experto en transcripción OCR y digitalización forense de fichas físicas oficiales de caracterización ciudadana y juvenil.
+Tu única misión es transcribir con EXACTITUD Y FIDELIDAD VISUAL ABSOLUTA la información de las 2 imágenes adjuntas (Página 1: Anverso y Página 2: Reverso).
 
-REGLAS OBLIGATORIAS E INVIOLABLES DE ESTANDARIZACIÓN:
-1. TODO EN MAYÚSCULAS: Convierte absolutamente TODAS las respuestas (texto, nombres, selecciones, números, fechas, descripciones) a MAYÚSCULAS SIN EXCEPCIÓN. NUNCA devuelvas texto en minúsculas.
-2. DETECCIÓN RIGUROSA DE CASILLAS (CHECKBOXES / OPCIONES):
-   - Para las casillas de verificación marcadas con una "X", visto bueno ✔, trazo, sombreado o relleno manuscrito, extrae la opción marcada en MAYÚSCULAS ("SI" o "NO").
-   - ATENCIÓN CRÍTICA A LA CASILLA 34 Y 35: En "¿Has iniciado tu vida sexual?", examina con máxima atención las opciones "SI" y "NO".
-      * Si hay una "X", visto bueno, raya, punto, cruz o cualquier marca visible sobre o dentro de "SI", extrae OBLIGATORIAMENTE "SI". NUNCA asumas "NO" si hay trazo en "SI".
-      * Si el participante respondió a la pregunta siguiente sobre condón marcando "SIEMPRE", "CASI SIEMPRE" o "NUNCA", o si indicó algún método anticonceptivo en "¿Cual?_3", esto confirma categóricamente que SÍ ha iniciado su vida sexual, por lo que en "¿Has iniciado tu vida sexual?" DEBES extraer "SI".
-      * Solo extrae "NO" si la marca manuscrita está clara y explícitamente en el recuadro "NO". En tal caso, la casilla 35 ("Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?") DEBE quedar vacía "".
-    - ATENCIÓN CRÍTICA A LAS CASILLAS 36 Y 37: En "¿Conoces algún método anticonceptico?" y "¿Cual?_3":
-      * Si el participante escribió un método anticonceptivo manuscrito en "¿Cual?_3" (ej: "YADEL", "CONDON", "PASTILLAS", "INYECCION", "IMPLANTE"), esto confirma categóricamente que SÍ conoce un método, por lo que en "¿Conoces algún método anticonceptico?" DEBES extraer "SI".
-      * Si la casilla 36 fue marcada en "NO", la casilla 37 "¿Cual?_3" DEBE quedar vacía "".
-    - ATENCIÓN CRÍTICA A LA CASILLA 38: En "¿Has vivido o conoces algún caso cercano de embarazo adolescente?", examina con máxima atención las opciones "SI" y "NO". Si hay cualquier marca sobre o dentro del recuadro "SI", extrae "SI". Si la marca está en "NO", extrae "NO". NUNCA devuelvas cadena vacía si hay una marca visible.
-    - ATENCIÓN CRÍTICA A LAS CASILLAS 39 Y 40: En "¿Te han entregado preservativos en la EPS o institución de salud?" y "¿Cuándo fue la ultima vez?":
-      * Si hay una marca visible en "SI", extrae OBLIGATORIAMENTE "SI". Si la marca está en "NO", extrae OBLIGATORIAMENTE "NO".
-      * Si en la casilla 39 marcaron "NO", la fecha en casilla 40 "¿Cuándo fue la ultima vez?" DEBE quedar vacía "".
-      * Si el participante escribió una fecha o período visible en la casilla 40, extrae "SI" en la casilla 39.
-    - ATENCIÓN CRÍTICA A LAS CASILLAS 42 Y 43: En "¿Te gustaria que en tu institución educativa se hicieran mas espacios para dialogar de estos temas?" y "¿Por que?":
-      * Si el estudiante marcó "SI" o si escribió una razón o motivo afirmativo en "¿Por que?" (ej: "PORQUE ES IMPORTANTE", "PARA APRENDER MAS"), extrae "SI" en la casilla 42.
-      * Si marcó "NO", extrae "NO".
-    - Aplica esta misma exhaustividad a todas las casillas dicotómicas (médico, odontólogo, cigarrillo, alcohol, sustancias psicoactivas, discriminación, salud sexual, vida sexual, condón, métodos anticonceptivos, preservativos EPS, espacios de diálogo).
-3. CATÁLOGO CERRADO - CAMPO 1 (NOMBRE COMPLETO DE QUIEN DILIGENCIA LA FICHA):
-   - ÚNICAMENTE pueden existir las siguientes 5 personas autorizadas:
-     * PAMELA VERGARA
-     * KAREN TORRES
-     * MAURICIO FORTICH
-     * WENDY TAPIAS
-     * GISEL MORENO
-   Identifica la caligrafía o abreviatura y escribe EXACTAMENTE una de estas cinco opciones.
-4. CATÁLOGO CERRADO - TERRITORIO Y MUNICIPIO:
-   - "TERRITORIO" solo puede ser uno de estos 10 municipios autorizados:
-     * MAHATES
-     * TURBANA
-     * TURBACO
-     * BARRANCO DE LOBA
-     * SAN JACINTO DEL CAUCA
-     * CALAMAR
-     * MORALES
-     * SANTA ROSA DEL SUR
-     * ARENAL
-     * SOPLAVIENTO
-   - REGLA: "Municipio" es exactamente el mismo valor que "TERRITORIO".
-5. CATÁLOGO CERRADO - TIPO DE DOCUMENTO IDENTIDAD:
-   - Solo puede ser uno de los siguientes:
-     * RC
-     * TI
-     * CC
-     * PASAPORTE
-     * PERMISO
-   - REGLA ESTRICTA DE EDAD: Si la persona tiene menos de 18 años (Edad < 18), su tipo de documento es SIEMPRE "TI" (Tarjeta de Identidad). NUNCA coloques "CC" para menores de 18 años.
-6. FORMATO ESTRICTO - GRADO ESCOLAR:
-   - Debe ser el número seguido del símbolo de grado ° (ejemplos: 8°, 9°, 10°, 11°).
-7. CATÁLOGO CERRADO - ZONA:
-   - Solo puede ser: RURAL o URBANA.
-8. CATÁLOGO CERRADO - EPS (SI TIENES):
-   - Solo puede ser una de las siguientes opciones (o dejar vacío si no tiene):
-     * NUEVA EPS
-     * COOSALUD
-     * MUTUAL SER
-     * SALUD TOTAL
-     * SURA
-     * SANITAS
-     * O el nombre de otra EPS escrita a mano en "Otros".
-9. CATÁLOGO CERRADO - RÉGIMEN:
-   - Solo puede ser: CONTRIBUTIVO, SUBSIDIADO o NINGUNO.
-10. CATÁLOGO CERRADO - SEXO CON EL QUE TE IDENTIFICAS:
-   - Solo puede ser: FEMENINO o MASCULINO.
-11. CATÁLOGO CERRADO - IDENTIDAD DE GÉNERO:
-   - Solo puede ser una de las siguientes:
-     * HETEROSEXUAL
-     * HOMOSEXUAL
-     * BISEXUAL
-     * TRANSGENERO
-     * LESBIANA
-12. CATÁLOGO CERRADO - POBLACIÓN O GRUPO ÉTNICO:
-   - Solo puede ser una de las siguientes:
-     * AFROCOLOMBIANO
-     * INDÍGENA
-     * PALENQUERO
-     * VÍCTIMA DEL CONFLICTO
-     * NO
-13. CATÁLOGO CERRADO - CONDICIÓN DE DISCAPACIDAD:
-   - Solo puede ser: SI o NO.
-14. CATÁLOGO CERRADO - USO DE CONDÓN O PRESERVATIVO ("Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?"):
-   - Solo puede ser una de las 3 opciones impresas en la ficha física:
-     * SIEMPRE
-     * CASI SIEMPRE
-     * NUNCA
-     (Si no respondió o no ha iniciado vida sexual, devuelve string vacío "").
-15. TEMAS DE INTERÉS ("¿Qué tema te gustaria aprender o entender mejor?"):
-   - En esta pregunta el participante puede marcar una o varias opciones (con "X", visto o círculo).
-   - REGLA ESTRICTA DE SEPARADOR POR COMA: Por cada opción que el participante elija, DEBES separarla OBLIGATORIAMENTE con una coma y un espacio (", ").
-     * Ejemplo correcto: "VIH, SIFILIS, METODOS ANTICONCEPTIVOS"
-     * Ejemplo correcto: "VIH, PROYECTO DE VIDA, USO CORRECTO DEL PRESERVATIVO"
-     * Ejemplo con Otros: "VIH, SIFILIS, AUTOESTIMA"
-   - Las opciones impresas en el formulario son:
-     * VIH
-     * SIFILIS
-     * HEPATITIS B Y C
-     * METODOS ANTICONCEPTIVOS
-     * USO CORRECTO DEL PRESERVATIVO
-     * PROYECTO DE VIDA
-     * RESPETO POR LAS DIFERENCIAS
-     * PREVENCION DEL EMBARAZO ADOLESCENTE
-     * SALUD MENTAL Y RELACIONES
-     * O el texto que hayan escrito a mano en "Otros" (agrégalo al final también separado por coma).
-   - Si no marcó ninguna opción, devuelve string vacío "".
-16. FIDELIDAD ESTRICTA EN FECHAS Y PERÍODOS (PROHIBIDO ALUCINAR O ASUMIR FECHAS):
-   - En preguntas de fecha o período como "¿Cuándo fue la última vez?" (tanto para médico Columna 22 como para preservativos Columna 40):
-     * Si la casilla, línea o renglón está vacío, en blanco o sin texto manuscrito visible, devuelve OBLIGATORIAMENTE cadena vacía "".
-     * ESTÁ TERMINANTEMENTE PROHIBIDO inventar, suponer o colocar meses o años (como "MAYO 2026", "JUNIO 2026", "2026" o "HACE UN MES") si el participante dejó el espacio en blanco.
-     * Si en la pregunta anterior "¿Has asistido al médico en el último año?" respondieron "NO", la fecha en "¿Cuándo fue la última vez?" DEBE ser "".
-     * ÚNICAMENTE extrae una fecha o período cuando veas trazos manuscritos reales escritos a mano por el participante.
-     * Si el participante sí escribió una fecha y el año es 2026, nunca confundas el trazo del 6 manuscrito con un 0 (no cambiar 2026 por 2020).
-17. CAMPO 25 (TIEMPO EMPLEADO):
-   - En la pregunta "¿Qué tiempo empleas en esta actividad?", extrae el número e incluye siempre la palabra HORAS en mayúsculas (ejemplo: si escribió "2" o "2h", devuelve "2 HORAS"; si escribió "4", devuelve "4 HORAS").
-18. CAMPOS DE TELÉFONO Y NÚMERO DE DOCUMENTO (PEGADOS SIN ESPACIOS):
-   - En "Numero de documento identidad" y "Teléfono de contacto", escribe los números completamente unidos, continuos y sin espacios, sin puntos, sin guiones ni paréntesis (ejemplos: si en la imagen se lee "1 045 678 901" o "1.045.678.901", escribe "1045678901"; si se lee "300 123 4567" o "300-123-4567", escribe "3001234567"). Aunque en la imagen física se vean separados o en casillas individuales, van pegados sin espacios.
-19. CAMPOS NO RESPONDIDOS:
-   - Si una casilla o pregunta no fue respondida o está en blanco, devuelve un string vacío "". NUNCA pongas null, None, o "N/A".
-20. Devuelve ÚNICAMENTE un objeto JSON válido, sin bloques de texto explicativo, sin introducciones ni saludos.
-21. Usa EXACTAMENTE las siguientes 43 claves JSON:
+======================================================================
+🚨 REGLA DE ORO DE FIDELIDAD VISUAL (ESTRICTAMENTE PROHIBIDO ALUCINAR) 🚨
+======================================================================
+1. CERO ALUCINACIONES: Extrae EXCLUSIVAMENTE lo que esté físicamente marcado con una marca manuscrita (X, visto bueno, sombreado, cruz) o escrito a mano con tinta en el documento.
+2. CASILLAS VACÍAS: Si una casilla, recuadro, línea o pregunta NO fue marcada o está en blanco, devuelve OBLIGATORIAMENTE un string vacío "". NUNCA supongas, predigas, infieras ni inventes un dato. NUNCA pongas valores predeterminados (como "NINGUNA", "NO", "HACE UN MES", "FUTBOL", "ASMA", "2026") si no hay trazos reales en esa casilla.
+3. TODO EN MAYÚSCULAS: Todo el texto debe devolverse en MAYÚSCULAS sin excepción.
+4. DEPENDENCIAS CONDICIONALES ESTRICTAS (PADRE - HIJO):
+   Si la pregunta principal está en "NO" o vacía, la pregunta secundaria dependiente ("¿Cuál?", "Cada cuánto?", "Cuándo fue la última vez") DEBE SER OBLIGATORIAMENTE string vacío "".
+
+======================================================================
+📋 MAPA ESTRUCTURAL DE LAS 43 PREGUNTAS POR HOJA FÍSICA
+======================================================================
+
+--- PÁGINA 1: ANVERSO (Preguntas 1 a 23) ---
+1. "NOMBRE COMPLETO DE QUIEN DILIGENCIA LA FICHA": Encuestador oficial responsable. Catálogo cerrado (selecciona exactamente uno):
+   * PAMELA VERGARA
+   * KAREN TORRES
+   * MAURICIO FORTICH
+   * WENDY TAPIAS
+   * GISEL MORENO
+2. "TERRITORIO": Municipio oficial cabecera. Catálogo cerrado (selecciona exactamente uno):
+   * MAHATES
+   * TURBANA
+   * TURBACO
+   * BARRANCO DE LOBA
+   * SAN JACINTO DEL CAUCA
+   * CALAMAR
+   * MORALES
+   * SANTA ROSA DEL SUR
+   * ARENAL
+   * SOPLAVIENTO
+3. "Nombre completo del participante": Nombre manuscrito legible en la hoja.
+4. "Tipo de documento identidad": Catálogo cerrado: RC, TI, CC, PASAPORTE, PERMISO. (REGLA INVIOLABLE: Si la Edad es menor a 18 años, es SIEMPRE "TI").
+5. "Numero de documento identidad": Dígitos continuos sin puntos, sin espacios ni guiones.
+6. "Edad": Número entero manuscrito (ej: 14, 15, 16).
+7. "Grado escolar": Número con símbolo de grado (ej: 8°, 9°, 10°, 11°).
+8. "Teléfono de contacto": Dígitos continuos sin espacios ni guiones (ej: 3001234567). Si está en blanco, "".
+9. "Dirección de residencia (barrio o vereda)": Barrio o vereda manuscrito. Si está en blanco, "".
+10. "Municipio": Exactamente el mismo valor que "TERRITORIO".
+11. "Zona": Catálogo cerrado: RURAL o URBANA.
+12. "EPS (si tienes)": Catálogo cerrado: NUEVA EPS, COOSALUD, MUTUAL SER, SALUD TOTAL, SURA, SANITAS, u otra escrita en Otros. Si no tiene o está en blanco, "".
+13. "Régimen": Catálogo cerrado: CONTRIBUTIVO, SUBSIDIADO o NINGUNO.
+14. "Sexo con el que te identificas": Catálogo cerrado: FEMENINO o MASCULINO.
+15. "Identidad de género": Catálogo cerrado: HETEROSEXUAL, HOMOSEXUAL, BISEXUAL, TRANSGENERO, LESBIANA.
+16. "¿Perteneces a alguna población o grupo étnico?": Catálogo cerrado: AFROCOLOMBIANO, INDÍGENA, PALENQUERO, VÍCTIMA DEL CONFLICTO, NO.
+17. "¿Tienes alguna condición de discapacidad?": Marca en SI o NO.
+18. "¿Cual?": Tipo de discapacidad manuscrita. Si en la 17 marcó NO o no hay discapacidad escrita, DEBE ser "".
+19. "¿Tienes antecedentes de alguna enfermedad personal o familiar importante?": Marca en SI o NO.
+20. "¿Cual?_1": Tipo de enfermedad manuscrita. Si en la 19 marcó NO o no hay enfermedad escrita, DEBE ser "".
+21. "¿Has asistido al médico en el último año?": Marca en SI o NO.
+22. "¿Cuándo fue la última vez?": Fecha o período de visita al médico. Si en la 21 marcó NO o no hay fecha escrita, DEBE ser "". NUNCA asumas una fecha si está en blanco.
+23. "¿Fuiste al odontólogo el último año?": Marca en SI o NO.
+
+--- PÁGINA 2: REVERSO (Preguntas 24 a 43) ---
+24. "¿Qué actividades recreativas haces en tu tiempo libre?": Actividades manuscritas descritas por el participante. Si está en blanco, "".
+25. "¿Qué tiempo empleas en esta actividad?": Número seguido de HORAS (ej: "2 HORAS"). Si está en blanco, "".
+26. "¿Consumes o has consumido cigarrillo o vapeador?": Marca en SI o NO.
+27. "Cada cuánto?": Frecuencia de consumo de cigarrillo. Si en la 26 marcó NO o está en blanco, DEBE ser "".
+28. "¿Consumes o has consumido alcohol?": Marca en SI o NO.
+29. "Cada cuánto?_1": Frecuencia de consumo de alcohol. Si en la 28 marcó NO o está en blanco, DEBE ser "".
+30. "¿Has consumido alguna sustancia psicoactiva?": Marca en SI o NO.
+31. "¿Cual?_2": Sustancia manuscrita. Si en la 30 marcó NO o está en blanco, DEBE ser "".
+32. "¿Has vivido situaciones de discriminación, rechazo o violencia?": Marca en SI o NO.
+33. "¿Has recibido información sobre salud sexual, ITS o métodos de prevención?": Marca en SI o NO.
+34. "¿Has iniciado tu vida sexual?": Marca en SI o NO. Si en la pregunta 35 marcó uso de condón o en la 37 indicó método anticonceptivo, extrae "SI".
+35. "Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?": Catálogo cerrado: SIEMPRE, CASI SIEMPRE o NUNCA. SOLO si en la 34 marcó SI. Si en la 34 marcó NO, DEBE ser "".
+36. "¿Conoces algún método anticonceptico?": Marca en SI o NO. Si en la 37 escribió un método anticonceptivo, extrae "SI".
+37. "¿Cual?_3": Método anticonceptivo manuscrito. Si el participante nombró el implante subdérmico Jadelle (o escribió YADEL, JADELLE, YADUL, barritas), extrae "YADEL". Si en la 36 marcó NO y no escribió nada, DEBE ser "".
+38. "¿Has vivido o conoces algún caso cercano de embarazo adolescente?": Marca en SI o NO.
+39. "¿Te han entregado preservativos en la EPS o institución de salud?": Marca en SI o NO.
+40. "¿Cuándo fue la ultima vez?": Fecha o período de entrega de preservativos en EPS. Si en la 39 marcó NO o está en blanco, DEBE ser "". NUNCA inventes fechas si no están escritas.
+41. "¿Qué tema te gustaria aprender o entender mejor?": Extrae todas las opciones marcadas en el formulario, separadas OBLIGATORIAMENTE por coma y espacio (", "). Si no marcó ninguna, "".
+    (Opciones posibles: VIH, SIFILIS, HEPATITIS B Y C, METODOS ANTICONCEPTIVOS, USO CORRECTO DEL PRESERVATIVO, PROYECTO DE VIDA, RESPETO POR LAS DIFERENCIAS, PREVENCION DEL EMBARAZO ADOLESCENTE, SALUD MENTAL Y RELACIONES, u Otros escritos).
+42. "¿Te gustaria que en tu institución educativa se hicieran mas espacios para dialogar de estos temas?": Marca en SI o NO. Si escribió un motivo de interés en la 43, extrae "SI".
+43. "¿Por que?": Motivo manuscrito por el cual le gustaría o no tener espacios de diálogo. Si está en blanco, "".
+
+======================================================================
+FORMATO DE SALIDA:
+Devuelve ÚNICAMENTE un objeto JSON válido con exactamente las 43 claves canónicas sin texto explicativo adicional.
 """
 
 PROMPT_JSON_TEMPLATE = json.dumps({col: "" for col in COLUMNAS_FICHA}, indent=2, ensure_ascii=False)
 
-
-def obtener_user_prompt() -> str:
-    """Construye el prompt agregando dinámicamente la GUÍA DE COINCIDENCIAS por columna aprendida del historial."""
-    try:
-        from .vocabulary_learner import vocabulary_learner
-    except (ImportError, ValueError):
-        try:
-            from vocabulary_learner import vocabulary_learner
-        except ImportError:
-            from backend.vocabulary_learner import vocabulary_learner
-
-    resumen_guia = vocabulary_learner.generar_resumen_guia_todas_columnas(limite_por_columna=6)
-    pistas_vocabulario = ""
-    if resumen_guia:
-        pistas_vocabulario = f"""
-20. GUÍA DE COINCIDENCIAS Y LECTURA DE CALIGRAFÍA DIFÍCIL (APRENDIZAJE DE OTRAS RESPUESTAS):
-    Usa esta guía de términos frecuentes si la caligrafía manuscrita es confusa, borrosa o parece contener faltas ortográficas.
-    Compara lo que ves en la imagen con las respuestas que suelen dar los demás participantes en esa misma columna para descifrar lo que quisieron escribir:
-{resumen_guia}
-    * ATENCIÓN ESPECIAL EN ANTICONCEPTIVOS ("¿Cual?_3"):
-      En Colombia es muy frecuente que las participantes nombren el implante subdérmico Jadelle y lo escriban como "YADEL", "YADUL", "YADOL", "JADEL", "JADELLE" o "YADELL". Si ves trazos similares a esto, extrae SIEMPRE "YADEL".
-"""
-
-    return f"""{SYSTEM_PROMPT}{pistas_vocabulario}
-
-ESTRUCTURA EXACTA REQUERIDA (JSON):
+USER_PROMPT = f"""Analiza minuciosamente el anverso (Página 1) y reverso (Página 2) adjuntos.
+Aplica fidelidad visual estricta y dependencias condicionales (si una casilla está vacía o su pregunta principal es NO, devuelve "").
+Devuelve ÚNICAMENTE el JSON con las siguientes 43 claves canónicas:
 {PROMPT_JSON_TEMPLATE}
-
-Analiza minuciosamente el anverso (Página 1) y reverso (Página 2) adjuntos y genera el JSON estricto.
 """
-
-
-USER_PROMPT = obtener_user_prompt()
 
 
 def _limpiar_bloque_json(texto: str) -> str:
@@ -240,7 +170,6 @@ class VisionService:
         """
         Extrae los 43 campos canónicos a partir de los bytes de las dos imágenes.
         """
-        # 1. Preprocesar y optimizar imágenes para eliminar el 503 por tamaño de carga
         img1_opt, mime1_opt = optimizar_imagen_bytes(img_anverso_bytes)
         img2_opt, mime2_opt = optimizar_imagen_bytes(img_reverso_bytes)
         logger.info(f"Imágenes optimizadas para IA: Anverso={len(img1_opt)/1024:.1f}KB, Reverso={len(img2_opt)/1024:.1f}KB")
@@ -254,17 +183,15 @@ class VisionService:
             try:
                 raw_json = self._procesar_con_gemini(img1_opt, img2_opt, mime1_opt, mime2_opt)
             except Exception as e:
-                # Fallback automático si Gemini experimenta saturación (503)
                 if self.openai_api_key:
-                    logger.warning(f"Gemini reportó error ({e}). Activando fallback automático a OpenAI...")
+                    logger.warning(f"Gemini reportó error ({e}). Activando fallback a OpenAI...")
                     raw_json = self._procesar_con_openai(img1_opt, img2_opt, mime1_opt, mime2_opt)
                 elif self.openrouter_api_key:
-                    logger.warning(f"Gemini reportó error ({e}). Activando fallback automático a OpenRouter...")
+                    logger.warning(f"Gemini reportó error ({e}). Activando fallback a OpenRouter...")
                     raw_json = self._procesar_con_openrouter(img1_opt, img2_opt, mime1_opt, mime2_opt)
                 else:
                     raise
 
-        # Parsear y validar con el esquema Pydantic
         limpio = _limpiar_bloque_json(raw_json)
         try:
             parsed = json.loads(limpio)
@@ -275,11 +202,10 @@ class VisionService:
         return ficha.to_canonical_dict()
 
     def _procesar_con_gemini(self, img1: bytes, img2: bytes, mime1: str, mime2: str) -> str:
-        """Invoca Google Gemini con cascada de modelos y recuperación ante saturación."""
+        """Invoca Google Gemini con temperatura 0.0 determinista para evitar alucinaciones."""
         if not self.gemini_api_key:
             raise ValueError("GEMINI_API_KEY no está configurada en las variables de entorno.")
 
-        # Intentar con el SDK oficial más reciente google-genai
         try:
             import time
             from google import genai
@@ -289,29 +215,26 @@ class VisionService:
             part_1 = types.Part.from_bytes(data=img1, mime_type=mime1)
             part_2 = types.Part.from_bytes(data=img2, mime_type=mime2)
 
-            primary_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
+            primary_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
             candidate_models = [
                 primary_model,
-                "gemini-3.5-flash-lite",
-                "gemini-3.5-flash",
-                "gemini-3.6-flash",
-                "gemini-3.7-flash",
-                "gemini-3.8-flash",
-                "gemini-3.1-flash-lite",
+                "gemini-2.5-flash",
+                "gemini-2.0-flash",
+                "gemini-1.5-flash",
                 "gemini-flash-latest"
             ]
             models_to_try = list(dict.fromkeys(candidate_models))
-            prompt_actual = obtener_user_prompt()
+            prompt_completo = f"{SYSTEM_PROMPT}\n\n{USER_PROMPT}"
 
             last_err = None
             for m_name in models_to_try:
                 try:
-                    logger.info(f"Enviando fotos a Gemini con modelo '{m_name}'...")
+                    logger.info(f"Enviando fotos a Gemini con modelo '{m_name}' (temperature=0.0)...")
                     response = client.models.generate_content(
                         model=m_name,
-                        contents=[prompt_actual, part_1, part_2],
+                        contents=[prompt_completo, part_1, part_2],
                         config=types.GenerateContentConfig(
-                            temperature=0.1,
+                            temperature=0.0,
                             response_mime_type="application/json"
                         )
                     )
@@ -319,24 +242,23 @@ class VisionService:
                         return response.text
                 except Exception as e:
                     last_err = e
-                    logger.warning(f"Modelo '{m_name}' reportó sobrecarga o fallo: {e}. Probando siguiente modelo...")
+                    logger.warning(f"Modelo '{m_name}' reportó fallo: {e}. Probando siguiente modelo...")
                     time.sleep(1.0)
                     continue
 
             if last_err:
                 raise last_err
         except ImportError:
-            # Fallback a google.generativeai legado
             import google.generativeai as legacy_genai
             legacy_genai.configure(api_key=self.gemini_api_key)
             model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
             model = legacy_genai.GenerativeModel(
                 model_name=model_name,
-                generation_config={"temperature": 0.1, "response_mime_type": "application/json"}
+                generation_config={"temperature": 0.0, "response_mime_type": "application/json"}
             )
-            prompt_actual = obtener_user_prompt()
+            prompt_completo = f"{SYSTEM_PROMPT}\n\n{USER_PROMPT}"
             contents = [
-                prompt_actual,
+                prompt_completo,
                 {"mime_type": mime1, "data": img1},
                 {"mime_type": mime2, "data": img2}
             ]
@@ -344,7 +266,7 @@ class VisionService:
             return response.text
 
     def _procesar_con_openai(self, img1: bytes, img2: bytes, mime1: str, mime2: str) -> str:
-        """Invoca OpenAI GPT-4o."""
+        """Invoca OpenAI GPT-4o con temperatura 0.0 determinista."""
         if not self.openai_api_key:
             raise ValueError("OPENAI_API_KEY no está configurada en las variables de entorno.")
 
@@ -352,11 +274,10 @@ class VisionService:
         client = OpenAI(api_key=self.openai_api_key)
         b64_1 = base64.b64encode(img1).decode("utf-8")
         b64_2 = base64.b64encode(img2).decode("utf-8")
-        prompt_actual = obtener_user_prompt()
 
         response = client.chat.completions.create(
             model=os.getenv("OPENAI_MODEL", "gpt-4o"),
-            temperature=0.1,
+            temperature=0.0,
             response_format={"type": "json_object"},
             messages=[
                 {
@@ -366,7 +287,7 @@ class VisionService:
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": prompt_actual},
+                        {"type": "text", "text": USER_PROMPT},
                         {
                             "type": "image_url",
                             "image_url": {"url": f"data:{mime1};base64,{b64_1}"}
@@ -382,7 +303,7 @@ class VisionService:
         return response.choices[0].message.content or "{}"
 
     def _procesar_con_openrouter(self, img1: bytes, img2: bytes, mime1: str, mime2: str) -> str:
-        """Invoca OpenRouter API con cascada de modelos (Gemini 2.5 Flash, GPT-4o-mini, Qwen-VL)."""
+        """Invoca OpenRouter API con temperatura 0.0 determinista y cascada de modelos."""
         if not self.openrouter_api_key:
             raise ValueError("OPENROUTER_API_KEY no está configurada en las variables de entorno.")
 
@@ -396,7 +317,7 @@ class VisionService:
         )
         b64_1 = base64.b64encode(img1).decode("utf-8")
         b64_2 = base64.b64encode(img2).decode("utf-8")
-        prompt_actual = obtener_user_prompt()
+
         primary_model = os.getenv("OPENROUTER_MODEL", "google/gemini-2.5-flash").strip()
         candidate_models = [
             primary_model,
@@ -409,10 +330,10 @@ class VisionService:
         last_err = None
         for model_name in models_to_try:
             try:
-                logger.info(f"Enviando fotos a OpenRouter con modelo '{model_name}'...")
+                logger.info(f"Enviando fotos a OpenRouter con modelo '{model_name}' (temperature=0.0)...")
                 response = client.chat.completions.create(
                     model=model_name,
-                    temperature=0.1,
+                    temperature=0.0,
                     response_format={"type": "json_object"},
                     messages=[
                         {
@@ -422,7 +343,7 @@ class VisionService:
                         {
                             "role": "user",
                             "content": [
-                                {"type": "text", "text": prompt_actual},
+                                {"type": "text", "text": USER_PROMPT},
                                 {
                                     "type": "image_url",
                                     "image_url": {"url": f"data:{mime1};base64,{b64_1}"}

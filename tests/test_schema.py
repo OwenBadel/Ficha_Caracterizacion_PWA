@@ -541,6 +541,71 @@ def test_coherencia_casillas_34_a_43():
     assert d_esp_inf["¿Por que?"] == "PORQUE NOS AYUDA A CUIDARNOS MEJOR"
 
 
+def test_todas_las_dependencias_condicionales_anti_alucinacion():
+    """Valida que si una pregunta principal es NO, sus campos dependientes se limpien a vacío sin alucinación."""
+    # Entrada simulando alucinaciones del OCR donde el usuario marcó NO pero el modelo inventó respuestas
+    raw_alucinado = {
+        # 1. Discapacidad: marcó NO pero la IA inventó VISUAL
+        "¿Tienes alguna condición de discapacidad?": "no",
+        "¿Cual?": "visual",
+        # 2. Enfermedad: marcó NO pero la IA inventó ASMA
+        "¿Tienes antecedentes de alguna enfermedad personal o familiar importante?": "no",
+        "¿Cual?_1": "asma",
+        # 3. Médico: marcó NO pero la IA inventó una fecha
+        "¿Has asistido al médico en el último año?": "no",
+        "¿Cuándo fue la última vez?": "hace un mes",
+        # 4. Cigarrillo: marcó NO pero la IA inventó frecuencia
+        "¿Consumes o has consumido cigarrillo o vapeador?": "no",
+        "Cada cuánto?": "diario",
+        # 5. Alcohol: marcó NO pero la IA inventó fines de semana
+        "¿Consumes o has consumido alcohol?": "no",
+        "Cada cuánto?_1": "fines de semana",
+        # 6. Sustancias: marcó NO pero la IA inventó marihuana
+        "¿Has consumido alguna sustancia psicoactiva?": "no",
+        "¿Cual?_2": "marihuana",
+        # 7. Vida sexual: marcó NO pero la IA inventó condón nunca
+        "¿Has iniciado tu vida sexual?": "no",
+        "Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?": "nunca",
+        # 8. Métodos anticonceptivos: marcó NO pero la IA inventó pastillas
+        "¿Conoces algún método anticonceptico?": "no",
+        "¿Cual?_3": "",
+        # 9. Preservativos EPS: marcó NO pero la IA inventó fecha
+        "¿Te han entregado preservativos en la EPS o institución de salud?": "no",
+        "¿Cuándo fue la ultima vez?": "enero 2026"
+    }
+
+    f = FichaCaracterizacion.model_validate(raw_alucinado)
+    d = f.to_canonical_dict()
+
+    # Verificar que el backend limpió absolutamente todas las respuestas secundarias
+    assert d["¿Tienes alguna condición de discapacidad?"] == "NO"
+    assert d["¿Cual?"] == "", "Alucinación en discapacidad no fue limpiada"
+
+    assert d["¿Tienes antecedentes de alguna enfermedad personal o familiar importante?"] == "NO"
+    assert d["¿Cual?_1"] == "", "Alucinación en enfermedad no fue limpiada"
+
+    assert d["¿Has asistido al médico en el último año?"] == "NO"
+    assert d["¿Cuándo fue la última vez?"] == "", "Alucinación en fecha médico no fue limpiada"
+
+    assert d["¿Consumes o has consumido cigarrillo o vapeador?"] == "NO"
+    assert d["Cada cuánto?"] == "", "Alucinación en frecuencia cigarrillo no fue limpiada"
+
+    assert d["¿Consumes o has consumido alcohol?"] == "NO"
+    assert d["Cada cuánto?_1"] == "", "Alucinación en frecuencia alcohol no fue limpiada"
+
+    assert d["¿Has consumido alguna sustancia psicoactiva?"] == "NO"
+    assert d["¿Cual?_2"] == "", "Alucinación en sustancia psicoactiva no fue limpiada"
+
+    assert d["¿Has iniciado tu vida sexual?"] == "NO"
+    assert d["Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?"] == "", "Alucinación en condón no fue limpiada"
+
+    assert d["¿Conoces algún método anticonceptico?"] == "NO"
+    assert d["¿Cual?_3"] == "", "Alucinación en método anticonceptivo no fue limpiada"
+
+    assert d["¿Te han entregado preservativos en la EPS o institución de salud?"] == "NO"
+    assert d["¿Cuándo fue la ultima vez?"] == "", "Alucinación en fecha preservativos no fue limpiada"
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -558,4 +623,5 @@ if __name__ == "__main__":
     test_casilla_39_y_no_alucinacion_fecha()
     test_temas_interes_separador_coma()
     test_coherencia_casillas_34_a_43()
-    print("OK: Todas las pruebas de esquema, municipios, Casilla 34, fuzzy matching, coherencia casillas 34-43 y normalizacion pasaron exitosamente.")
+    test_todas_las_dependencias_condicionales_anti_alucinacion()
+    print("OK: Todas las pruebas de esquema, municipios, dependencias anti-alucinacion y normalizacion pasaron exitosamente.")

@@ -234,41 +234,16 @@ class VocabularyLearner:
 
     def generar_resumen_guia_todas_columnas(self, limite_por_columna: int = 6) -> str:
         """
-        Construye un resumen estructurado de respuestas frecuentes para todas las columnas de texto.
-        Sirve como guía de contexto en el prompt para que el modelo de IA resuelva dudas de caligrafía.
+        No inyecta listas de respuestas previas para evitar alucinaciones en el modelo de IA.
+        Solo devuelve directivas ortográficas indispensables de farmacología local.
         """
-        lineas = []
-        nombres_amigables = {
-            "¿Cual?_3": "Método anticonceptivo (¿Cual?_3)",
-            "¿Qué actividades recreativas haces en tu tiempo libre?": "Actividades recreativas / ocio",
-            "Dirección de residencia (barrio o vereda)": "Dirección / Barrio / Vereda",
-            "¿Cual?_2": "Sustancias psicoactivas (¿Cual?_2)",
-            "¿Cual?_1": "Enfermedades importantes (¿Cual?_1)",
-            "¿Cual?": "Tipo de discapacidad (¿Cual?)",
-            "Cada cuánto?": "Frecuencia cigarrillo (Cada cuánto?)",
-            "Cada cuánto?_1": "Frecuencia alcohol (Cada cuánto?_1)",
-            "¿Cuándo fue la última vez?": "Última vez médico",
-            "¿Cuándo fue la ultima vez?": "Última vez preservativos",
-            "¿Qué tema te gustaria aprender o entender mejor?": "Temas de interés",
-            "¿Por que?": "Razón de espacios de diálogo (¿Por qué?)"
-        }
+        return ""
 
-        for col in COLUMNAS_APRENDIZAJE:
-            frecuentes = self.obtener_terminos_frecuentes(col, limite=limite_por_columna)
-            if frecuentes:
-                nombre = nombres_amigables.get(col, col)
-                # Destacar YADEL en anticonceptivos
-                if col == "¿Cual?_3":
-                    lineas.append(f"    * {nombre}: YADEL (implante Jadelle / barritas en brazo), {', '.join([f for f in frecuentes if f != 'YADEL'])}")
-                else:
-                    lineas.append(f"    * {nombre}: {', '.join(frecuentes)}")
-
-        return "\n".join(lineas)
-
-    def corregir_valor(self, columna: str, valor: Optional[Any], umbral_similitud: float = 0.74) -> str:
+    def corregir_valor(self, columna: str, valor: Optional[Any], umbral_similitud: float = 0.85) -> str:
         """
-        Aplica corrección difusa (Fuzzy Matching) sobre el valor extraído
+        Aplica corrección difusa (Fuzzy Matching) conservadora sobre el valor extraído
         comparándolo con los términos aprendidos de la columna correspondiente.
+        Nunca altera fechas ni inventa datos.
         """
         if not valor:
             return ""
@@ -276,8 +251,8 @@ class VocabularyLearner:
         if not s or s in ["NONE", "NULL", "N/A", "UNDEFINED"]:
             return ""
 
-        # Si la columna no está habilitada para aprendizaje, devolver sin alteración
-        if columna not in COLUMNAS_APRENDIZAJE:
+        # Si la columna no está habilitada para aprendizaje o es una fecha libre, no alterar
+        if columna not in COLUMNAS_APRENDIZAJE or "cuándo fue" in columna.lower() or "cuando fue" in columna.lower():
             return s
 
         # Regla especial para método anticonceptivo: YADEL / JADELLE
