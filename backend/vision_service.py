@@ -9,8 +9,11 @@ import os
 import json
 import re
 import base64
+import logging
 from typing import Tuple, Dict, Any, Optional
 from dotenv import load_dotenv
+
+logger = logging.getLogger("vision_service")
 
 try:
     from .schema import FichaCaracterizacion, COLUMNAS_FICHA
