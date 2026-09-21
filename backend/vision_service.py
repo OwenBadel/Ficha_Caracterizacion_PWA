@@ -369,44 +369,66 @@ class VisionService:
         return response.choices[0].message.content or "{}"
 
     def _procesar_con_openrouter(self, img1: bytes, img2: bytes, mime1: str, mime2: str) -> str:
-        """Invoca OpenRouter API (admite GPT-4o-mini, Gemini Flash, Qwen-VL, Claude)."""
+        """Invoca OpenRouter API con cascada de modelos (Gemini 2.5 Flash, GPT-4o-mini, Qwen-VL)."""
         if not self.openrouter_api_key:
             raise ValueError("OPENROUTER_API_KEY no está configurada en las variables de entorno.")
 
+        import httpx
         from openai import OpenAI
+        http_client = httpx.Client(verify=False, timeout=60.0)
         client = OpenAI(
             base_url="https://openrouter.ai/api/v1",
-            api_key=self.openrouter_api_key
+            api_key=self.openrouter_api_key,
+            http_client=http_client
         )
         b64_1 = base64.b64encode(img1).decode("utf-8")
         b64_2 = base64.b64encode(img2).decode("utf-8")
         prompt_actual = obtener_user_prompt()
-        model_name = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-001")
+        primary_model = os.getenv("OPENROUTER_MODEL", "google/gemini-2.5-flash").strip()
+        candidate_models = [
+            primary_model,
+            "google/gemini-2.5-flash",
+            "openai/gpt-4o-mini",
+            "qwen/qwen-2.5-vl-72b-instruct"
+        ]
+        models_to_try = list(dict.fromkeys(candidate_models))
 
-        logger.info(f"Enviando fotos a OpenRouter con modelo '{model_name}'...")
-        response = client.chat.completions.create(
-            model=model_name,
-            temperature=0.1,
-            response_format={"type": "json_object"},
-            messages=[
-                {
-                    "role": "system",
-                    "content": SYSTEM_PROMPT
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt_actual},
+        last_err = None
+        for model_name in models_to_try:
+            try:
+                logger.info(f"Enviando fotos a OpenRouter con modelo '{model_name}'...")
+                response = client.chat.completions.create(
+                    model=model_name,
+                    temperature=0.1,
+                    response_format={"type": "json_object"},
+                    messages=[
                         {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:{mime1};base64,{b64_1}"}
+                            "role": "system",
+                            "content": SYSTEM_PROMPT
                         },
                         {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:{mime2};base64,{b64_2}"}
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt_actual},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {"url": f"data:{mime1};base64,{b64_1}"}
+                                },
+                                {
+                                    "type": "image_url",
+                                    "image_url": {"url": f"data:{mime2};base64,{b64_2}"}
+                                }
+                            ]
                         }
                     ]
-                }
-            ]
-        )
-        return response.choices[0].message.content or "{}"
+                )
+                if response and response.choices and response.choices[0].message.content:
+                    return response.choices[0].message.content
+            except Exception as e:
+                last_err = e
+                logger.warning(f"Fallo en OpenRouter con modelo '{model_name}': {e}. Probando siguiente modelo...")
+                continue
+
+        if last_err:
+            raise last_err
+        return "{}"
