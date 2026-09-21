@@ -347,6 +347,46 @@ def test_temas_interes_separador_coma():
         )
 
 
+def test_todos_los_municipios_autorizados():
+    casos = [
+        # (Entrada, Esperado)
+        ("mahates", "MAHATES"),
+        ("mahate", "MAHATES"),
+        ("turbana", "TURBANA"),
+        ("turbaco", "TURBACO"),
+        ("barranco de loba", "BARRANCO DE LOBA"),
+        ("barranco", "BARRANCO DE LOBA"),
+        ("san jacinto del cauca", "SAN JACINTO DEL CAUCA"),
+        ("san jacinto", "SAN JACINTO DEL CAUCA"),
+        ("jacinto del cauca", "SAN JACINTO DEL CAUCA"),
+        ("calamar", "CALAMAR"),
+        ("morales", "MORALES"),
+        ("morale", "MORALES"),
+        ("santa rosa del sur", "SANTA ROSA DEL SUR"),
+        ("santa rosa", "SANTA ROSA DEL SUR"),
+        ("sta rosa del sur", "SANTA ROSA DEL SUR"),
+        ("arenal", "ARENAL"),
+        ("soplaviento", "SOPLAVIENTO"),
+        ("sopla viento", "SOPLAVIENTO")
+    ]
+
+    for entrada, esperado in casos:
+        # Probando vía campo TERRITORIO
+        f1 = FichaCaracterizacion.model_validate({"TERRITORIO": entrada})
+        d1 = f1.to_canonical_dict()
+        assert d1["TERRITORIO"] == esperado, f"Para '{entrada}' en TERRITORIO se esperaba '{esperado}', obtenido '{d1['TERRITORIO']}'"
+        assert d1["Municipio"] == esperado, f"Regla Municipio=Territorio falló para '{entrada}'"
+        row1 = f1.to_ordered_row()
+        assert row1[1] == esperado, f"Fila col 2 (TERRITORIO) falló para '{entrada}'"
+        assert row1[9] == esperado, f"Fila col 10 (Municipio) falló para '{entrada}'"
+
+        # Probando vía campo Municipio (fallback)
+        f2 = FichaCaracterizacion.model_validate({"Municipio": entrada})
+        d2 = f2.to_canonical_dict()
+        assert d2["Municipio"] == esperado, f"Para '{entrada}' en Municipio se esperaba '{esperado}', obtenido '{d2['Municipio']}'"
+        assert d2["TERRITORIO"] == esperado, f"Fallback de Territorio desde Municipio falló para '{entrada}'"
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -355,10 +395,11 @@ if __name__ == "__main__":
     test_mayo_2026_and_date_handling()
     test_encuestadores_autorizados()
     test_estandarizacion_catalogos_completos()
+    test_todos_los_municipios_autorizados()
     test_campos_sin_espacios_telefono_e_id()
     test_menor_de_18_es_ti()
     test_fuzzy_matching_vocabulario()
     test_uso_condon_y_dicotomicas()
     test_casilla_39_y_no_alucinacion_fecha()
     test_temas_interes_separador_coma()
-    print("OK: Todas las pruebas de esquema, fuzzy matching y normalizacion pasaron exitosamente.")
+    print("OK: Todas las pruebas de esquema, municipios, fuzzy matching y normalizacion pasaron exitosamente.")

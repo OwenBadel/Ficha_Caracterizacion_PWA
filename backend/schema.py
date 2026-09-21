@@ -78,7 +78,13 @@ TERRITORIOS_VALIDOS: List[str] = [
     "MAHATES",
     "TURBANA",
     "TURBACO",
-    "BARRANCO DE LOBA"
+    "BARRANCO DE LOBA",
+    "SAN JACINTO DEL CAUCA",
+    "CALAMAR",
+    "MORALES",
+    "SANTA ROSA DEL SUR",
+    "ARENAL",
+    "SOPLAVIENTO"
 ]
 
 TIPOS_DOCUMENTO_VALIDOS: List[str] = [
@@ -186,7 +192,10 @@ def normalizar_quien_diligencia(val: Optional[Any]) -> str:
 
 
 def normalizar_territorio(val: Optional[Any]) -> str:
-    """Normaliza Territorio y Municipio a: MAHATES, TURBANA, TURBACO, BARRANCO DE LOBA."""
+    """Normaliza Territorio y Municipio a los municipios autorizados:
+    MAHATES, TURBANA, TURBACO, BARRANCO DE LOBA, SAN JACINTO DEL CAUCA,
+    CALAMAR, MORALES, SANTA ROSA DEL SUR, ARENAL, SOPLAVIENTO.
+    """
     if not val:
         return ""
     s = str(val).strip().upper()
@@ -203,6 +212,18 @@ def normalizar_territorio(val: Optional[Any]) -> str:
         return "TURBACO"
     if "BARRANCO" in s or "LOBA" in s:
         return "BARRANCO DE LOBA"
+    if "SAN JACINTO" in s or "JACINTO" in s or ("SAN" in s and "CAUCA" in s):
+        return "SAN JACINTO DEL CAUCA"
+    if "CALAMAR" in s:
+        return "CALAMAR"
+    if "MORALE" in s:
+        return "MORALES"
+    if "SANTA ROSA" in s or "ROSA DEL SUR" in s or "STA ROSA" in s or "STA. ROSA" in s:
+        return "SANTA ROSA DEL SUR"
+    if "ARENAL" in s:
+        return "ARENAL"
+    if "SOPLAVIENTO" in s or "SOPLA VIENTO" in s or "SOPLA" in s:
+        return "SOPLAVIENTO"
     return s
 
 
@@ -784,7 +805,7 @@ class FichaCaracterizacion(BaseModel):
                 normalizado[clave_canonica] = normalizar_campo_por_columna(clave_canonica, v)
 
             # Regla de negocio: El municipio es el mismo que el territorio
-            terr = normalizado.get("TERRITORIO") or normalizado.get("territorio")
+            terr = normalizado.get("TERRITORIO") or normalizado.get("territorio") or normalizado.get("Municipio") or normalizado.get("municipio")
             if terr:
                 terr_norm = normalizar_territorio(terr)
                 normalizado["TERRITORIO"] = terr_norm
@@ -811,7 +832,7 @@ class FichaCaracterizacion(BaseModel):
     def to_ordered_row(self) -> List[str]:
         """Convierte los valores a una lista ordenada de strings para Google Sheets asegurando MAYÚSCULAS y estandarización."""
         dump = self.model_dump(by_alias=True)
-        terr = normalizar_territorio(dump.get("TERRITORIO", ""))
+        terr = normalizar_territorio(dump.get("TERRITORIO") or dump.get("Municipio", ""))
         tipo_doc = normalizar_tipo_documento_segun_edad(
             dump.get("Tipo de documento identidad", ""),
             dump.get("Edad", "")
@@ -834,7 +855,7 @@ class FichaCaracterizacion(BaseModel):
     def to_canonical_dict(self) -> Dict[str, str]:
         """Devuelve un diccionario exacto con las 43 claves en mayúsculas y estandarizadas."""
         dump = self.model_dump(by_alias=True)
-        terr = normalizar_territorio(dump.get("TERRITORIO", ""))
+        terr = normalizar_territorio(dump.get("TERRITORIO") or dump.get("Municipio", ""))
         tipo_doc = normalizar_tipo_documento_segun_edad(
             dump.get("Tipo de documento identidad", ""),
             dump.get("Edad", "")

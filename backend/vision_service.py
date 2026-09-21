@@ -38,11 +38,17 @@ REGLAS OBLIGATORIAS E INVIOLABLES DE ESTANDARIZACIÓN:
      * GISEL MORENO
    Identifica la caligrafía o abreviatura y escribe EXACTAMENTE una de estas cinco opciones.
 4. CATÁLOGO CERRADO - TERRITORIO Y MUNICIPIO:
-   - "TERRITORIO" solo puede ser uno de estos 4 valores:
+   - "TERRITORIO" solo puede ser uno de estos 10 municipios autorizados:
      * MAHATES
      * TURBANA
      * TURBACO
      * BARRANCO DE LOBA
+     * SAN JACINTO DEL CAUCA
+     * CALAMAR
+     * MORALES
+     * SANTA ROSA DEL SUR
+     * ARENAL
+     * SOPLAVIENTO
    - REGLA: "Municipio" es exactamente el mismo valor que "TERRITORIO".
 5. CATÁLOGO CERRADO - TIPO DE DOCUMENTO IDENTIDAD:
    - Solo puede ser uno de los siguientes:

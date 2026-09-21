@@ -56,7 +56,7 @@ Este proyecto está federado al Grafo de Conocimiento mediante el Servidor MCP o
 3. **Cero Pérdida de Datos:** Toda encuesta capturada en campo debe persistir primero en `IndexedDB` si no hay conectividad o si el usuario seleccionó "Modo Cola".
 4. **Reglas de Negocio y Estandarización de Fichas:**
    - **Documento vs Edad:** Si la persona tiene menos de 18 años (`Edad < 18`), el tipo de documento es obligatoriamente **`TI`** (salvo extranjería explícita como `PASAPORTE` o `PERMISO`).
-   - **Municipio = Territorio:** Ambos campos se igualan a: `MAHATES`, `TURBANA`, `TURBACO`, `BARRANCO DE LOBA`.
+   - **Municipio = Territorio:** Ambos campos se igualan a: `MAHATES`, `TURBANA`, `TURBACO`, `BARRANCO DE LOBA`, `SAN JACINTO DEL CAUCA`, `CALAMAR`, `MORALES`, `SANTA ROSA DEL SUR`, `ARENAL`, `SOPLAVIENTO`.
    - **Encuestadores autorizados:** `PAMELA VERGARA`, `KAREN TORRES`, `MAURICIO FORTICH`, `WENDY TAPIAS`, `GISEL MORENO`.
    - **Uso de condón (relaciones sexuales):** Catálogo cerrado: `SIEMPRE`, `CASI SIEMPRE`, `NUNCA`.
    - **ID y Teléfono:** Dígitos continuos sin espacios, puntos ni guiones.
