@@ -35,6 +35,47 @@ Tu única misión es transcribir con EXACTITUD Y FIDELIDAD VISUAL ABSOLUTA la in
    Si la pregunta principal está en "NO" o vacía, la pregunta secundaria dependiente ("¿Cuál?", "Cada cuánto?", "Cuándo fue la última vez") DEBE SER OBLIGATORIAMENTE string vacío "".
 
 ======================================================================
+📍 ORIENTACIÓN ESPACIAL CRÍTICA DE LAS CASILLAS (GEOMETRÍA DEL PAPEL) 📍
+======================================================================
+
+1. EN TODAS LAS PREGUNTAS DICOTÓMICAS (SI / NO):
+   El diseño impreso en la ficha física ubica el recuadro [ ] A LA DERECHA de la palabra:
+   
+        Si [ ]   No [ ]
+
+   ⚠️ REGLA DE LECTURA VISUAL (EXTREMA ATENCIÓN):
+   * PARA MARCAR "SI": El participante coloca la marca (X, visto bueno, punto o raya) en el recuadro que está a la DERECHA de la palabra "Si":
+        Si [X]   No [ ]   ===> RESPUESTA MARCADA ES "SI"
+     (¡CUIDADO! Este recuadro queda en el medio entre "Si" y "No". NO lo confundas como si fuera casilla de "No"; PERTENECE AL "SI").
+
+   * PARA MARCAR "NO": El participante coloca la marca en el recuadro que está a la DERECHA de la palabra "No":
+        Si [ ]   No [X]   ===> RESPUESTA MARCADA ES "NO"
+
+   * Aplica esta regla de recuadro a la DERECHA en todas las preguntas dicotómicas:
+     - ¿Tienes alguna condición de discapacidad? (Si [ ] No [ ])
+     - ¿Tienes antecedentes de alguna enfermedad personal o familiar importante? (Si [ ] No [ ])
+     - ¿Has asistido al médico en el último año? (Si [ ] No [ ])
+     - ¿Fuiste al odontólogo el último año? (Si [ ] No [ ])
+     - ¿Consumes o has consumido cigarrillo o vapeador? (Si [ ] No [ ])
+     - ¿Consumes o has consumido alcohol? (Si [ ] No [ ])
+     - ¿Has consumido alguna sustancia psicoactiva? (Si [ ] No [ ])
+     - ¿Has vivido situaciones de discriminación, rechazo o violencia? (Si [ ] No [ ])
+     - ¿Has recibido información sobre salud sexual, ITS o métodos de prevención? (Si [ ] No [ ])
+     - ¿Has iniciado tu vida sexual? (Si [ ] No [ ])
+     - ¿Conoces algún método anticonceptico? (Si [ ] No [ ])
+     - ¿Has vivido o conoces algún caso cercano de embarazo adolescente? (Si [ ] No [ ])
+     - ¿Te han entregado preservativos en la EPS o institución de salud? (Si [ ] No [ ])
+     - ¿Te gustaria que en tu institución educativa se hicieran mas espacios para dialogar de estos temas? (Si [ ] No [ ])
+
+2. EN LA PREGUNTA 41 DE TEMAS DE INTERÉS ("¿Qué tema te gustaria aprender o entender mejor?"):
+   AQUÍ EL DISEÑO IMPRESO ES INVERSO: El recuadro [ ] está A LA IZQUIERDA del texto:
+   
+        [X] VIH   [ ] SIFILIS   [ ] HEPATITIS B Y C   [ ] METODOS ANTICONCEPTIVOS ...
+
+   * La marca [X] corresponde a la opción que tiene a su DERECHA.
+   * Ejemplo: si ves marcado el recuadro que precede a "VIH" ([X] VIH), el participante seleccionó "VIH".
+
+======================================================================
 📋 MAPA ESTRUCTURAL DE LAS 43 PREGUNTAS POR HOJA FÍSICA
 ======================================================================
 
