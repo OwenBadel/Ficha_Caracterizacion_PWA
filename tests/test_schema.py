@@ -175,6 +175,11 @@ def test_estandarizacion_catalogos_completos():
     assert d2["¿Perteneces a alguna población o grupo étnico?"] == "PALENQUERO"
     assert d2["¿Tienes alguna condición de discapacidad?"] == "SI"
 
+    # Probar CONFAORIENTE y PROTEGER
+    for eps_in, eps_esperada in [("confaoriente", "CONFAORIENTE"), ("caja confa oriente", "CONFAORIENTE"), ("proteger", "PROTEGER"), ("proteger eps", "PROTEGER")]:
+        f_eps = FichaCaracterizacion.model_validate({"EPS (si tienes)": eps_in})
+        assert f_eps.to_canonical_dict()["EPS (si tienes)"] == eps_esperada
+
 
 def test_campos_sin_espacios_telefono_e_id():
     casos = [
@@ -420,14 +425,14 @@ def test_casilla_34_vida_sexual():
     assert d_condon[col_vida_sexual] == "SI", "Inconsistencia: Si usa condón en relaciones, vida sexual DEBE ser SI"
     assert f_condon.to_ordered_row()[33] == "SI"
 
-    # 3. Regla de coherencia: Si indicó método anticonceptivo (ej. YADEL), se infiere SI en vida sexual
+    # 3. Regla de coherencia: Conocer un método anticonceptivo (ej. YADEL) NO sobreescribe un "NO" en vida sexual
     f_metodo = FichaCaracterizacion.model_validate({
         "¿Has iniciado tu vida sexual?": "no",
         "¿Cual?_3": "YADEL"
     })
     d_metodo = f_metodo.to_canonical_dict()
-    assert d_metodo[col_vida_sexual] == "SI", "Inconsistencia: Si tiene método anticonceptivo activo, vida sexual DEBE ser SI"
-    assert f_metodo.to_ordered_row()[33] == "SI"
+    assert d_metodo[col_vida_sexual] == "NO", "Inconsistencia: Conocer métodos anticonceptivos no debe forzar vida sexual a SI"
+    assert f_metodo.to_ordered_row()[33] == "NO"
 
     # 4. Caso genuino NO: No ha iniciado vida sexual y sin condón ni anticonceptivo
     f_no = FichaCaracterizacion.model_validate({

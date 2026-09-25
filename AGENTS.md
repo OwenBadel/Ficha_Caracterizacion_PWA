@@ -58,8 +58,7 @@ Este proyecto está federado al Grafo de Conocimiento mediante el Servidor MCP o
    - **Documento vs Edad:** Si la persona tiene menos de 18 años (`Edad < 18`), el tipo de documento es obligatoriamente **`TI`** (salvo extranjería explícita como `PASAPORTE` o `PERMISO`).
    - **Municipio = Territorio:** Ambos campos se igualan a: `MAHATES`, `TURBANA`, `TURBACO`, `BARRANCO DE LOBA`, `SAN JACINTO DEL CAUCA`, `CALAMAR`, `MORALES`, `SANTA ROSA DEL SUR`, `ARENAL`, `SOPLAVIENTO`.
    - **Encuestadores autorizados:** `PAMELA VERGARA`, `KAREN TORRES`, `MAURICIO FORTICH`, `WENDY TAPIAS`, `GISEL MORENO`.
-   - **Uso de condón (relaciones sexuales):** Catálogo cerrado: `SIEMPRE`, `CASI SIEMPRE`, `NUNCA`.
-   - **Vida sexual e inferencia de coherencia:** Si el participante marca el uso de condón (`SIEMPRE` o `CASI SIEMPRE`) o registra un método anticonceptivo activo en `¿Cual?_3`, la casilla `¿Has iniciado tu vida sexual?` se valida e infiere obligatoriamente a `SI`.
+   - **Vida sexual e inferencia de coherencia:** Solo si el participante marca explícitamente el uso de condón en relaciones (`SIEMPRE` o `CASI SIEMPRE`) se infiere `SI`. Conocer o nombrar métodos anticonceptivos en `¿Cual?_3` NO infiere inicio de vida sexual (conocimiento teórico).
    - **ID y Teléfono:** Dígitos continuos sin espacios, puntos ni guiones.
    - **Tiempo actividad:** Siempre con la palabra `HORAS` (ej. `2 HORAS`, `4 HORAS`).
    - **Contexto Temporal 2026:** Si OCR confunde trazo de 2026 con 2020, se estandariza a `2026`.

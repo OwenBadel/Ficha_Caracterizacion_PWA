@@ -198,9 +198,9 @@ document.addEventListener('DOMContentLoaded', () => {
   actualizarContadorCola();
 
   // -------------------------------------------------------------
-  // COMPRESIÓN DE IMÁGENES EN EL CLIENTE (CANVAS HTML5)
+  // MÁXIMA RESOLUCIÓN Y FIDELIDAD VISUAL (ULTRA HIGH QUALITY)
   // -------------------------------------------------------------
-  async function comprimirImagenEnCliente(file, maxDimension = 1600, quality = 0.85) {
+  async function comprimirImagenEnCliente(file, maxDimension = 3200, quality = 0.95) {
     if (!file || !file.type.startsWith('image/')) return file;
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -209,19 +209,24 @@ document.addEventListener('DOMContentLoaded', () => {
         img.onload = () => {
           let width = img.width;
           let height = img.height;
-          if (Math.max(width, height) > maxDimension) {
-            if (width > height) {
-              height = Math.round((height * maxDimension) / width);
-              width = maxDimension;
-            } else {
-              width = Math.round((width * maxDimension) / height);
-              height = maxDimension;
-            }
+          // Si la imagen ya mide 3200px o menos, mantener el archivo original de la cámara sin recompresión
+          if (Math.max(width, height) <= maxDimension) {
+            resolve(file);
+            return;
+          }
+          if (width > height) {
+            height = Math.round((height * maxDimension) / width);
+            width = maxDimension;
+          } else {
+            width = Math.round((width * maxDimension) / height);
+            height = maxDimension;
           }
           const canvas = document.createElement('canvas');
           canvas.width = width;
           canvas.height = height;
           const ctx = canvas.getContext('2d');
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
           ctx.drawImage(img, 0, 0, width, height);
           canvas.toBlob((blob) => {
             resolve(blob || file);
@@ -249,10 +254,10 @@ document.addEventListener('DOMContentLoaded', () => {
     slotFoto1.classList.remove('active-slot');
     slotFoto1.classList.add('completed');
 
-    // Comprimir para payload ultraligero
-    const compressedBlob = await comprimirImagenEnCliente(file, 1600, 0.85);
-    state.foto1Blob = compressedBlob;
-    state.foto1Mime = 'image/jpeg';
+    // Máxima calidad y resolución para lectura forense de números y caligrafía
+    const highQualityBlob = await comprimirImagenEnCliente(file, 3200, 0.95);
+    state.foto1Blob = highQualityBlob;
+    state.foto1Mime = file.type || 'image/jpeg';
 
     // Avanzar a Paso 2 si la foto 2 no está tomada
     if (!state.foto2Blob) {
@@ -276,10 +281,10 @@ document.addEventListener('DOMContentLoaded', () => {
     slotFoto2.classList.remove('active-slot');
     slotFoto2.classList.add('completed');
 
-    // Comprimir para payload ultraligero
-    const compressedBlob = await comprimirImagenEnCliente(file, 1600, 0.85);
-    state.foto2Blob = compressedBlob;
-    state.foto2Mime = 'image/jpeg';
+    // Máxima calidad y resolución para lectura forense de números y caligrafía
+    const highQualityBlob = await comprimirImagenEnCliente(file, 3200, 0.95);
+    state.foto2Blob = highQualityBlob;
+    state.foto2Mime = file.type || 'image/jpeg';
 
     // Si ambas están listas, pasar al paso 3 sin auto-disparar
     if (state.foto1Blob) {

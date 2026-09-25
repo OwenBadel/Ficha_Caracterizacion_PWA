@@ -1,5 +1,5 @@
 // Service Worker para PWA Offline-First de Fichas de Caracterización (Lemon Fábrica)
-const CACHE_NAME = 'ficha-caracterizacion-v6';
+const CACHE_NAME = 'ficha-caracterizacion-v7';
 const ASSETS_TO_CACHE = [
   '/',
   '/manifest.json',

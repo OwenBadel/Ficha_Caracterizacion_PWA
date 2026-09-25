@@ -30,6 +30,7 @@ Tu única misión es transcribir con EXACTITUD Y FIDELIDAD VISUAL ABSOLUTA la in
 ======================================================================
 1. CERO ALUCINACIONES: Extrae EXCLUSIVAMENTE lo que esté físicamente marcado con una marca manuscrita (X, visto bueno, sombreado, cruz) o escrito a mano con tinta en el documento.
 2. CASILLAS VACÍAS: Si una casilla, recuadro, línea o pregunta NO fue marcada o está en blanco, devuelve OBLIGATORIAMENTE un string vacío "". NUNCA supongas, predigas, infieras ni inventes un dato. NUNCA pongas valores predeterminados (como "NINGUNA", "NO", "HACE UN MES", "FUTBOL", "ASMA", "2026") si no hay trazos reales en esa casilla.
+   🚨 ESPECIAL ATENCIÓN EN ZONA Y RÉGIMEN: Si el participante dejó en blanco la Zona (ni Rural ni Urbana) o el Régimen (ni Contributivo, ni Subsidiado, ni Ninguno), DEVUELVE OBLIGATORIAMENTE string vacío "". PROHIBIDO inventar o asumir "URBANA" o "CONTRIBUTIVO" si los recuadros están vacíos en el papel.
 3. TODO EN MAYÚSCULAS: Todo el texto debe devolverse en MAYÚSCULAS sin excepción.
 4. DEPENDENCIAS CONDICIONALES ESTRICTAS (PADRE - HIJO):
    Si la pregunta principal está en "NO" o vacía, la pregunta secundaria dependiente ("¿Cuál?", "Cada cuánto?", "Cuándo fue la última vez") DEBE SER OBLIGATORIAMENTE string vacío "".
@@ -103,11 +104,11 @@ Tu única misión es transcribir con EXACTITUD Y FIDELIDAD VISUAL ABSOLUTA la in
 6. "Edad": Número entero manuscrito (ej: 14, 15, 16).
 7. "Grado escolar": Número con símbolo de grado (ej: 8°, 9°, 10°, 11°).
 8. "Teléfono de contacto": Dígitos continuos sin espacios ni guiones (ej: 3001234567). Si está en blanco, "".
-9. "Dirección de residencia (barrio o vereda)": Barrio o vereda manuscrito. Si está en blanco, "".
+9. "Dirección de residencia (barrio o vereda)": Dirección, barrio o vereda manuscrito tal como fue escrito por el encuestado (incluyendo palabras como BARRIO, VEREDA, SECTOR, CORREGIMIENTO, CALLE o abreviaturas como B/, VDA.). Ejemplos: "BARRIO EL CARMEN", "VEREDA LA FLORIDA", "SECTOR CENTRO", "CALLE PRINCIPAL". Si está en blanco, "".
 10. "Municipio": Exactamente el mismo valor que "TERRITORIO".
-11. "Zona": Catálogo cerrado: RURAL o URBANA.
-12. "EPS (si tienes)": Catálogo cerrado: NUEVA EPS, COOSALUD, MUTUAL SER, SALUD TOTAL, SURA, SANITAS, u otra escrita en Otros. Si no tiene o está en blanco, "".
-13. "Régimen": Catálogo cerrado: CONTRIBUTIVO, SUBSIDIADO o NINGUNO.
+11. "Zona": Catálogo cerrado: RURAL o URBANA. 🚨 Si ninguna casilla está marcada o está en blanco en el papel, devuelve OBLIGATORIAMENTE "". NUNCA infieras ni asumas URBANA o RURAL por defecto.
+12. "EPS (si tienes)": Catálogo: NUEVA EPS, COOSALUD, MUTUAL SER, SALUD TOTAL, SURA, SANITAS, CONFAORIENTE, PROTEGER, FAMISANAR  u otra escrita en Otros. Si no tiene o está en blanco, "".
+13. "Régimen": Catálogo cerrado: CONTRIBUTIVO, SUBSIDIADO o NINGUNO. 🚨 Si el participante no marcó ninguna opción o está en blanco, devuelve OBLIGATORIAMENTE "". NUNCA supongas ni inventes CONTRIBUTIVO o SUBSIDIADO.
 14. "Sexo con el que te identificas": Catálogo cerrado: FEMENINO o MASCULINO.
 15. "Identidad de género": Catálogo cerrado: HETEROSEXUAL, HOMOSEXUAL, BISEXUAL, TRANSGENERO, LESBIANA.
 16. "¿Perteneces a alguna población o grupo étnico?": Catálogo cerrado: AFROCOLOMBIANO, INDÍGENA, PALENQUERO, VÍCTIMA DEL CONFLICTO, NO.
@@ -130,16 +131,29 @@ Tu única misión es transcribir con EXACTITUD Y FIDELIDAD VISUAL ABSOLUTA la in
 31. "¿Cual?_2": Sustancia manuscrita. Si en la 30 marcó NO o está en blanco, DEBE ser "".
 32. "¿Has vivido situaciones de discriminación, rechazo o violencia?": Marca en SI o NO.
 33. "¿Has recibido información sobre salud sexual, ITS o métodos de prevención?": Marca en SI o NO.
-34. "¿Has iniciado tu vida sexual?": Marca en SI o NO. Si en la pregunta 35 marcó uso de condón o en la 37 indicó método anticonceptivo, extrae "SI".
+34. "¿Has iniciado tu vida sexual?": Marca en SI o NO según la casilla física. Solo extrae "SI" si la casilla de SI está marcada o si en la pregunta 35 indicó uso de condón (SIEMPRE o CASI SIEMPRE). NUNCA infieras "SI" si la persona solo nombró o conoce métodos anticonceptivos en las preguntas 36 o 37.
 35. "Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?": Catálogo cerrado: SIEMPRE, CASI SIEMPRE o NUNCA. SOLO si en la 34 marcó SI. Si en la 34 marcó NO, DEBE ser "".
 36. "¿Conoces algún método anticonceptico?": Marca en SI o NO. Si en la 37 escribió un método anticonceptivo, extrae "SI".
 37. "¿Cual?_3": Método anticonceptivo manuscrito. Si el participante nombró el implante subdérmico Jadelle (o escribió YADEL, JADELLE, YADUL, barritas), extrae "YADEL". Si en la 36 marcó NO y no escribió nada, DEBE ser "".
 38. "¿Has vivido o conoces algún caso cercano de embarazo adolescente?": Marca en SI o NO.
+    ⚠️ REGLA CRÍTICA DE LECTURA VISUAL: El diseño impreso es: Si [ ] No [ ].
+    * El recuadro para "SI" está en la mitad, a la derecha de "Si": Si [X] No [ ].
+    * Si ves una marca manuscrita (X, visto bueno ✔, punto o raya) en el recuadro ENTRE "Si" y "No", la respuesta ES OBLIGATORIAMENTE "SI".
+    * NO confundas el recuadro del medio como si perteneciera a "No". Solo extrae "NO" si la marca está en el recuadro final a la derecha de "No": Si [ ] No [X].
+    * No te confundas con la opción de tema de interés de la pregunta 41.
 39. "¿Te han entregado preservativos en la EPS o institución de salud?": Marca en SI o NO.
+    ⚠️ REGLA CRÍTICA DE LECTURA VISUAL: El diseño impreso es: Si [ ] No [ ].
+    * Si hay una marca en el recuadro intermedio (a la derecha de "Si": Si [X] No [ ]), extrae OBLIGATORIAMENTE "SI".
+    * 🚨 ATENCIÓN A FECHA VACÍA: Si el encuestado marcó "SI" en la 39 pero dejó en blanco la pregunta 40 ("¿Cuándo fue la ultima vez?"), MANTÉN "SI" en la 39. En campo la gran mayoría no recuerda la fecha exacta. NUNCA asumas "NO" en la 39 solo porque la 40 esté vacía.
 40. "¿Cuándo fue la ultima vez?": Fecha o período de entrega de preservativos en EPS. Si en la 39 marcó NO o está en blanco, DEBE ser "". NUNCA inventes fechas si no están escritas.
 41. "¿Qué tema te gustaria aprender o entender mejor?": Extrae todas las opciones marcadas en el formulario, separadas OBLIGATORIAMENTE por coma y espacio (", "). Si no marcó ninguna, "".
     (Opciones posibles: VIH, SIFILIS, HEPATITIS B Y C, METODOS ANTICONCEPTIVOS, USO CORRECTO DEL PRESERVATIVO, PROYECTO DE VIDA, RESPETO POR LAS DIFERENCIAS, PREVENCION DEL EMBARAZO ADOLESCENTE, SALUD MENTAL Y RELACIONES, u Otros escritos).
-42. "¿Te gustaria que en tu institución educativa se hicieran mas espacios para dialogar de estos temas?": Marca en SI o NO. Si escribió un motivo de interés en la 43, extrae "SI".
+42. "¿Te gustaria que en tu institución educativa se hicieran mas espacios para dialogar de estos temas?": Marca en SI o NO.
+    ⚠️ REGLA CRÍTICA DE LECTURA VISUAL: El diseño impreso es: Si [ ] No [ ].
+    * El recuadro para "SI" está en la mitad, a la derecha de "Si": Si [X] No [ ].
+    * Si ves una marca manuscrita (X, visto bueno ✔, punto o raya) en el recuadro ENTRE "Si" y "No", O si el participante escribió una razón, motivo o texto en la pregunta 43 ("¿Por que?"), la respuesta ES OBLIGATORIAMENTE "SI".
+    * NO confundas el recuadro del medio como si perteneciera a "No".
+    * Solo extrae "NO" si la marca está claramente en el recuadro final a la derecha de "No" (Si [ ] No [X]) Y la pregunta 43 está completamente vacía.
 43. "¿Por que?": Motivo manuscrito por el cual le gustaría o no tener espacios de diálogo. Si está en blanco, "".
 
 ======================================================================
@@ -151,6 +165,10 @@ PROMPT_JSON_TEMPLATE = json.dumps({col: "" for col in COLUMNAS_FICHA}, indent=2,
 
 USER_PROMPT = f"""Analiza minuciosamente el anverso (Página 1) y reverso (Página 2) adjuntos.
 Aplica fidelidad visual estricta y dependencias condicionales (si una casilla está vacía o su pregunta principal es NO, devuelve "").
+⚠️ RECUERDA:
+1. Si 'Zona' o 'Régimen' no tienen ninguna casilla marcada en el papel, déjalos OBLIGATORIAMENTE vacíos (""). Prohibido inventar o asumir "URBANA" o "CONTRIBUTIVO".
+2. En preguntas dicotómicas (38 embarazo adolescente, 39 preservativos EPS, 42 espacios de diálogo), el 'SI' está entre 'Si' y 'No' (Si [X] No [ ] = SI).
+3. Si en la 43 ('¿Por que?') hay justificación escrita, la 42 es categóricamente "SI".
 Devuelve ÚNICAMENTE el JSON con las siguientes 43 claves canónicas:
 {PROMPT_JSON_TEMPLATE}
 """
@@ -171,28 +189,35 @@ def _limpiar_bloque_json(texto: str) -> str:
     return texto
 
 
-def optimizar_imagen_bytes(img_bytes: bytes, max_dim: int = 1600, calidad: int = 85) -> tuple[bytes, str]:
+def optimizar_imagen_bytes(img_bytes: bytes, max_dim: int = 3200, calidad: int = 95) -> tuple[bytes, str]:
     """
-    Optimiza y redimensiona imágenes pesadas de teléfonos móviles.
-    Garantiza que el payload a la IA sea ligero (< 350 KB) manteniendo la nitidez
-    de los textos manuscritos y casillas de verificación. Evita timeouts y errores 503 por sobrecarga.
+    Preserva MÁXIMA FIDELIDAD VISUAL Y RESOLUCIÓN (Ultra High Quality hasta 3200px, 95% calidad y subsampling 4:4:4).
+    Garantiza que el payload a la IA mantenga nitidez fotográfica absoluta para que los modelos
+    (Qwen2.5-VL 72B, Gemini 2.5 Flash) puedan leer con precisión forense números continuos (teléfonos, cédulas),
+    trazos tenues de bolígrafo y casillas de verificación sin artefactos de compresión.
     """
     try:
         import io
         from PIL import Image
         img = Image.open(io.BytesIO(img_bytes))
+        w, h = img.size
+
+        # Si la imagen ya es JPEG de alta calidad (<= 3200px) y peso manejable (<= 10MB), no recompilar
+        if max(w, h) <= max_dim and len(img_bytes) <= 10 * 1024 * 1024 and getattr(img, 'format', '') == 'JPEG':
+            return img_bytes, "image/jpeg"
+
         if img.mode in ("RGBA", "P", "LA"):
             img = img.convert("RGB")
-        w, h = img.size
         if max(w, h) > max_dim:
             scale = max_dim / max(w, h)
             new_w, new_h = max(1, int(w * scale)), max(1, int(h * scale))
             img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
         out_buf = io.BytesIO()
-        img.save(out_buf, format="JPEG", quality=calidad, optimize=True)
+        # subsampling=0 (4:4:4) previene el difuminado cromático en trazos finos de bolígrafo
+        img.save(out_buf, format="JPEG", quality=calidad, subsampling=0, optimize=True)
         return out_buf.getvalue(), "image/jpeg"
     except Exception as e:
-        logger.warning(f"No se pudo optimizar imagen con PIL ({e}), utilizando bytes originales.")
+        logger.warning(f"No se pudo procesar imagen con PIL ({e}), utilizando bytes originales.")
         return img_bytes, "image/jpeg"
 
 
@@ -350,7 +375,7 @@ class VisionService:
 
         import httpx
         from openai import OpenAI
-        http_client = httpx.Client(verify=False, timeout=60.0)
+        http_client = httpx.Client(verify=False, timeout=150.0)
         client = OpenAI(
             base_url="https://openrouter.ai/api/v1",
             api_key=self.openrouter_api_key,
@@ -359,12 +384,12 @@ class VisionService:
         b64_1 = base64.b64encode(img1).decode("utf-8")
         b64_2 = base64.b64encode(img2).decode("utf-8")
 
-        primary_model = os.getenv("OPENROUTER_MODEL", "google/gemini-2.5-flash").strip()
+        primary_model = os.getenv("OPENROUTER_MODEL", "qwen/qwen2.5-vl-72b-instruct").strip()
         candidate_models = [
             primary_model,
+            "qwen/qwen2.5-vl-72b-instruct",
             "google/gemini-2.5-flash",
-            "openai/gpt-4o-mini",
-            "qwen/qwen-2.5-vl-72b-instruct"
+            "openai/gpt-4o-mini"
         ]
         models_to_try = list(dict.fromkeys(candidate_models))
 

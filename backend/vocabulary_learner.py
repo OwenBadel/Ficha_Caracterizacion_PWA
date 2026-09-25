@@ -293,7 +293,7 @@ class VocabularyLearner:
         hubo_reemplazo = False
         resultado_tokens = []
 
-        prefijos_comunes = {"BARRIO", "VEREDA", "SECTOR", "CALLE", "CRA", "CARRERA", "URB", "URBANIZACION", "EN", "EL", "LA", "LOS", "LAS", "DE"}
+        prefijos_comunes = {"BARRIO", "VEREDA", "SECTOR", "CALLE", "CRA", "CARRERA", "URB", "URBANIZACION", "CORREGIMIENTO", "RESIDENCIA", "RESIDENCIAL", "EN", "EL", "LA", "LOS", "LAS", "DE"}
 
         for palabra in palabras:
             if palabra in prefijos_comunes or len(palabra) < 4:

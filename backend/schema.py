@@ -106,7 +106,10 @@ EPS_VALIDAS: List[str] = [
     "SALUD TOTAL",
     "MUTUAL SER",
     "COOSALUD",
-    "NUEVA EPS"
+    "NUEVA EPS",
+    "CONFAORIENTE",
+    "PROTEGER",
+    "FAMISANAR"
 ]
 
 REGIMENES_VALIDOS: List[str] = [
@@ -328,6 +331,10 @@ def normalizar_eps(val: Optional[Any]) -> str:
         return "COOSALUD"
     if "NUEVA" in s:
         return "NUEVA EPS"
+    if "CONFAORIENTE" in s or "CONFA ORIENTE" in s:
+        return "CONFAORIENTE"
+    if "PROTEGER" in s:
+        return "PROTEGER"
     return s
 
 
@@ -503,6 +510,41 @@ def normalizar_fecha_periodo(val: Optional[Any]) -> str:
     return s
 
 
+def normalizar_direccion(val: Optional[Any]) -> str:
+    """Normaliza la columna 9 ('Dirección de residencia (barrio o vereda)').
+    1. Asegura MAYÚSCULAS y espacios limpios.
+    2. Estandariza prefijos y abreviaturas frecuentes territoriales:
+       - 'B/', 'B.', 'BRR.', 'BRR ', 'BR.' -> 'BARRIO '
+       - 'VDA.', 'VDA/', 'VDA ' -> 'VEREDA '
+       - 'CORR.', 'CORREG.' -> 'CORREGIMIENTO '
+    3. Limpia redundancias como 'RESIDENCIA EN EL BARRIO', 'RESIDENCIA BARRIO', 'RESIDENCIA:'
+    """
+    if not val:
+        return ""
+    s = str(val).strip().upper()
+    if not s or s in ["NONE", "NULL", "N/A", "UNDEFINED", "NO TIENE", "NO APLICA"]:
+        return ""
+
+    # Limpiar prefijos de 'RESIDENCIA' redundantes
+    s = re.sub(r"^RESIDENCIA\s+EN\s+(?:EL\s+)?BARRIO\b", "BARRIO", s)
+    s = re.sub(r"^RESIDENCIA\s+EN\s+(?:LA\s+)?VEREDA\b", "VEREDA", s)
+    s = re.sub(r"^RESIDENCIA\s+BARRIO\b", "BARRIO", s)
+    s = re.sub(r"^RESIDENCIA\s*:\s*", "", s)
+
+    # Estandarizar abreviaturas de BARRIO
+    s = re.sub(r"^(?:B\/\s*|B\.\s*|BRR\.\s*|BRR\s+|BR\.\s*)", "BARRIO ", s)
+
+    # Estandarizar abreviaturas de VEREDA
+    s = re.sub(r"^(?:VDA\.\s*|VDA\/\s*|VDA\s+)", "VEREDA ", s)
+
+    # Estandarizar abreviaturas de CORREGIMIENTO
+    s = re.sub(r"^(?:CORR\.\s*|CORREG\.\s*|CORR\s+)", "CORREGIMIENTO ", s)
+
+    # Normalizar espacios intermedios
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
 def normalizar_sin_espacios(val: Optional[Any]) -> str:
     """Para campos numéricos o de identificación (Teléfono, Documento de identidad):
     Elimina todos los espacios, puntos, comas, guiones, paréntesis y caracteres separadores,
@@ -668,6 +710,8 @@ def normalizar_campo_por_columna(col: str, val: Any) -> str:
         return normalizar_uso_condon(v)
     if col == "¿Qué tiempo empleas en esta actividad?" or "tiempo empleas" in col_l:
         return normalizar_tiempo_horas(v)
+    if col == "Dirección de residencia (barrio o vereda)" or "direccion" in col_l or "dirección" in col_l or "barrio o vereda" in col_l:
+        v = normalizar_direccion(v)
     if "cuándo fue la" in col_l or "cuando fue la" in col_l:
         v = normalizar_fecha_periodo(v)
 
@@ -861,13 +905,14 @@ def aplicar_reglas_coherencia(data: Dict[str, Any]) -> Dict[str, Any]:
         res["sustancia_psicoactiva"] = "SI"
 
     # 9. Coherencia Vida Sexual y Condón (Cols 34 y 35):
-    # a) Si respondió condón (SIEMPRE o CASI SIEMPRE) o indicó un método anticonceptivo activo:
+    # a) Si respondió explícitamente uso de condón (SIEMPRE o CASI SIEMPRE en relaciones sexuales):
     #    Confirma categóricamente que SÍ ha iniciado vida sexual -> Col 34 = SI.
+    #    NOTA: Conocer o nombrar un método anticonceptivo en Col 37 (¿Cual?_3) NO implica haber iniciado
+    #    vida sexual (es conocimiento teórico/educación), por lo que NUNCA debe forzar Col 34 = SI.
     condon_val = res.get("Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?", "")
-    metodo_val = res.get("¿Cual?_3", "")
     iniciado_sexual = res.get("¿Has iniciado tu vida sexual?", "")
 
-    if condon_val in ["SIEMPRE", "CASI SIEMPRE"] or (metodo_val and metodo_val not in ["", "NO", "NINGUNO", "NINGUNA", "N/A", "NO SE", "NO CONOCE"]):
+    if condon_val in ["SIEMPRE", "CASI SIEMPRE"]:
         res["¿Has iniciado tu vida sexual?"] = "SI"
         res["iniciado_vida_sexual"] = "SI"
         iniciado_sexual = "SI"
@@ -881,6 +926,7 @@ def aplicar_reglas_coherencia(data: Dict[str, Any]) -> Dict[str, Any]:
     # 10. Coherencia Conocimiento de Métodos Anticonceptivos (Cols 36 y 37):
     # a) Si el participante escribió un método anticonceptivo real en Col 37 (¿Cual?_3) -> Col 36 = SI.
     conoce_metodo = res.get("¿Conoces algún método anticonceptico?", "")
+    metodo_val = res.get("¿Cual?_3", "")
     if metodo_val and metodo_val not in ["", "NO", "NINGUNO", "NINGUNA", "N/A", "NO CONOCE", "NO SE"]:
         res["¿Conoces algún método anticonceptico?"] = "SI"
         res["conoce_anticonceptivo"] = "SI"
@@ -902,10 +948,11 @@ def aplicar_reglas_coherencia(data: Dict[str, Any]) -> Dict[str, Any]:
         res["entregado_preservativos"] = "SI"
 
     # 12. Coherencia Espacios de Diálogo en Institución Educativa (Cols 42 y 43):
-    # Si Col 42 está vacío pero en Col 43 ('¿Por que?') hay justificación afirmativa -> Col 42 = SI.
-    espacios = res.get("¿Te gustaria que en tu institución educativa se hicieran mas espacios para dialogar de estos temas?", "")
-    por_que = res.get("¿Por que?", "")
-    if not espacios and por_que and por_que not in ["", "NO", "NINGUNO", "NINGUNA", "N/A"]:
+    # Si el participante escribió un motivo o justificación en Col 43 ('¿Por que?'),
+    # esto confirma categóricamente que SÍ desea espacios de diálogo -> Col 42 = SI.
+    # Corrige además el error óptico donde la IA confunde la casilla física Si [X] No [ ] con NO a pesar de haber escrito.
+    por_que = res.get("¿Por que?", "") or res.get("por_que", "")
+    if por_que and str(por_que).strip().upper() not in ["", "NO", "NINGUNO", "NINGUNA", "N/A", "NO SE", "NO SABE"]:
         res["¿Te gustaria que en tu institución educativa se hicieran mas espacios para dialogar de estos temas?"] = "SI"
         res["espacios_dialogo"] = "SI"
 
