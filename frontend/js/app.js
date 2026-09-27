@@ -1,6 +1,6 @@
 /**
  * app.js — Controlador de la Interfaz PWA y Sincronización
- * Digitalizador de Fichas de Caracterización (Lemon Fábrica)
+ * Digitalizador de Fichas de Caracterización — Ing. Owen Badel Hooker
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -158,12 +158,16 @@ document.addEventListener('DOMContentLoaded', () => {
   // -------------------------------------------------------------
   function updateNetworkStatus() {
     const isOnline = navigator.onLine;
-    if (isOnline) {
-      netStatusBadge.className = 'badge-network';
-      netStatusText.textContent = 'Online';
-    } else {
-      netStatusBadge.className = 'badge-network offline';
-      netStatusText.textContent = 'Offline';
+    if (netStatusBadge && netStatusText) {
+      if (isOnline) {
+        netStatusBadge.className = 'badge-network';
+        netStatusText.textContent = 'Online';
+      } else {
+        netStatusBadge.className = 'badge-network offline';
+        netStatusText.textContent = 'Offline';
+      }
+    }
+    if (!isOnline) {
       showToast('⚠️ Estás sin conexión. Las encuestas se guardarán en cola local.', 'error');
     }
   }

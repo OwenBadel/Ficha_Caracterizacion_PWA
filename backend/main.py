@@ -229,7 +229,7 @@ if __name__ == "__main__":
     host = os.getenv("HOST", "0.0.0.0")
     local_ip = obtener_ip_local()
     print(f"\n=======================================================")
-    print(f"  LEMON FABRICA - DIGITALIZADOR DE FICHAS PWA")
+    print(f"  DIGITALIZADOR DE FICHAS PWA — ING. OWEN BADEL HOOKER")
     print(f"=======================================================")
     print(f"  - Desde tu PC:      http://localhost:{port}")
     print(f"  - Desde tu Celular: http://{local_ip}:{port}")

@@ -1,6 +1,6 @@
 """
 vocabulary_learner.py — Módulo de Vocabulario Adaptativo y Guía de Coincidencias (Fuzzy Matching)
-Digitalizador de Fichas de Caracterización (PROJ-006 - Lemon Fábrica)
+Digitalizador de Fichas de Caracterización (PROJ-006 — Ing. Owen Badel Hooker)
 
 Permite que el sistema aprenda términos frecuentes y respuestas de formularios anteriores
 para todas las columnas de texto abierto, actuando como guía de coincidencia para auto-corregir

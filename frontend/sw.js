@@ -1,4 +1,4 @@
-// Service Worker para PWA Offline-First de Fichas de Caracterización (Lemon Fábrica)
+// Service Worker para PWA Offline-First de Fichas de Caracterización — Ing. Owen Badel Hooker
 const CACHE_NAME = 'ficha-caracterizacion-v7';
 const ASSETS_TO_CACHE = [
   '/',
