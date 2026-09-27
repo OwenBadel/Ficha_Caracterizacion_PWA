@@ -61,7 +61,7 @@ vision_service = VisionService()
 sheets_service = GoogleSheetsService()
 
 
-@app.get("/api/health")
+@app.api_route("/api/health", methods=["GET", "HEAD"])
 def health_check() -> Dict[str, Any]:
     """Verifica el estado del sistema, proveedores de IA y conexión a Google Sheets."""
     gemini_ok = bool(vision_service.gemini_api_key)
@@ -191,18 +191,18 @@ async def process_survey(
 if FRONTEND_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
-    @app.get("/")
+    @app.api_route("/", methods=["GET", "HEAD"])
     def serve_pwa_index():
         return FileResponse(
             FRONTEND_DIR / "index.html",
             headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"}
         )
 
-    @app.get("/manifest.json")
+    @app.api_route("/manifest.json", methods=["GET", "HEAD"])
     def serve_manifest():
         return FileResponse(FRONTEND_DIR / "manifest.json", media_type="application/manifest+json")
 
-    @app.get("/sw.js")
+    @app.api_route("/sw.js", methods=["GET", "HEAD"])
     def serve_sw():
         return FileResponse(
             FRONTEND_DIR / "sw.js",
