@@ -20,17 +20,21 @@ from dotenv import load_dotenv
 
 try:
     from .schema import FichaCaracterizacion, COLUMNAS_FICHA
+    from .schema_test import PrePostTest, COLUMNAS_TEST, ENCABEZADOS_TEST_SHEETS
     from .vision_service import VisionService
     from .sheets_service import GoogleSheetsService
     from .vocabulary_learner import vocabulary_learner
+    from .participant_cache import participant_cache
 except (ImportError, ValueError):
     backend_dir = Path(__file__).resolve().parent
     if str(backend_dir) not in sys.path:
         sys.path.insert(0, str(backend_dir))
     from schema import FichaCaracterizacion, COLUMNAS_FICHA
+    from schema_test import PrePostTest, COLUMNAS_TEST, ENCABEZADOS_TEST_SHEETS
     from vision_service import VisionService
     from sheets_service import GoogleSheetsService
     from vocabulary_learner import vocabulary_learner
+    from participant_cache import participant_cache
 
 # Configurar logging y paths
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -42,9 +46,9 @@ FRONTEND_DIR = PROJECT_DIR / "frontend"
 load_dotenv(PROJECT_DIR / ".env")
 
 app = FastAPI(
-    title="Digitalizador de Fichas de Caracterización PWA",
-    description="Backend de extracción multimodal con IA de Visión y sincronización automática en Google Sheets.",
-    version="1.0.0"
+    title="Digitalizador de Fichas de Caracterización y Tests PWA",
+    description="Backend de extracción multimodal con IA de Visión para Fichas y Pre/Post Tests, y sincronización en Google Sheets.",
+    version="2.0.0"
 )
 
 # Permitir CORS amplio para dispositivos móviles y PWA
@@ -67,18 +71,20 @@ def health_check() -> Dict[str, Any]:
     gemini_ok = bool(vision_service.gemini_api_key)
     openai_ok = bool(vision_service.openai_api_key)
     openrouter_ok = bool(vision_service.openrouter_api_key)
-    sheets_ok = bool(sheets_service._gspread_client or sheets_service.webhook_url)
+    sheets_ok = bool(sheets_service._gspread_client or sheets_service.webhook_url or sheets_service.webhook_url_tests)
 
     return {
         "status": "online",
-        "service": "Ficha Caracterización OCR & Sheets",
+        "service": "Ficha Caracterización & Pre/Post Test OCR",
         "vision_provider": vision_service.provider,
         "gemini_configured": gemini_ok,
         "openai_configured": openai_ok,
         "openrouter_configured": openrouter_ok,
         "sheets_configured": sheets_ok,
         "sheets_method": "gspread_api" if sheets_service._gspread_client else ("webhook" if sheets_service.webhook_url else "none"),
-        "columnas_count": len(COLUMNAS_FICHA)
+        "columnas_ficha_count": len(COLUMNAS_FICHA),
+        "columnas_test_count": len(COLUMNAS_TEST),
+        "participantes_en_cache": participant_cache.contar()
     }
 
 
@@ -99,6 +105,50 @@ def get_vocabulary() -> Dict[str, Any]:
         "total_columns": len(vocabulary_learner.vocabulario),
         "vocabulary": vocabulary_learner.vocabulario
     }
+
+
+@app.get("/api/columns-test")
+def get_columns_test() -> Dict[str, Any]:
+    """Retorna la lista ordenada de columnas para Pre-Test y Post-Test (Anexo 4)."""
+    return {
+        "total": len(COLUMNAS_TEST),
+        "columns": COLUMNAS_TEST,
+        "headers_sheets": ENCABEZADOS_TEST_SHEETS
+    }
+
+
+@app.get("/api/participants")
+def get_participants() -> Dict[str, Any]:
+    """Retorna el resumen de participantes cargados en caché."""
+    return {
+        "status": "online",
+        **participant_cache.obtener_resumen()
+    }
+
+
+@app.post("/api/participants/import")
+async def import_participants(file: UploadFile = File(...)) -> Dict[str, Any]:
+    """Importa base de participantes desde un archivo CSV exportado de Google Sheets."""
+    try:
+        content_bytes = await file.read()
+        try:
+            csv_text = content_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            csv_text = content_bytes.decode("latin-1")
+
+        importados = participant_cache.importar_desde_csv(csv_text)
+        return {
+            "success": True,
+            "message": f"Se importaron {importados} participantes exitosamente.",
+            "total_en_cache": participant_cache.contar(),
+            "resumen": participant_cache.obtener_resumen()
+        }
+    except Exception as e:
+        logger.error(f"Error importando participantes: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"success": False, "error": str(e)}
+        )
 
 
 @app.post("/api/process-survey")
@@ -164,6 +214,19 @@ async def process_survey(
         except Exception as e:
             logger.warning(f"No se pudo actualizar vocabulario adaptativo: {e}")
 
+        # 4. Aprendizaje continuo en base de participantes
+        try:
+            participant_cache.aprender_participante(
+                nombre=fila_ordenada[2],
+                edad=fila_ordenada[5],
+                municipio=fila_ordenada[9],
+                eapb=fila_ordenada[11],
+                documento=fila_ordenada[4]
+            )
+            logger.info(f"Participante registrado en caché: {fila_ordenada[2]}")
+        except Exception as e:
+            logger.warning(f"No se pudo registrar participante en caché: {e}")
+
         return {
             "success": True,
             "message": "Ficha de caracterización procesada y registrada exitosamente en Google Sheets.",
@@ -183,6 +246,80 @@ async def process_survey(
                 "success": False,
                 "error": str(e),
                 "detail": "Ocurrió un error durante el procesamiento con IA o la escritura en Google Sheets."
+            }
+        )
+
+
+@app.post("/api/process-test")
+async def process_test(
+    foto_test: UploadFile = File(..., description="Fotografía Hoja Única del Test (Pre o Post)"),
+    tipo_evaluacion: Optional[str] = Form(None, description="Override opcional ('PRE-TEST', 'POST-TEST' o None para autodetección)"),
+    modo: Optional[str] = Form("inmediato", description="Modo de sincronización ('inmediato' o 'batch')")
+) -> Dict[str, Any]:
+    """
+    Recibe la fotografía única del Pre-Test o Post-Test (Anexo 4),
+    realiza extracción OCR multimodal con IA (con reconciliación de participantes)
+    y registra la fila resultante en Google Sheets.
+    """
+    logger.info(f"Procesando test en modo '{modo}'. Archivo: {foto_test.filename}, Override: {tipo_evaluacion}")
+
+    mime = foto_test.content_type or "image/jpeg"
+    if not mime.startswith("image/"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El archivo debe ser una imagen válida (JPEG, PNG, WebP)."
+        )
+
+    try:
+        test_bytes = await foto_test.read()
+        if len(test_bytes) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="La imagen del test está vacía (0 bytes)."
+            )
+
+        # 1. Extracción con IA de Visión (reconciliando automáticamente con catálogo de participantes)
+        logger.info("Iniciando extracción con IA para Pre/Post Test...")
+        datos_dict = vision_service.extraer_datos_test(
+            img_bytes=test_bytes,
+            mime_type=mime,
+            tipo_evaluacion_override=tipo_evaluacion
+        )
+
+        test_obj = PrePostTest.model_validate(datos_dict)
+        fila_ordenada = [str(x or "").strip().upper() for x in test_obj.to_ordered_row()]
+
+        logger.info(
+            f"Test extraído con IA -> Tipo='{test_obj.tipo_evaluacion}', "
+            f"Participante='{test_obj.nombre}', "
+            f"Municipio='{test_obj.municipio}', "
+            f"P5='{test_obj.pregunta_5}'"
+        )
+
+        # 2. Inserción en Google Sheets
+        logger.info("Enviando fila de test estructurada a Google Sheets...")
+        sheets_result = sheets_service.insertar_test(fila_ordenada)
+
+        return {
+            "success": True,
+            "message": f"{test_obj.tipo_evaluacion} procesado y registrado exitosamente en Google Sheets.",
+            "tipo_evaluacion": test_obj.tipo_evaluacion,
+            "participante": test_obj.nombre or "SIN NOMBRE",
+            "municipio": test_obj.municipio or "SIN MUNICIPIO",
+            "sheets_result": sheets_result,
+            "datos_extraidos": test_obj.to_canonical_dict()
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error procesando test: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "success": False,
+                "error": str(e),
+                "detail": "Ocurrió un error durante el procesamiento del test o la escritura en Google Sheets."
             }
         )
 

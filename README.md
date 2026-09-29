@@ -128,8 +128,15 @@ Si prefieres no crear una Service Account de Google Cloud, puedes usar un script
 2. Pega el siguiente código:
    ```javascript
    function doPost(e) {
-     var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+     var ss = SpreadsheetApp.getActiveSpreadsheet();
      var data = JSON.parse(e.postData.contents);
+     var targetTab = data.tab || "Respuestas";
+     var sheet = ss.getSheetByName(targetTab);
+     
+     // Si la pestaña no existe, se crea automáticamente
+     if (!sheet) {
+       sheet = ss.insertSheet(targetTab);
+     }
      
      if (sheet.getLastRow() === 0 && data.headers) {
        sheet.appendRow(data.headers);
@@ -137,7 +144,7 @@ Si prefieres no crear una Service Account de Google Cloud, puedes usar un script
      if (data.row) {
        sheet.appendRow(data.row);
      }
-     return ContentService.createTextOutput(JSON.stringify({status: "ok"}))
+     return ContentService.createTextOutput(JSON.stringify({status: "ok", tab: targetTab}))
        .setMimeType(ContentService.MimeType.JSON);
    }
    ```
@@ -146,7 +153,9 @@ Si prefieres no crear una Service Account de Google Cloud, puedes usar un script
 5. Copia la URL de la aplicación web y ponla en `.env`:
    ```env
    GOOGLE_APPS_SCRIPT_URL=https://script.google.com/macros/s/.../exec
+   GOOGLE_SHEET_TAB_TESTS=Pre_Post_Test
    ```
+   *(Si tienes una hoja separada de Google Sheets para los Tests, puedes definir `GOOGLE_APPS_SCRIPT_URL_TESTS` con su respectiva URL).*
 
 ---
 
@@ -222,3 +231,39 @@ Cada fila insertada en Google Sheets contiene exactamente en este orden:
 | 41 | `¿Qué tema te gustaria aprender o entender mejor?` |
 | 42 | `¿Te gustaria que en tu institución educativa se hicieran mas espacios para dialogar de estos temas?` |
 | 43 | `¿Por que?` |
+
+---
+
+## 📝 Pre-Test y Post-Test: Programa de Salud Sexual y Reproductiva (Anexo 4)
+
+La aplicación cuenta con soporte dual de digitalización:
+* **Ficha de Caracterización (2 fotos):** Anverso y Reverso (43 columnas).
+* **Pre-Test y Post-Test (1 sola foto):** Formato unificado de 1 página (Anexo Nº 4 SSR ITS). Se digitalizan 30 Pre-Tests y 30 Post-Tests por cada uno de los 10 municipios priorizados.
+
+### 🌟 Características del Modo Test:
+1. **Captura Rápida de 1 Foto:** Enfoca la hoja completa del test y captura con un solo toque.
+2. **Auto-Detección y Selector de Evaluación:** La IA detecta automáticamente en el encabezado si es `PRE-TEST` o `POST-TEST`. También puedes forzar el tipo mediante el selector visual en la interfaz (`Auto (IA)`, `PRE-TEST`, `POST-TEST`).
+3. **Reconciliación Automática de Participantes:** Al cargar el CSV de Fichas previas desde el botón `👥 Participantes`, el sistema corrige de forma difusa cualquier fallo caligráfico o de OCR en el nombre, edad, municipio y EPS.
+
+### 📋 Columnas del Pre-Test y Post-Test en Google Sheets (15 Columnas)
+
+Cada fila registrada en la pestaña `Pre_Post_Test` contiene en este orden:
+
+| # | Encabezado en Google Sheets | Tipo de Dato / Valores Válidos |
+|---|-----------------------------|--------------------------------|
+| 1 | `Marca temporal` | Fecha y hora de digitalización (`DD/MM/YYYY HH:MM:SS`) |
+| 2 | `TIPO DE EVALUACIÓN` | `PRE-TEST` o `POST-TEST` |
+| 3 | `NOMBRE` | Nombre completo del participante (Mayúsculas) |
+| 4 | `EDAD` | Edad en dígitos enteros |
+| 5 | `MUNICIPIO` | Uno de los 10 municipios (`MAHATES`, `TURBANA`, `TURBACO`, `BARRANCO DE LOBA`, `SAN JACINTO DEL CAUCA`, `CALAMAR`, `MORALES`, `SANTA ROSA DEL SUR`, `ARENAL`, `SOPLAVIENTO`) |
+| 6 | `EAPB (EPS)` | Entidad de salud (`MUTUAL SER`, `COOSALUD`, `NUEVA EPS`, `SALUD TOTAL`, `SURA`, `SANITAS`, etc.) |
+| 7 | `1. EL USO CORRECTO DEL PRESERVATIVO AYUDA A PREVENIR ITS COMO VIH Y SÍFILIS.` | `VERDADERO` / `FALSO` |
+| 8 | `2. LAS ITS PUEDEN TRANSMITIRSE DE LA MADRE AL BEBÉ DURANTE EL EMBARAZO.` | `VERDADERO` / `FALSO` |
+| 9 | `3. UNA PERSONA CON VIH SIEMPRE SE VE ENFERMA.` | `VERDADERO` / `FALSO` |
+| 10 | `4. LOS ANTICONCEPTIVOS ORALES PREVIENEN LAS ITS.` | `VERDADERO` / `FALSO` |
+| 11 | `5. ¿CUÁL DE LAS SIGUIENTES ACCIONES AYUDA A PREVENIR EL VIH?` | `TODAS LAS ANTERIORES` / `USAR PRESERVATIVO` / `TENER INFORMACIÓN CLARA SOBRE SALUD SEXUAL` / `EVITAR COMPARTIR AGUJAS O ELEMENTOS CORTOPUNZANTES` |
+| 12 | `6. LA PREP ES UN MEDICAMENTO QUE AYUDA A PREVENIR EL VIH EN PERSONAS CON MAYOR RIESGO DE EXPOSICIÓN.` | `VERDADERO` / `FALSO` |
+| 13 | `7. EXISTE VACUNA PARA PREVENIR LA HEPATITIS B.` | `VERDADERO` / `FALSO` |
+| 14 | `8. LA SÍFILIS TIENE TRATAMIENTO Y PUEDE PREVENIRSE.` | `VERDADERO` / `FALSO` |
+| 15 | `9. RESPETAR LAS DIFERENCIAS Y EVITAR LA DISCRIMINACIÓN AYUDA A CONSTRUIR RELACIONES SALUDABLES.` | `VERDADERO` / `FALSO` |
+

@@ -1,6 +1,6 @@
 /**
  * app.js — Controlador de la Interfaz PWA y Sincronización
- * Digitalizador de Fichas de Caracterización — Ing. Owen Badel Hooker
+ * Digitalizador de Fichas de Caracterización y Pre/Post Test — Owen Badel Hooker
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -8,22 +8,47 @@ document.addEventListener('DOMContentLoaded', () => {
   // ESTADO DE LA APLICACIÓN
   // -------------------------------------------------------------
   const state = {
-    currentStep: 1,    // 1: Foto Anverso, 2: Foto Reverso, 3: Completa
+    mode: 'ficha',         // 'ficha' o 'test'
+    currentStep: 1,        // Ficha: 1 (Anverso), 2 (Reverso), 3 (Lista). Test: 1 (Foto), 2 (Lista)
+    
+    // Fotos Ficha
     foto1Blob: null,
     foto2Blob: null,
     foto1Mime: 'image/jpeg',
     foto2Mime: 'image/jpeg',
+
+    // Foto Test (Hoja Única)
+    fotoTestBlob: null,
+    fotoTestMime: 'image/jpeg',
+    tipoEvaluacion: 'AUTO', // 'AUTO', 'PRE-TEST', 'POST-TEST'
+
     isSyncing: false
   };
 
   // -------------------------------------------------------------
   // REFERENCIAS DOM
   // -------------------------------------------------------------
+  // Header y Modos
+  const tabModoFicha = document.getElementById('tabModoFicha');
+  const tabModoTest = document.getElementById('tabModoTest');
+  const btnOpenParticipants = document.getElementById('btnOpenParticipants');
+  const headerParticipantsCount = document.getElementById('headerParticipantsCount');
+  const netStatusBadge = document.getElementById('netStatusBadge');
+  const netStatusText = document.getElementById('netStatusText');
+  const brandSubtitle = document.getElementById('brandSubtitle');
+
+  // Selector Tipo de Test
+  const testTypeBar = document.getElementById('testTypeBar');
+  const pillBtns = document.querySelectorAll('.pill-btn');
+
+  // Banner
   const stepTag = document.getElementById('stepTag');
   const stepTitle = document.getElementById('stepTitle');
   const stepDesc = document.getElementById('stepDesc');
   const stepBadge = document.getElementById('stepCounterBadge');
 
+  // Visores de Fotos
+  const photosGridFicha = document.getElementById('photosGridFicha');
   const slotFoto1 = document.getElementById('slotFoto1');
   const slotFoto2 = document.getElementById('slotFoto2');
   const placeholderFoto1 = document.getElementById('placeholderFoto1');
@@ -35,17 +60,31 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnRetake1 = document.getElementById('btnRetake1');
   const btnRetake2 = document.getElementById('btnRetake2');
 
+  const photosSingleTest = document.getElementById('photosSingleTest');
+  const slotFotoTest = document.getElementById('slotFotoTest');
+  const placeholderFotoTest = document.getElementById('placeholderFotoTest');
+  const imgPreviewTest = document.getElementById('imgPreviewTest');
+  const badgeCheckTest = document.getElementById('badgeCheckTest');
+  const btnRetakeTest = document.getElementById('btnRetakeTest');
+
+  // Disparador de Cámara
   const cameraTriggerSection = document.getElementById('cameraTriggerSection');
   const btnMainCamera = document.getElementById('btnMainCamera');
   const shutterLabel = document.getElementById('shutterLabel');
   const cameraInput1 = document.getElementById('cameraInput1');
   const cameraInput2 = document.getElementById('cameraInput2');
+  const cameraInputTest = document.getElementById('cameraInputTest');
 
+  // Caja de Acción
   const readyActionBox = document.getElementById('readyActionBox');
+  const readyIcon = document.getElementById('readyIcon');
+  const readyTitle = document.getElementById('readyTitle');
+  const readySubtitle = document.getElementById('readySubtitle');
   const btnEnviarAhora = document.getElementById('btnEnviarAhora');
   const btnGuardarEnCola = document.getElementById('btnGuardarEnCola');
   const btnCancelarEncuesta = document.getElementById('btnCancelarEncuesta');
 
+  // Barra de Cola y Drawer
   const bottomQueueBar = document.getElementById('bottomQueueBar');
   const queueCountBadge = document.getElementById('queueCountBadge');
   const queueLabel = document.getElementById('queueLabel');
@@ -58,12 +97,20 @@ document.addEventListener('DOMContentLoaded', () => {
   const drawerQueueList = document.getElementById('drawerQueueList');
   const btnLimpiarCompletadas = document.getElementById('btnLimpiarCompletadas');
 
+  // Modal Participantes
+  const participantsBackdrop = document.getElementById('participantsBackdrop');
+  const participantsModal = document.getElementById('participantsModal');
+  const btnCloseParticipants = document.getElementById('btnCloseParticipants');
+  const csvFileInput = document.getElementById('csvFileInput');
+  const btnUploadCsv = document.getElementById('btnUploadCsv');
+  const statTotalParticipantes = document.getElementById('statTotalParticipantes');
+  const statTotalMunicipios = document.getElementById('statTotalMunicipios');
+  const participantsBreakdown = document.getElementById('participantsBreakdown');
+
+  // Modal Procesamiento y Toasts
   const processingModal = document.getElementById('processingModal');
   const procTitle = document.getElementById('procTitle');
   const procDesc = document.getElementById('procDesc');
-
-  const netStatusBadge = document.getElementById('netStatusBadge');
-  const netStatusText = document.getElementById('netStatusText');
   const toastContainer = document.getElementById('toastContainer');
 
   // -------------------------------------------------------------
@@ -81,26 +128,80 @@ document.addEventListener('DOMContentLoaded', () => {
       toast.style.opacity = '0';
       toast.style.transform = 'translateY(-10px)';
       setTimeout(() => toast.remove(), 300);
-    }, 4000);
+    }, 4500);
   }
 
   // -------------------------------------------------------------
-  // DISPARADOR DE CÁMARA ROBUSTO (SINCRÓNICO E INMEDIATO)
+  // CAMBIO DE MODO: FICHA VS TEST
+  // -------------------------------------------------------------
+  tabModoFicha.addEventListener('click', () => cambiarModo('ficha'));
+  tabModoTest.addEventListener('click', () => cambiarModo('test'));
+
+  function cambiarModo(nuevoModo) {
+    if (state.mode === nuevoModo) return;
+    state.mode = nuevoModo;
+
+    if (nuevoModo === 'ficha') {
+      tabModoFicha.classList.add('active');
+      tabModoTest.classList.remove('active');
+      testTypeBar.style.display = 'none';
+      photosGridFicha.style.display = 'grid';
+      photosSingleTest.style.display = 'none';
+      brandSubtitle.textContent = 'Fichas de Caracterización';
+      resetFichaForm();
+    } else {
+      tabModoTest.classList.add('active');
+      tabModoFicha.classList.remove('active');
+      testTypeBar.style.display = 'flex';
+      photosGridFicha.style.display = 'none';
+      photosSingleTest.style.display = 'flex';
+      brandSubtitle.textContent = 'Pre-Test y Post-Test (Anexo 4)';
+      resetTestForm();
+    }
+  }
+
+  // Selección de tipo de evaluación (AUTO / PRE-TEST / POST-TEST)
+  pillBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      pillBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.tipoEvaluacion = btn.getAttribute('data-type');
+      actualizarEtiquetaTest();
+    });
+  });
+
+  function actualizarEtiquetaTest() {
+    if (state.mode !== 'test') return;
+    const tipo = state.tipoEvaluacion;
+    if (state.fotoTestBlob) {
+      stepTag.textContent = tipo === 'AUTO' ? 'Test Listo (Auto IA)' : `${tipo} Listo`;
+      shutterLabel.textContent = 'Listo para procesar';
+    } else {
+      stepTag.textContent = tipo === 'AUTO' ? 'Hoja Única (Auto IA)' : `Hoja Única (${tipo})`;
+      shutterLabel.textContent = tipo === 'AUTO' ? 'Tomar Foto del Test' : `Tomar Foto ${tipo}`;
+    }
+  }
+
+  // -------------------------------------------------------------
+  // DISPARADOR DE CÁMARA ERGONÓMICO
   // -------------------------------------------------------------
   function dispararCamara() {
     try {
-      if (state.currentStep === 1) {
-        if (cameraInput1) {
-          cameraInput1.value = '';
-          cameraInput1.click();
-        }
-      } else if (state.currentStep === 2) {
-        if (cameraInput2) {
-          cameraInput2.value = '';
-          cameraInput2.click();
+      if (state.mode === 'ficha') {
+        if (state.currentStep === 1) {
+          if (cameraInput1) { cameraInput1.value = ''; cameraInput1.click(); }
+        } else if (state.currentStep === 2) {
+          if (cameraInput2) { cameraInput2.value = ''; cameraInput2.click(); }
+        } else {
+          showToast('Fotos listas. Elige "Sincronizar Ahora" o "Mandar a la Cola" abajo.', 'info');
         }
       } else {
-        showToast('Fotos listas. Elige "Sincronizar Ahora" o "Mandar a la Cola" abajo.', 'info');
+        // Modo Test
+        if (!state.fotoTestBlob) {
+          if (cameraInputTest) { cameraInputTest.value = ''; cameraInputTest.click(); }
+        } else {
+          showToast('Foto del test lista. Elige "Sincronizar Ahora" o "Mandar a la Cola" abajo.', 'info');
+        }
       }
     } catch (err) {
       console.error('Error al abrir la cámara:', err);
@@ -115,94 +216,17 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  if (slotFoto1) {
-    slotFoto1.addEventListener('click', () => {
-      if (cameraInput1) {
-        cameraInput1.value = '';
-        cameraInput1.click();
-      }
-    });
-  }
+  // Clicks directos en slots
+  if (slotFoto1) slotFoto1.addEventListener('click', () => { if (cameraInput1) { cameraInput1.value = ''; cameraInput1.click(); } });
+  if (slotFoto2) slotFoto2.addEventListener('click', () => { if (cameraInput2) { cameraInput2.value = ''; cameraInput2.click(); } });
+  if (slotFotoTest) slotFotoTest.addEventListener('click', () => { if (cameraInputTest) { cameraInputTest.value = ''; cameraInputTest.click(); } });
 
-  if (slotFoto2) {
-    slotFoto2.addEventListener('click', () => {
-      if (cameraInput2) {
-        cameraInput2.value = '';
-        cameraInput2.click();
-      }
-    });
-  }
-
-  if (btnRetake1) {
-    btnRetake1.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (cameraInput1) {
-        cameraInput1.value = '';
-        cameraInput1.click();
-      }
-    });
-  }
-
-  if (btnRetake2) {
-    btnRetake2.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (cameraInput2) {
-        cameraInput2.value = '';
-        cameraInput2.click();
-      }
-    });
-  }
+  if (btnRetake1) btnRetake1.addEventListener('click', (e) => { e.stopPropagation(); if (cameraInput1) { cameraInput1.value = ''; cameraInput1.click(); } });
+  if (btnRetake2) btnRetake2.addEventListener('click', (e) => { e.stopPropagation(); if (cameraInput2) { cameraInput2.value = ''; cameraInput2.click(); } });
+  if (btnRetakeTest) btnRetakeTest.addEventListener('click', (e) => { e.stopPropagation(); if (cameraInputTest) { cameraInputTest.value = ''; cameraInputTest.click(); } });
 
   // -------------------------------------------------------------
-  // MONITOREO DE RED (ONLINE / OFFLINE)
-  // -------------------------------------------------------------
-  function updateNetworkStatus() {
-    const isOnline = navigator.onLine;
-    if (netStatusBadge && netStatusText) {
-      if (isOnline) {
-        netStatusBadge.className = 'badge-network';
-        netStatusText.textContent = 'Online';
-      } else {
-        netStatusBadge.className = 'badge-network offline';
-        netStatusText.textContent = 'Offline';
-      }
-    }
-    if (!isOnline) {
-      showToast('⚠️ Estás sin conexión. Las encuestas se guardarán en cola local.', 'error');
-    }
-  }
-  window.addEventListener('online', updateNetworkStatus);
-  window.addEventListener('offline', updateNetworkStatus);
-  updateNetworkStatus();
-
-  // -------------------------------------------------------------
-  // REGISTRO DE SERVICE WORKER (PWA OFFLINE - EN SEGUNDO PLANO)
-  // -------------------------------------------------------------
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js')
-      .then(() => console.log('Service Worker registrado correctamente'))
-      .catch((e) => console.warn('Fallo registrando Service Worker:', e));
-  }
-
-  // -------------------------------------------------------------
-  // ACTUALIZACIÓN DE LA COLA LOCAL (INDEXEDDB - EN SEGUNDO PLANO)
-  // -------------------------------------------------------------
-  async function actualizarContadorCola() {
-    try {
-      if (window.surveyDB) {
-        const count = await window.surveyDB.contarPendientes();
-        queueCountBadge.textContent = count;
-        queueLabel.textContent = `${count} ${count === 1 ? 'encuesta pendiente' : 'encuestas pendientes'}`;
-        btnSyncAllNow.disabled = (count === 0 || !navigator.onLine || state.isSyncing);
-      }
-    } catch (err) {
-      console.error('Error consultando cola:', err);
-    }
-  }
-  actualizarContadorCola();
-
-  // -------------------------------------------------------------
-  // MÁXIMA RESOLUCIÓN Y FIDELIDAD VISUAL (ULTRA HIGH QUALITY)
+  // COMPRESIÓN Y RESOLUCIÓN ULTRA ALTA (3200px / 95% Calidad)
   // -------------------------------------------------------------
   async function comprimirImagenEnCliente(file, maxDimension = 3200, quality = 0.95) {
     if (!file || !file.type.startsWith('image/')) return file;
@@ -213,7 +237,6 @@ document.addEventListener('DOMContentLoaded', () => {
         img.onload = () => {
           let width = img.width;
           let height = img.height;
-          // Si la imagen ya mide 3200px o menos, mantener el archivo original de la cámara sin recompresión
           if (Math.max(width, height) <= maxDimension) {
             resolve(file);
             return;
@@ -244,7 +267,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Procesamiento Foto 1 (Anverso)
+  // -------------------------------------------------------------
+  // PROCESAMIENTO DE FOTOS: MODO FICHA
+  // -------------------------------------------------------------
   cameraInput1.addEventListener('change', async (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
@@ -258,20 +283,14 @@ document.addEventListener('DOMContentLoaded', () => {
     slotFoto1.classList.remove('active-slot');
     slotFoto1.classList.add('completed');
 
-    // Máxima calidad y resolución para lectura forense de números y caligrafía
     const highQualityBlob = await comprimirImagenEnCliente(file, 3200, 0.95);
     state.foto1Blob = highQualityBlob;
     state.foto1Mime = file.type || 'image/jpeg';
 
-    // Avanzar a Paso 2 si la foto 2 no está tomada
-    if (!state.foto2Blob) {
-      setStep(2);
-    } else {
-      setStep(3);
-    }
+    if (!state.foto2Blob) setStepFicha(2);
+    else setStepFicha(3);
   });
 
-  // Procesamiento Foto 2 (Reverso)
   cameraInput2.addEventListener('change', async (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
@@ -285,20 +304,15 @@ document.addEventListener('DOMContentLoaded', () => {
     slotFoto2.classList.remove('active-slot');
     slotFoto2.classList.add('completed');
 
-    // Máxima calidad y resolución para lectura forense de números y caligrafía
     const highQualityBlob = await comprimirImagenEnCliente(file, 3200, 0.95);
     state.foto2Blob = highQualityBlob;
     state.foto2Mime = file.type || 'image/jpeg';
 
-    // Si ambas están listas, pasar al paso 3 sin auto-disparar
-    if (state.foto1Blob) {
-      setStep(3);
-    } else {
-      setStep(1);
-    }
+    if (state.foto1Blob) setStepFicha(3);
+    else setStepFicha(1);
   });
 
-  function setStep(step) {
+  function setStepFicha(step) {
     state.currentStep = step;
     if (step === 1) {
       stepTag.textContent = 'Paso 1 de 2';
@@ -325,19 +339,16 @@ document.addEventListener('DOMContentLoaded', () => {
       stepTitle.textContent = 'Encuesta Completa (2/2 Fotos)';
       stepDesc.textContent = 'Verifica las fotos y elige cómo registrarla.';
       stepBadge.textContent = '✔';
-      shutterLabel.textContent = 'Selecciona una acción abajo';
-      slotFoto1.classList.remove('active-slot');
-      slotFoto2.classList.remove('active-slot');
+      readyIcon.textContent = '📋';
+      readyTitle.textContent = 'Fotos Listas (2/2)';
+      readySubtitle.textContent = 'Selecciona la acción para esta ficha:';
       cameraTriggerSection.style.display = 'none';
       readyActionBox.style.display = 'flex';
       readyActionBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
   }
 
-  // -------------------------------------------------------------
-  // REINICIAR FORMULARIO TRAS GUARDAR / ENVIAR
-  // -------------------------------------------------------------
-  function resetForm() {
+  function resetFichaForm() {
     state.foto1Blob = null;
     state.foto2Blob = null;
     cameraInput1.value = '';
@@ -359,14 +370,78 @@ document.addEventListener('DOMContentLoaded', () => {
 
     cameraTriggerSection.style.display = 'flex';
     readyActionBox.style.display = 'none';
-
-    setStep(1);
+    setStepFicha(1);
   }
 
+  // -------------------------------------------------------------
+  // PROCESAMIENTO DE FOTOS: MODO TEST (1 SOLA FOTO)
+  // -------------------------------------------------------------
+  cameraInputTest.addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    const tempUrl = URL.createObjectURL(file);
+    imgPreviewTest.src = tempUrl;
+    imgPreviewTest.style.display = 'block';
+    placeholderFotoTest.style.display = 'none';
+    badgeCheckTest.style.display = 'flex';
+    btnRetakeTest.style.display = 'flex';
+    slotFotoTest.classList.remove('active-slot');
+    slotFotoTest.classList.add('completed');
+
+    const highQualityBlob = await comprimirImagenEnCliente(file, 3200, 0.95);
+    state.fotoTestBlob = highQualityBlob;
+    state.fotoTestMime = file.type || 'image/jpeg';
+
+    setStepTestReady();
+  });
+
+  function setStepTestReady() {
+    const tipo = state.tipoEvaluacion === 'AUTO' ? 'Pre/Post Test' : state.tipoEvaluacion;
+    stepTag.textContent = '¡Foto Lista!';
+    stepTitle.textContent = `${tipo} (Hoja Única)`;
+    stepDesc.textContent = 'Verifica la nitidez y selecciona una acción.';
+    stepBadge.textContent = '✔';
+
+    readyIcon.textContent = '📝';
+    readyTitle.textContent = 'Test Listo (1/1 Foto)';
+    readySubtitle.textContent = `Evaluación: ${state.tipoEvaluacion}. Elige la acción:`;
+
+    cameraTriggerSection.style.display = 'none';
+    readyActionBox.style.display = 'flex';
+    readyActionBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function resetTestForm() {
+    state.fotoTestBlob = null;
+    cameraInputTest.value = '';
+
+    imgPreviewTest.src = '';
+    imgPreviewTest.style.display = 'none';
+    placeholderFotoTest.style.display = 'flex';
+    badgeCheckTest.style.display = 'none';
+    btnRetakeTest.style.display = 'none';
+    slotFotoTest.className = 'photo-slot photo-slot-single active-slot';
+
+    stepTag.textContent = 'Hoja Única';
+    stepTitle.textContent = 'Tomar Foto del Test';
+    stepDesc.textContent = 'Enfoca la hoja completa del Pre-Test o Post-Test con buena luz.';
+    stepBadge.textContent = '1/1';
+    shutterLabel.textContent = 'Tomar Foto del Test';
+
+    cameraTriggerSection.style.display = 'flex';
+    readyActionBox.style.display = 'none';
+    actualizarEtiquetaTest();
+  }
+
+  // -------------------------------------------------------------
+  // BOTONES DE ACCIÓN (SINCRONIZAR, GUARDAR EN COLA, DESCARTAR)
+  // -------------------------------------------------------------
   btnCancelarEncuesta.addEventListener('click', () => {
-    if (confirm('¿Deseas descartar las dos fotos actuales?')) {
-      resetForm();
-      showToast('Encuesta descartada.', 'info');
+    if (confirm('¿Deseas descartar la captura actual?')) {
+      if (state.mode === 'ficha') resetFichaForm();
+      else resetTestForm();
+      showToast('Captura descartada.', 'info');
     }
   });
 
@@ -382,9 +457,16 @@ document.addEventListener('DOMContentLoaded', () => {
   // ENVÍO EN MODO INMEDIATO
   // -------------------------------------------------------------
   async function ejecutarEnvioInmediato() {
-    if (!state.foto1Blob || !state.foto2Blob) {
-      showToast('Debes tomar ambas fotos antes de enviar.', 'error');
-      return;
+    if (state.mode === 'ficha') {
+      if (!state.foto1Blob || !state.foto2Blob) {
+        showToast('Debes tomar ambas fotos de la ficha antes de enviar.', 'error');
+        return;
+      }
+    } else {
+      if (!state.fotoTestBlob) {
+        showToast('Debes tomar la foto del test antes de enviar.', 'error');
+        return;
+      }
     }
 
     if (!navigator.onLine) {
@@ -393,34 +475,67 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    mostrarModalProcesamiento('Extrayendo Datos con IA', 'Analizando checkboxes, campos manuscritos y convirtiendo a MAYÚSCULAS...');
+    if (state.mode === 'ficha') {
+      mostrarModalProcesamiento('Extrayendo Ficha con IA', 'Analizando 43 variables, checkboxes manuscritos y subiendo a Google Sheets...');
+      try {
+        const formData = new FormData();
+        formData.append('foto_anverso', state.foto1Blob, 'anverso.jpg');
+        formData.append('foto_reverso', state.foto2Blob, 'reverso.jpg');
+        formData.append('modo', 'inmediato');
 
-    try {
-      const formData = new FormData();
-      formData.append('foto_anverso', state.foto1Blob, 'anverso.jpg');
-      formData.append('foto_reverso', state.foto2Blob, 'reverso.jpg');
-      formData.append('modo', 'inmediato');
+        const response = await fetch('/api/process-survey', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await response.json();
 
-      const response = await fetch('/api/process-survey', {
-        method: 'POST',
-        body: formData
-      });
+        if (!response.ok || !data.success) {
+          throw new Error(data.detail || data.error || 'Error en el servidor');
+        }
 
-      const data = await response.json();
+        ocultarModalProcesamiento();
+        showToast(`¡Éxito! Registrada ficha de: ${data.participante || 'Participante'}`, 'success');
+        resetFichaForm();
+        cargarResumenParticipantes();
 
-      if (!response.ok || !data.success) {
-        throw new Error(data.detail || data.error || 'Error en el servidor');
+      } catch (error) {
+        console.error('Error en envío inmediato de ficha:', error);
+        ocultarModalProcesamiento();
+        showToast(`Error al procesar: ${error.message}. Se guardará en cola local.`, 'error');
+        await ejecutarGuardadoEnCola();
       }
 
-      ocultarModalProcesamiento();
-      showToast(`¡Éxito! Registrada ficha de: ${data.participante || 'Participante'}`, 'success');
-      resetForm();
+    } else {
+      // Modo Test
+      mostrarModalProcesamiento('Extrayendo Pre/Post Test con IA', 'Digitalizando respuestas, reconciliando con base de participantes y subiendo a Google Sheets...');
+      try {
+        const formData = new FormData();
+        formData.append('foto_test', state.fotoTestBlob, 'test.jpg');
+        if (state.tipoEvaluacion && state.tipoEvaluacion !== 'AUTO') {
+          formData.append('tipo_evaluacion', state.tipoEvaluacion);
+        }
+        formData.append('modo', 'inmediato');
 
-    } catch (error) {
-      console.error('Error en envío inmediato:', error);
-      ocultarModalProcesamiento();
-      showToast(`Error al procesar: ${error.message}. Se guardará en cola local para no perder los datos.`, 'error');
-      await ejecutarGuardadoEnCola();
+        const response = await fetch('/api/process-test', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.detail || data.error || 'Error en el servidor');
+        }
+
+        ocultarModalProcesamiento();
+        showToast(`¡Éxito! ${data.tipo_evaluacion} registrado: ${data.participante} (${data.municipio})`, 'success');
+        resetTestForm();
+
+      } catch (error) {
+        console.error('Error en envío inmediato de test:', error);
+        ocultarModalProcesamiento();
+        showToast(`Error al procesar: ${error.message}. Se guardará en cola local.`, 'error');
+        await ejecutarGuardadoEnCola();
+      }
     }
   }
 
@@ -428,23 +543,35 @@ document.addEventListener('DOMContentLoaded', () => {
   // GUARDADO EN MODO COLA (INDEXEDDB)
   // -------------------------------------------------------------
   async function ejecutarGuardadoEnCola() {
-    if (!state.foto1Blob || !state.foto2Blob) {
-      showToast('Debes tomar ambas fotos.', 'error');
-      return;
-    }
-
     try {
-      await window.surveyDB.guardarEncuesta(
-        state.foto1Blob,
-        state.foto2Blob,
-        state.foto1Mime,
-        state.foto2Mime
-      );
+      if (state.mode === 'ficha') {
+        if (!state.foto1Blob || !state.foto2Blob) {
+          showToast('Debes tomar ambas fotos de la ficha.', 'error');
+          return;
+        }
+        await window.surveyDB.guardarEncuesta(
+          state.foto1Blob,
+          state.foto2Blob,
+          state.foto1Mime,
+          state.foto2Mime
+        );
+        resetFichaForm();
+      } else {
+        if (!state.fotoTestBlob) {
+          showToast('Debes tomar la foto del test.', 'error');
+          return;
+        }
+        await window.surveyDB.guardarTest(
+          state.fotoTestBlob,
+          state.fotoTestMime,
+          state.tipoEvaluacion
+        );
+        resetTestForm();
+      }
 
       await actualizarContadorCola();
       const count = await window.surveyDB.contarPendientes();
-      showToast(`📦 Encuesta guardada en la cola local (${count} pendientes).`, 'success');
-      resetForm();
+      showToast(`📦 Registro guardado en la cola local (${count} pendientes).`, 'success');
     } catch (err) {
       console.error('Error guardando en IDB:', err);
       showToast('Error al guardar en el dispositivo: ' + err.message, 'error');
@@ -452,7 +579,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // -------------------------------------------------------------
-  // SINCRONIZAR TODAS LAS ENCUESTAS DE LA COLA (BATCH)
+  // SINCRONIZAR TODA LA COLA (BATCH MULTI-FORMATO)
   // -------------------------------------------------------------
   btnSyncAllNow.addEventListener('click', sincronizarColaCompleta);
 
@@ -464,7 +591,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const pendientes = await window.surveyDB.obtenerPendientes();
     if (pendientes.length === 0) {
-      showToast('No hay encuestas pendientes en la cola.', 'info');
+      showToast('No hay registros pendientes en la cola.', 'info');
       return;
     }
 
@@ -475,24 +602,40 @@ document.addEventListener('DOMContentLoaded', () => {
     let fallidas = 0;
     const total = pendientes.length;
 
-    mostrarModalProcesamiento('Sincronizando Lote en Cola', `Procesando encuesta 1 de ${total}...`);
+    mostrarModalProcesamiento('Sincronizando Lote en Cola', `Procesando registro 1 de ${total}...`);
 
     for (let i = 0; i < total; i++) {
       const item = pendientes[i];
-      procDesc.textContent = `Procesando encuesta ${i + 1} de ${total}... (IA de Visión + Sheets)`;
+      const esTest = item.tipo === 'test';
+      procDesc.textContent = `Procesando ${esTest ? 'Test' : 'Ficha'} ${i + 1} de ${total}... (IA + Google Sheets)`;
 
       try {
         await window.surveyDB.actualizarEstado(item.id, 'syncing');
 
-        const formData = new FormData();
-        formData.append('foto_anverso', item.anversoBlob, 'anverso.jpg');
-        formData.append('foto_reverso', item.reversoBlob, 'reverso.jpg');
-        formData.append('modo', 'batch');
+        let resp;
+        if (esTest) {
+          const formData = new FormData();
+          formData.append('foto_test', item.anversoBlob || item.fotoBlob, 'test.jpg');
+          if (item.tipoEvaluacion && item.tipoEvaluacion !== 'AUTO') {
+            formData.append('tipo_evaluacion', item.tipoEvaluacion);
+          }
+          formData.append('modo', 'batch');
 
-        const resp = await fetch('/api/process-survey', {
-          method: 'POST',
-          body: formData
-        });
+          resp = await fetch('/api/process-test', {
+            method: 'POST',
+            body: formData
+          });
+        } else {
+          const formData = new FormData();
+          formData.append('foto_anverso', item.anversoBlob, 'anverso.jpg');
+          formData.append('foto_reverso', item.reversoBlob, 'reverso.jpg');
+          formData.append('modo', 'batch');
+
+          resp = await fetch('/api/process-survey', {
+            method: 'POST',
+            body: formData
+          });
+        }
 
         const resData = await resp.json();
 
@@ -516,17 +659,32 @@ document.addEventListener('DOMContentLoaded', () => {
     ocultarModalProcesamiento();
     await actualizarContadorCola();
     await renderizarListaDrawer();
+    cargarResumenParticipantes();
 
     if (fallidas === 0) {
-      showToast(`🚀 ¡Completado! Se sincronizaron las ${exitosas} encuestas con Google Sheets.`, 'success');
+      showToast(`🚀 ¡Completado! Se sincronizaron los ${exitosas} registros con Google Sheets.`, 'success');
     } else {
       showToast(`Sincronización terminada: ${exitosas} exitosas, ${fallidas} con error.`, 'error');
     }
   }
 
   // -------------------------------------------------------------
-  // GESTIÓN DEL DRAWER DE COLA
+  // CONTADOR Y DRAWER DE LA COLA LOCAL
   // -------------------------------------------------------------
+  async function actualizarContadorCola() {
+    try {
+      if (window.surveyDB) {
+        const count = await window.surveyDB.contarPendientes();
+        queueCountBadge.textContent = count;
+        queueLabel.textContent = `${count} ${count === 1 ? 'registro pendiente' : 'registros pendientes'}`;
+        btnSyncAllNow.disabled = (count === 0 || !navigator.onLine || state.isSyncing);
+      }
+    } catch (err) {
+      console.error('Error consultando cola:', err);
+    }
+  }
+  actualizarContadorCola();
+
   btnOpenDrawer.addEventListener('click', async () => {
     await renderizarListaDrawer();
     drawerBackdrop.style.display = 'block';
@@ -548,7 +706,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (items.length === 0) {
       drawerQueueList.innerHTML = `
         <div style="text-align: center; color: var(--text-muted); padding: 24px 0;">
-          No tienes encuestas en la cola local.
+          No tienes registros en la cola local.
         </div>
       `;
       return;
@@ -558,24 +716,30 @@ document.addEventListener('DOMContentLoaded', () => {
       const card = document.createElement('div');
       card.className = 'queue-item-card';
 
-      const url1 = URL.createObjectURL(item.anversoBlob);
-      const url2 = URL.createObjectURL(item.reversoBlob);
+      const esTest = item.tipo === 'test';
+      const url1 = URL.createObjectURL(item.anversoBlob || item.fotoBlob);
+      const url2 = item.reversoBlob ? URL.createObjectURL(item.reversoBlob) : null;
       const fecha = new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
       let statusBadge = '';
       if (item.status === 'pending') statusBadge = '<span style="color: #f59e0b;">⏳ Pendiente</span>';
       else if (item.status === 'syncing') statusBadge = '<span style="color: #06b6d4;">🔄 Sincronizando</span>';
-      else if (item.status === 'synced') statusBadge = '<span style="color: #10b981;">✅ Sincronizada</span>';
+      else if (item.status === 'synced') statusBadge = '<span style="color: #10b981;">✅ Sincronizado</span>';
       else if (item.status === 'error') statusBadge = `<span style="color: #ef4444;" title="${item.errorMsg || ''}">❌ Error</span>`;
+
+      const typeBadge = esTest 
+        ? `<span class="badge-item-type badge-type-test">📝 Test (${item.tipoEvaluacion || 'AUTO'})</span>`
+        : `<span class="badge-item-type badge-type-ficha">📋 Ficha (2 Fotos)</span>`;
 
       card.innerHTML = `
         <div class="queue-item-left">
           <div class="item-thumb-pair">
-            <img class="item-thumb" src="${url1}" alt="Anverso">
-            <img class="item-thumb" src="${url2}" alt="Reverso">
+            <img class="item-thumb" src="${url1}" alt="Foto 1">
+            ${url2 ? `<img class="item-thumb" src="${url2}" alt="Foto 2">` : ''}
           </div>
           <div class="item-meta">
-            <span>Encuesta #${items.length - index} • ${fecha}</span>
+            ${typeBadge}
+            <span>#${items.length - index} • ${fecha}</span>
             <small>${statusBadge}</small>
           </div>
         </div>
@@ -590,11 +754,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
       card.querySelector('.btn-delete-item').addEventListener('click', async (e) => {
         const id = e.currentTarget.getAttribute('data-id');
-        if (confirm('¿Eliminar esta encuesta de la cola local?')) {
+        if (confirm('¿Eliminar este registro de la cola local?')) {
           await window.surveyDB.eliminarEncuesta(id);
           await actualizarContadorCola();
           await renderizarListaDrawer();
-          showToast('Encuesta eliminada de la cola.', 'info');
+          showToast('Registro eliminado de la cola.', 'info');
         }
       });
 
@@ -606,8 +770,126 @@ document.addEventListener('DOMContentLoaded', () => {
     const borradas = await window.surveyDB.limpiarSincronizadas();
     await actualizarContadorCola();
     await renderizarListaDrawer();
-    showToast(`Se eliminaron ${borradas} encuestas ya sincronizadas.`, 'info');
+    showToast(`Se eliminaron ${borradas} registros ya sincronizados.`, 'info');
   });
+
+  // -------------------------------------------------------------
+  // MODAL DE BASE DE DATOS DE PARTICIPANTES (IMPORTACIÓN CSV)
+  // -------------------------------------------------------------
+  btnOpenParticipants.addEventListener('click', async () => {
+    await cargarResumenParticipantes();
+    participantsBackdrop.style.display = 'block';
+    participantsModal.classList.add('open');
+  });
+
+  btnCloseParticipants.addEventListener('click', cerrarModalParticipantes);
+  participantsBackdrop.addEventListener('click', cerrarModalParticipantes);
+
+  function cerrarModalParticipantes() {
+    participantsBackdrop.style.display = 'none';
+    participantsModal.classList.remove('open');
+  }
+
+  async function cargarResumenParticipantes() {
+    try {
+      const resp = await fetch('/api/participants');
+      if (!resp.ok) return;
+      const data = await resp.json();
+
+      headerParticipantsCount.textContent = data.total || 0;
+      statTotalParticipantes.textContent = data.total || 0;
+
+      const porMun = data.por_municipio || {};
+      const numMuns = Object.keys(porMun).length;
+      statTotalMunicipios.textContent = numMuns;
+
+      participantsBreakdown.innerHTML = '';
+      if (numMuns === 0) {
+        participantsBreakdown.innerHTML = `
+          <div style="font-size: 0.72rem; color: var(--text-muted); text-align: center; padding: 10px;">
+            Aún no hay participantes en memoria. Sube tu CSV de Google Sheets arriba.
+          </div>
+        `;
+      } else {
+        for (const [mun, count] of Object.entries(porMun)) {
+          const row = document.createElement('div');
+          row.className = 'mun-row';
+          row.innerHTML = `
+            <span class="mun-name">📍 ${mun}</span>
+            <span class="mun-count">${count}</span>
+          `;
+          participantsBreakdown.appendChild(row);
+        }
+      }
+    } catch (e) {
+      console.warn('Error cargando participantes:', e);
+    }
+  }
+  cargarResumenParticipantes();
+
+  btnUploadCsv.addEventListener('click', async () => {
+    const file = csvFileInput.files && csvFileInput.files[0];
+    if (!file) {
+      showToast('Por favor selecciona un archivo .csv para importar.', 'error');
+      return;
+    }
+
+    mostrarModalProcesamiento('Importando Participantes', 'Indexando nombres, edades, municipios y EPS para coincidencia difusa...');
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const resp = await fetch('/api/participants/import', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await resp.json();
+
+      ocultarModalProcesamiento();
+      if (resp.ok && data.success) {
+        showToast(data.message, 'success');
+        csvFileInput.value = '';
+        await cargarResumenParticipantes();
+      } else {
+        throw new Error(data.error || 'Error al importar archivo CSV');
+      }
+    } catch (err) {
+      ocultarModalProcesamiento();
+      console.error('Error importando CSV:', err);
+      showToast('Error al importar CSV: ' + err.message, 'error');
+    }
+  });
+
+  // -------------------------------------------------------------
+  // MONITOREO DE RED (ONLINE / OFFLINE)
+  // -------------------------------------------------------------
+  function updateNetworkStatus() {
+    const isOnline = navigator.onLine;
+    if (netStatusBadge && netStatusText) {
+      if (isOnline) {
+        netStatusBadge.className = 'badge-network';
+        netStatusText.textContent = 'Online';
+      } else {
+        netStatusBadge.className = 'badge-network offline';
+        netStatusText.textContent = 'Offline';
+      }
+    }
+    if (!isOnline) {
+      showToast('⚠️ Estás sin conexión. Las capturas se guardarán en cola local.', 'error');
+    }
+  }
+  window.addEventListener('online', updateNetworkStatus);
+  window.addEventListener('offline', updateNetworkStatus);
+  updateNetworkStatus();
+
+  // -------------------------------------------------------------
+  // REGISTRO DE SERVICE WORKER (PWA OFFLINE)
+  // -------------------------------------------------------------
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js')
+      .then(() => console.log('Service Worker registrado correctamente'))
+      .catch((e) => console.warn('Fallo registrando Service Worker:', e));
+  }
 
   // -------------------------------------------------------------
   // MODAL DE PROCESAMIENTO
@@ -621,5 +903,4 @@ document.addEventListener('DOMContentLoaded', () => {
   function ocultarModalProcesamiento() {
     processingModal.style.display = 'none';
   }
-
 });

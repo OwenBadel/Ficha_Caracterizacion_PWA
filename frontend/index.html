@@ -3,18 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>Digitalizador Móvil de Fichas de Caracterización</title>
-  <meta name="description" content="PWA Mobile-First para captura fotográfica de fichas de caracterización, extracción con IA de Visión y sincronización en Google Sheets.">
+  <title>Digitalizador Móvil de Fichas y Tests — Gobernación</title>
+  <meta name="description" content="PWA Mobile-First para captura de Fichas de Caracterización y Pre/Post Test SSR ITS con IA de Visión y sincronización en Google Sheets.">
   <meta name="theme-color" content="#10b981">
   <link rel="manifest" href="/manifest.json">
-  <link rel="stylesheet" href="/static/css/styles.css?v=5">
+  <link rel="stylesheet" href="/static/css/styles.css?v=7">
   <link rel="icon" href="https://cdn.jsdelivr.net/npm/@tabler/icons@3.2.0/icons/outline/clipboard-heart.svg" type="image/svg+xml">
 </head>
 <body>
 
   <div class="app-container">
     
-    <!-- ENCABEZADO FIJO -->
+    <!-- ENCABEZADO FIJO CON SELECTOR DE MODOS -->
     <header class="app-header">
       <div class="header-top">
         <div class="brand">
@@ -28,15 +28,54 @@
           </div>
           <div class="brand-info">
             <h1>Ficha Digital</h1>
+            <span id="brandSubtitle">Salud Sexual & Tests</span>
+          </div>
+        </div>
+
+        <div class="header-actions">
+          <button id="btnOpenParticipants" class="btn-header-action" type="button" title="Base de Datos de Participantes">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 7m-4 0a4 4 0 1 0 8 0a4 4 0 1 0 -8 0" />
+              <path d="M3 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2" />
+              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              <path d="M21 21v-2a4 4 0 0 0 -3 -3.85" />
+            </svg>
+            <span id="headerParticipantsCount">0</span>
+          </button>
+          <div id="netStatusBadge" class="badge-network">
+            <span class="dot-indicator"></span>
+            <span id="netStatusText">Online</span>
           </div>
         </div>
       </div>
+
+      <!-- SELECTOR PRINCIPAL DE MODO (TABS) -->
+      <nav class="mode-tabs">
+        <button id="tabModoFicha" class="tab-btn active" type="button">
+          <span class="tab-icon">📋</span>
+          <span>Ficha (2 Fotos)</span>
+        </button>
+        <button id="tabModoTest" class="tab-btn" type="button">
+          <span class="tab-icon">📝</span>
+          <span>Pre / Post Test (1 Foto)</span>
+        </button>
+      </nav>
     </header>
 
     <!-- CUERPO PRINCIPAL -->
     <main class="main-content">
 
-      <!-- BANNER DE PASO ACTUAL -->
+      <!-- SELECTOR DE TIPO PARA MODO TEST (AUTO / PRE-TEST / POST-TEST) -->
+      <section id="testTypeBar" class="test-type-bar" style="display: none;">
+        <span class="type-bar-label">Evaluación:</span>
+        <div class="pill-group">
+          <button id="pillAuto" class="pill-btn active" type="button" data-type="AUTO">🤖 Auto (IA)</button>
+          <button id="pillPre" class="pill-btn" type="button" data-type="PRE-TEST">PRE-TEST</button>
+          <button id="pillPost" class="pill-btn" type="button" data-type="POST-TEST">POST-TEST</button>
+        </div>
+      </section>
+
+      <!-- BANNER DE PASO ACTUAL (ADAPTABLE) -->
       <section class="step-banner">
         <div class="step-info">
           <span id="stepTag" class="step-tag">Paso 1 de 2</span>
@@ -46,8 +85,8 @@
         <div id="stepCounterBadge" class="step-badge">1/2</div>
       </section>
 
-      <!-- VISOR DUAL DE FOTOS (ANVERSO Y REVERSO) -->
-      <section class="photos-grid">
+      <!-- VISOR DUAL DE FOTOS (MODO FICHA: ANVERSO Y REVERSO) -->
+      <section id="photosGridFicha" class="photos-grid">
         <!-- Slot Foto 1 -->
         <div id="slotFoto1" class="photo-slot active-slot">
           <div id="placeholderFoto1" class="slot-placeholder">
@@ -89,7 +128,28 @@
         </div>
       </section>
 
-      <!-- BOTÓN DE DISPARO DE CÁMARA (SHUTTER GIGANTE) -->
+      <!-- VISOR ÚNICO DE FOTO (MODO TEST: PRE O POST) -->
+      <section id="photosSingleTest" class="test-photo-section" style="display: none;">
+        <div id="slotFotoTest" class="photo-slot photo-slot-single active-slot">
+          <div id="placeholderFotoTest" class="slot-placeholder">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+              <path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z" />
+              <path d="M9 15l2 2l4 -4" />
+            </svg>
+            <span>Hoja Única de Evaluación<br><strong>Pre-Test o Post-Test (Anexo 4)</strong></span>
+          </div>
+          <img id="imgPreviewTest" class="slot-image" alt="Vista previa Test">
+          <div id="badgeCheckTest" class="slot-badge-completed">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+              <path d="M5 12l5 5l10 -10" />
+            </svg>
+          </div>
+          <button id="btnRetakeTest" class="slot-retake" type="button">🔄 Repetir Foto</button>
+        </div>
+      </section>
+
+      <!-- BOTÓN DE DISPARO DE CÁMARA (SHUTTER ERGONÓMICO GIGANTE) -->
       <section id="cameraTriggerSection" class="camera-trigger-section">
         <div class="shutter-wrapper">
           <div class="shutter-glow-ring"></div>
@@ -103,18 +163,19 @@
         <div id="shutterLabel" class="shutter-label">Tomar Foto 1 (Anverso)</div>
         <p class="shutter-sublabel">Toca el botón circular para abrir la cámara de tu celular.</p>
 
-        <!-- Inputs de archivo con captura de cámara de celular -->
+        <!-- Inputs de archivo con captura de cámara del celular -->
         <input id="cameraInput1" class="hidden-input" type="file" accept="image/*" capture="environment">
         <input id="cameraInput2" class="hidden-input" type="file" accept="image/*" capture="environment">
+        <input id="cameraInputTest" class="hidden-input" type="file" accept="image/*" capture="environment">
       </section>
 
-      <!-- CAJA DE ACCIÓN CUANDO LAS 2 FOTOS ESTÁN LISTAS (SINCRONIZAR O MANDAR A LA COLA) -->
+      <!-- CAJA DE ACCIÓN CUANDO LAS FOTOS ESTÁN LISTAS (SINCRONIZAR O MANDAR A LA COLA) -->
       <section id="readyActionBox" class="ready-action-box">
         <div class="ready-header">
-          <span class="ready-icon">📋</span>
+          <span id="readyIcon" class="ready-icon">📋</span>
           <div>
-            <h3 class="ready-title">Fotos Listas (2/2)</h3>
-            <p class="ready-subtitle">Selecciona la acción para esta encuesta:</p>
+            <h3 id="readyTitle" class="ready-title">Fotos Listas (2/2)</h3>
+            <p id="readySubtitle" class="ready-subtitle">Selecciona la acción para este registro:</p>
           </div>
         </div>
 
@@ -134,7 +195,7 @@
             <span>📦 Mandar a la Cola</span>
           </button>
           <button id="btnCancelarEncuesta" class="btn-secondary" type="button">
-            🗑️ Descartar Fotos y Repetir
+            🗑️ Descartar y Repetir
           </button>
         </div>
       </section>
@@ -147,7 +208,7 @@
         <div id="btnOpenDrawer" class="queue-info">
           <span id="queueCountBadge" class="queue-counter-badge">0</span>
           <div class="queue-label-text">
-            <span id="queueLabel">0 encuestas pendientes</span>
+            <span id="queueLabel">0 registros pendientes</span>
             <small>Toca para ver la cola</small>
           </div>
         </div>
@@ -165,13 +226,56 @@
     <div id="drawerBackdrop" class="drawer-backdrop"></div>
     <div id="drawerContainer" class="drawer-container">
       <div class="drawer-header">
-        <h2>📦 Cola de Encuestas Offline</h2>
+        <h2>📦 Cola de Registros Offline</h2>
         <button id="btnCloseDrawer" class="drawer-close" type="button">✕</button>
       </div>
       <div id="drawerQueueList" class="drawer-list">
-        <!-- Los elementos guardados en IndexedDB se renderizan aquí dinámicamente -->
+        <!-- Elementos guardados en IndexedDB se renderizan aquí dinámicamente -->
       </div>
-      <button id="btnLimpiarCompletadas" class="btn-secondary" type="button">Limpiar Encuestas Ya Sincronizadas</button>
+      <button id="btnLimpiarCompletadas" class="btn-secondary" type="button">Limpiar Registros Ya Sincronizados</button>
+    </div>
+
+    <!-- MODAL DE BASE DE DATOS DE PARTICIPANTES -->
+    <div id="participantsBackdrop" class="drawer-backdrop"></div>
+    <div id="participantsModal" class="modal-card-dialog">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="modal-icon">👥</span>
+          <div>
+            <h2>Base de Datos de Participantes</h2>
+            <p>Reconciliación automática y cero errores caligráficos</p>
+          </div>
+        </div>
+        <button id="btnCloseParticipants" class="drawer-close" type="button">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <span class="stat-num" id="statTotalParticipantes">0</span>
+            <span class="stat-lbl">Participantes en Memoria</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-num" id="statTotalMunicipios">0</span>
+            <span class="stat-lbl">Municipios Vinculados</span>
+          </div>
+        </div>
+
+        <div class="import-box">
+          <label class="import-label">
+            <strong>📥 Cargar archivo CSV de Google Sheets</strong>
+            <span>Descarga el CSV de tu hoja de Fichas (Archivo &gt; Descargar &gt; Valores separados por comas) y súbelo para asociar los 10 municipios:</span>
+          </label>
+          <div class="file-upload-row">
+            <input id="csvFileInput" type="file" accept=".csv,text/csv">
+            <button id="btnUploadCsv" class="btn-action-main btn-sm" type="button">Subir y Reconciliar</button>
+          </div>
+        </div>
+
+        <div id="participantsBreakdown" class="participants-breakdown">
+          <!-- Desglose por municipio -->
+        </div>
+      </div>
     </div>
 
     <!-- MODAL DE PROCESAMIENTO / CARGA -->
@@ -188,7 +292,7 @@
 
   </div>
 
-  <script src="/static/js/db.js?v=6"></script>
-  <script src="/static/js/app.js?v=6"></script>
+  <script src="/static/js/db.js?v=7"></script>
+  <script src="/static/js/app.js?v=7"></script>
 </body>
 </html>

@@ -17,8 +17,12 @@ logger = logging.getLogger("vision_service")
 
 try:
     from .schema import FichaCaracterizacion, COLUMNAS_FICHA
+    from .schema_test import PrePostTest, COLUMNAS_TEST
+    from .participant_cache import participant_cache
 except (ImportError, ValueError):
     from schema import FichaCaracterizacion, COLUMNAS_FICHA
+    from schema_test import PrePostTest, COLUMNAS_TEST
+    from participant_cache import participant_cache
 
 load_dotenv()
 
@@ -171,6 +175,62 @@ Aplica fidelidad visual estricta y dependencias condicionales (si una casilla es
 3. Si en la 43 ('¿Por que?') hay justificación escrita, la 42 es categóricamente "SI".
 Devuelve ÚNICAMENTE el JSON con las siguientes 43 claves canónicas:
 {PROMPT_JSON_TEMPLATE}
+"""
+
+SYSTEM_PROMPT_TEST = """Eres un sistema experto en transcripción OCR y digitalización forense de evaluaciones físicas oficiales de conocimiento (Pre-Test y Post-Test de Salud Sexual y Reproductiva / ITS - Anexo 4).
+Tu misión es transcribir con EXACTITUD Y FIDELIDAD VISUAL ABSOLUTA la información de la imagen adjunta (1 sola página: formato de evaluación).
+
+======================================================================
+🚨 REGLAS INVIOLABLES DE EXTRACCIÓN Y FIDELIDAD VISUAL 🚨
+======================================================================
+1. CERO ALUCINACIONES: Extrae ÚNICAMENTE lo que esté físicamente marcado con una marca manuscrita (X, visto bueno ✔, raya, sombreado, cruz) o escrito a mano con tinta.
+2. CASILLAS VACÍAS: Si una pregunta no fue marcada o un campo está en blanco, devuelve cadena vacía "". NUNCA adivines ni inventes respuestas.
+3. TODO EN MAYÚSCULAS: Todo el texto debe devolverse en MAYÚSCULAS sin excepción.
+4. TIPO DE EVALUACIÓN:
+   - Examina el título superior del documento:
+     * Si dice "PRE-TEST PARTICIPANTES- ANEXO Nº 4" -> "PRE-TEST"
+     * Si dice "POST TEST PARTICIPANTES- ANEXO Nº 4" o "POST-TEST" -> "POST-TEST"
+5. DATOS DEL PARTICIPANTE:
+   - NOMBRE: Nombre completo manuscrito tal como se lee.
+   - EDAD: Edad en número entero (ej. 14, 15, 16).
+   - MUNICIPIO: Municipio cabecera (MAHATES, TURBANA, TURBACO, BARRANCO DE LOBA, SAN JACINTO DEL CAUCA, CALAMAR, MORALES, SANTA ROSA DEL SUR, ARENAL, SOPLAVIENTO).
+   - EAPB: Entidad de salud (EPS) escrita (MUTUAL SER, COOSALUD, NUEVA EPS, SALUD TOTAL, SURA, SANITAS, etc.).
+6. PREGUNTAS DICOTÓMICAS (1, 2, 3, 4, 6, 7, 8, 9):
+   El diseño físico tiene casillas: "Verdadero (  )    Falso (  )"
+   - Si la marca manuscrita está dentro o sobre el paréntesis de Verdadero -> "VERDADERO"
+   - Si la marca manuscrita está dentro o sobre el paréntesis de Falso -> "FALSO"
+   - Si ninguna está marcada -> ""
+7. PREGUNTA 5 ("¿Cuál de las siguientes acciones ayuda a prevenir el VIH?"):
+   El diseño presenta 4 opciones con paréntesis:
+   (  ) Tener información clara sobre salud sexual.
+   (  ) Usar preservativo.
+   (  ) Evitar compartir agujas o elementos cortopunzantes.
+   (  ) Todas las anteriores.
+   - Identifica cuál paréntesis contiene la marca manuscrita:
+     * Si marcó "Todas las anteriores" -> "TODAS LAS ANTERIORES"
+     * Si marcó "Usar preservativo" -> "USAR PRESERVATIVO"
+     * Si marcó "Tener información clara sobre salud sexual" -> "TENER INFORMACIÓN CLARA SOBRE SALUD SEXUAL"
+     * Si marcó "Evitar compartir agujas o elementos cortopunzantes" -> "EVITAR COMPARTIR AGUJAS O ELEMENTOS CORTOPUNZANTES"
+"""
+
+USER_PROMPT_TEST = """Analiza la fotografía adjunta correspondiente al formato físico de evaluación (Pre-Test o Post-Test Anexo 4) y genera un objeto JSON válido con las siguientes claves exactas:
+{
+  "TIPO DE EVALUACIÓN": "PRE-TEST o POST-TEST según el título",
+  "NOMBRE": "NOMBRE COMPLETO DEL PARTICIPANTE",
+  "EDAD": "EDAD",
+  "MUNICIPIO": "MUNICIPIO",
+  "EAPB (EPS)": "EPS O EAPB",
+  "1. EL USO CORRECTO DEL PRESERVATIVO AYUDA A PREVENIR ITS COMO VIH Y SÍFILIS.": "VERDADERO o FALSO o vacío",
+  "2. LAS ITS PUEDEN TRANSMITIRSE DE LA MADRE AL BEBÉ DURANTE EL EMBARAZO.": "VERDADERO o FALSO o vacío",
+  "3. UNA PERSONA CON VIH SIEMPRE SE VE ENFERMA.": "VERDADERO o FALSO o vacío",
+  "4. LOS ANTICONCEPTIVOS ORALES PREVIENEN LAS ITS.": "VERDADERO o FALSO o vacío",
+  "5. ¿CUÁL DE LAS SIGUIENTES ACCIONES AYUDA A PREVENIR EL VIH?": "Opción seleccionada o vacía",
+  "6. LA PREP ES UN MEDICAMENTO QUE AYUDA A PREVENIR EL VIH EN PERSONAS CON MAYOR RIESGO DE EXPOSICIÓN.": "VERDADERO o FALSO o vacío",
+  "7. EXISTE VACUNA PARA PREVENIR LA HEPATITIS B.": "VERDADERO o FALSO o vacío",
+  "8. LA SÍFILIS TIENE TRATAMIENTO Y PUEDE PREVENIRSE.": "VERDADERO o FALSO o vacío",
+  "9. RESPETAR LAS DIFERENCIAS Y EVITAR LA DISCRIMINACIÓN AYUDA A CONSTRUIR RELACIONES SALUDABLES.": "VERDADERO o FALSO o vacío"
+}
+Devuelve EXCLUSIVAMENTE el JSON sin bloques markdown ni comentarios.
 """
 
 
@@ -432,3 +492,235 @@ class VisionService:
         if last_err:
             raise last_err
         return "{}"
+
+    # -------------------------------------------------------------
+    # MÉTODOS ESPECIALIZADOS PARA PRE-TEST Y POST-TEST (1 SOLA FOTO)
+    # -------------------------------------------------------------
+    def extraer_datos_test(
+        self,
+        img_bytes: bytes,
+        mime_type: str = "image/jpeg",
+        tipo_evaluacion_override: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Extrae datos de 1 sola fotografía correspondiente al Pre-Test o Post-Test.
+        Reconcilia automáticamente con participant_cache si existe coincidencia previa.
+        """
+        img_opt, mime_opt = self._optimizar_imagen(img_bytes, mime_type)
+        raw_json = "{}"
+
+        if self.provider == "openrouter":
+            try:
+                raw_json = self._procesar_test_con_openrouter(img_opt, mime_opt)
+            except Exception as e:
+                logger.warning(f"OpenRouter reportó error en test ({e}). Activando fallback a Gemini...")
+                if self.gemini_api_key:
+                    raw_json = self._procesar_test_con_gemini(img_opt, mime_opt)
+                elif self.openai_api_key:
+                    raw_json = self._procesar_test_con_openai(img_opt, mime_opt)
+                else:
+                    raise
+        elif self.provider == "openai":
+            try:
+                raw_json = self._procesar_test_con_openai(img_opt, mime_opt)
+            except Exception as e:
+                logger.warning(f"OpenAI reportó error en test ({e}). Activando fallback...")
+                if self.gemini_api_key:
+                    raw_json = self._procesar_test_con_gemini(img_opt, mime_opt)
+                elif self.openrouter_api_key:
+                    raw_json = self._procesar_test_con_openrouter(img_opt, mime_opt)
+                else:
+                    raise
+        else:
+            try:
+                raw_json = self._procesar_test_con_gemini(img_opt, mime_opt)
+            except Exception as e:
+                logger.warning(f"Gemini reportó error en test ({e}). Activando fallback...")
+                if self.openai_api_key:
+                    raw_json = self._procesar_test_con_openai(img_opt, mime_opt)
+                elif self.openrouter_api_key:
+                    raw_json = self._procesar_test_con_openrouter(img_opt, mime_opt)
+                else:
+                    raise
+
+        limpio = _limpiar_bloque_json(raw_json)
+        try:
+            parsed = json.loads(limpio)
+        except Exception as e:
+            raise ValueError(f"La respuesta de la IA para el test no fue un JSON válido: {e}\nRespuesta: {raw_json[:300]}")
+
+        # Aplicar override manual de tipo de evaluación si fue seleccionado en UI
+        if tipo_evaluacion_override and tipo_evaluacion_override.upper() in ["PRE-TEST", "POST-TEST"]:
+            parsed["TIPO DE EVALUACIÓN"] = tipo_evaluacion_override.upper()
+
+        test_obj = PrePostTest.model_validate(parsed)
+        datos = test_obj.to_canonical_dict()
+
+        # Reconciliar con base de datos de participantes si está cargada
+        nombre_extraido = datos.get("NOMBRE", "")
+        municipio_extraido = datos.get("MUNICIPIO", "")
+        coincidencia = participant_cache.buscar_coincidencia(nombre_extraido, municipio_extraido)
+        if coincidencia:
+            logger.info(f"Reconciliando test de '{nombre_extraido}' con participante registrado: '{coincidencia['nombre']}'")
+            datos["NOMBRE"] = coincidencia["nombre"]
+            if not datos.get("EDAD") and coincidencia.get("edad"):
+                datos["EDAD"] = coincidencia["edad"]
+            if not datos.get("MUNICIPIO") and coincidencia.get("municipio"):
+                datos["MUNICIPIO"] = coincidencia["municipio"]
+            if not datos.get("EAPB (EPS)") and coincidencia.get("eapb"):
+                datos["EAPB (EPS)"] = coincidencia["eapb"]
+
+        return datos
+
+    def _procesar_test_con_openrouter(self, img: bytes, mime: str) -> str:
+        """Invoca OpenRouter API para procesar la hoja de evaluación del test."""
+        if not self.openrouter_api_key:
+            raise ValueError("OPENROUTER_API_KEY no está configurada.")
+
+        import httpx
+        from openai import OpenAI
+        http_client = httpx.Client(verify=False, timeout=60.0)
+        client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=self.openrouter_api_key,
+            http_client=http_client
+        )
+        b64 = base64.b64encode(img).decode("utf-8")
+        primary_model = os.getenv("OPENROUTER_MODEL", "qwen/qwen2.5-vl-72b-instruct").strip()
+        candidate_models = [
+            primary_model,
+            "google/gemini-2.5-flash",
+            "openai/gpt-4o-mini",
+            "qwen/qwen2.5-vl-72b-instruct"
+        ]
+        models_to_try = list(dict.fromkeys(candidate_models))
+
+        last_err = None
+        for model_name in models_to_try:
+            try:
+                logger.info(f"Enviando test a OpenRouter con modelo '{model_name}'...")
+                response = client.chat.completions.create(
+                    model=model_name,
+                    temperature=0.0,
+                    response_format={"type": "json_object"},
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": SYSTEM_PROMPT_TEST
+                        },
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": USER_PROMPT_TEST},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {"url": f"data:{mime};base64,{b64}"}
+                                }
+                            ]
+                        }
+                    ]
+                )
+                if response and response.choices and response.choices[0].message.content:
+                    return response.choices[0].message.content
+            except Exception as e:
+                last_err = e
+                logger.warning(f"Fallo en OpenRouter (test) con '{model_name}': {e}. Probando siguiente...")
+                continue
+
+        if last_err:
+            raise last_err
+        return "{}"
+
+    def _procesar_test_con_gemini(self, img: bytes, mime: str) -> str:
+        """Invoca Google Gemini para procesar la hoja de evaluación del test."""
+        if not self.gemini_api_key:
+            raise ValueError("GEMINI_API_KEY no está configurada.")
+
+        try:
+            import time
+            from google import genai
+            from google.genai import types
+
+            client = genai.Client(api_key=self.gemini_api_key)
+            part = types.Part.from_bytes(data=img, mime_type=mime)
+
+            primary_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+            candidate_models = [
+                primary_model,
+                "gemini-2.5-flash",
+                "gemini-2.0-flash",
+                "gemini-1.5-flash"
+            ]
+            models_to_try = list(dict.fromkeys(candidate_models))
+            prompt_completo = f"{SYSTEM_PROMPT_TEST}\n\n{USER_PROMPT_TEST}"
+
+            last_err = None
+            for m_name in models_to_try:
+                try:
+                    logger.info(f"Enviando test a Gemini con modelo '{m_name}'...")
+                    response = client.models.generate_content(
+                        model=m_name,
+                        contents=[prompt_completo, part],
+                        config=types.GenerateContentConfig(
+                            temperature=0.0,
+                            response_mime_type="application/json"
+                        )
+                    )
+                    if response and response.text:
+                        return response.text
+                except Exception as e:
+                    last_err = e
+                    logger.warning(f"Modelo '{m_name}' reportó fallo en test: {e}. Probando siguiente...")
+                    time.sleep(1.0)
+                    continue
+
+            if last_err:
+                raise last_err
+        except ImportError:
+            import google.generativeai as legacy_genai
+            legacy_genai.configure(api_key=self.gemini_api_key)
+            model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+            model = legacy_genai.GenerativeModel(
+                model_name=model_name,
+                generation_config={"temperature": 0.0, "response_mime_type": "application/json"}
+            )
+            prompt_completo = f"{SYSTEM_PROMPT_TEST}\n\n{USER_PROMPT_TEST}"
+            contents = [
+                prompt_completo,
+                {"mime_type": mime, "data": img}
+            ]
+            response = model.generate_content(contents)
+            return response.text
+        return "{}"
+
+    def _procesar_test_con_openai(self, img: bytes, mime: str) -> str:
+        """Invoca OpenAI GPT-4o para procesar la hoja de evaluación del test."""
+        if not self.openai_api_key:
+            raise ValueError("OPENAI_API_KEY no está configurada.")
+
+        from openai import OpenAI
+        client = OpenAI(api_key=self.openai_api_key)
+        b64 = base64.b64encode(img).decode("utf-8")
+
+        response = client.chat.completions.create(
+            model=os.getenv("OPENAI_MODEL", "gpt-4o"),
+            temperature=0.0,
+            response_format={"type": "json_object"},
+            messages=[
+                {
+                    "role": "system",
+                    "content": SYSTEM_PROMPT_TEST
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": USER_PROMPT_TEST},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{mime};base64,{b64}"}
+                        }
+                    ]
+                }
+            ]
+        )
+        return response.choices[0].message.content or "{}"
