@@ -290,6 +290,10 @@ class VisionService:
         self.openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
         self.provider = os.getenv("VISION_PROVIDER", "gemini").lower()
 
+    def _optimizar_imagen(self, img_bytes: bytes, mime_type: str = "image/jpeg") -> tuple[bytes, str]:
+        """Helper para compatibilidad con optimización de imágenes."""
+        return optimizar_imagen_bytes(img_bytes)
+
     def extraer_datos_ficha(self, img_anverso_bytes: bytes, img_reverso_bytes: bytes,
                             mime_type_1: str = "image/jpeg",
                             mime_type_2: str = "image/jpeg") -> Dict[str, str]:
@@ -506,7 +510,8 @@ class VisionService:
         Extrae datos de 1 sola fotografía correspondiente al Pre-Test o Post-Test.
         Reconcilia automáticamente con participant_cache si existe coincidencia previa.
         """
-        img_opt, mime_opt = self._optimizar_imagen(img_bytes, mime_type)
+        img_opt, mime_opt = optimizar_imagen_bytes(img_bytes)
+        logger.info(f"Imagen del test optimizada para IA: {len(img_opt)/1024:.1f}KB ({mime_opt})")
         raw_json = "{}"
 
         if self.provider == "openrouter":
