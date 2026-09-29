@@ -17,9 +17,13 @@ services:
         value: qwen/qwen2.5-vl-72b-instruct
       - key: GOOGLE_SHEET_TAB
         value: Respuestas
+      - key: GOOGLE_SHEET_TAB_TESTS
+        value: Pre_Post_Test
       - key: GOOGLE_SHEET_SKIP_FIRST_COL
         value: "true"
       - key: OPENROUTER_API_KEY
         sync: false
       - key: GOOGLE_APPS_SCRIPT_URL
+        sync: false
+      - key: GOOGLE_APPS_SCRIPT_URL_TESTS
         sync: false
