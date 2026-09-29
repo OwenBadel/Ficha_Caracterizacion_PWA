@@ -33,7 +33,7 @@ class GoogleSheetsService:
         self.sheet_id = os.getenv("GOOGLE_SHEET_ID", "").strip()
         self.sheet_tab = os.getenv("GOOGLE_SHEET_TAB", "Respuestas").strip()
         self.webhook_url = os.getenv("GOOGLE_APPS_SCRIPT_URL", "").strip()
-        self.sheet_tab_tests = os.getenv("GOOGLE_SHEET_TAB_TESTS", "Pre_Post_Test").strip()
+        self.sheet_tab_tests = os.getenv("GOOGLE_SHEET_TAB_TESTS", "Respuestas de formulario 1").strip()
         self.webhook_url_tests = os.getenv("GOOGLE_APPS_SCRIPT_URL_TESTS", "").strip() or self.webhook_url
         self.credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
         self.credentials_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON", "").strip()

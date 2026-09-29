@@ -18,7 +18,7 @@ services:
       - key: GOOGLE_SHEET_TAB
         value: Respuestas
       - key: GOOGLE_SHEET_TAB_TESTS
-        value: Pre_Post_Test
+        value: Respuestas de formulario 1
       - key: GOOGLE_SHEET_SKIP_FIRST_COL
         value: "true"
       - key: OPENROUTER_API_KEY

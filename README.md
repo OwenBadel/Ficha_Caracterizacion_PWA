@@ -130,32 +130,40 @@ Si prefieres no crear una Service Account de Google Cloud, puedes usar un script
    function doPost(e) {
      var ss = SpreadsheetApp.getActiveSpreadsheet();
      var data = JSON.parse(e.postData.contents);
-     var targetTab = data.tab || "Respuestas";
-     var sheet = ss.getSheetByName(targetTab);
      
-     // Si la pestaña no existe, se crea automáticamente
+     // 1. Buscar la pestaña por nombre; si no existe, usar la primera hoja del libro ('Respuestas de formulario 1')
+     var sheet = null;
+     if (data.tab) {
+       sheet = ss.getSheetByName(data.tab);
+     }
      if (!sheet) {
-       sheet = ss.insertSheet(targetTab);
+       sheet = ss.getSheets()[0];
      }
      
+     // 2. Solo agregar encabezados si la hoja está totalmente vacía
      if (sheet.getLastRow() === 0 && data.headers) {
        sheet.appendRow(data.headers);
      }
+     
+     // 3. Insertar la fila con los datos procesados
      if (data.row) {
        sheet.appendRow(data.row);
      }
-     return ContentService.createTextOutput(JSON.stringify({status: "ok", tab: targetTab}))
-       .setMimeType(ContentService.MimeType.JSON);
+     return ContentService.createTextOutput(JSON.stringify({
+       status: "ok", 
+       tab: sheet.getName(),
+       row: sheet.getLastRow()
+     })).setMimeType(ContentService.MimeType.JSON);
    }
    ```
-3. Haz clic en **Implementar** > **Nueva implementación** > Tipo: **Aplicación web**.
+3. Haz clic en **Implementar** > **Gestionar implementaciones** (o **Nueva implementación**) > Editar > seleccionar **Versión nueva** > Tipo: **Aplicación web**.
 4. En *"Quién tiene acceso"*, selecciona **Cualquier usuario (Anyone)**.
-5. Copia la URL de la aplicación web y ponla en `.env`:
+5. Copia la URL de la aplicación web y ponla en `.env` (o en Render):
    ```env
    GOOGLE_APPS_SCRIPT_URL=https://script.google.com/macros/s/.../exec
-   GOOGLE_SHEET_TAB_TESTS=Pre_Post_Test
+   GOOGLE_APPS_SCRIPT_URL_TESTS=https://script.google.com/macros/s/.../exec
+   GOOGLE_SHEET_TAB_TESTS=Respuestas de formulario 1
    ```
-   *(Si tienes una hoja separada de Google Sheets para los Tests, puedes definir `GOOGLE_APPS_SCRIPT_URL_TESTS` con su respectiva URL).*
 
 ---
 
