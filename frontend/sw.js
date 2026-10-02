@@ -1,5 +1,5 @@
 // Service Worker para PWA Offline-First de Fichas de Caracterización — Ing. Owen Badel Hooker
-const CACHE_NAME = 'ficha-caracterizacion-v8';
+const CACHE_NAME = 'ficha-caracterizacion-v9';
 const ASSETS_TO_CACHE = [
   '/',
   '/manifest.json',

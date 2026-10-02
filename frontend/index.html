@@ -7,7 +7,7 @@
   <meta name="description" content="PWA Mobile-First para captura de Fichas de Caracterización y Pre/Post Test SSR ITS con IA de Visión y sincronización en Google Sheets.">
   <meta name="theme-color" content="#10b981">
   <link rel="manifest" href="/manifest.json">
-  <link rel="stylesheet" href="/static/css/styles.css?v=8">
+  <link rel="stylesheet" href="/static/css/styles.css?v=9">
   <link rel="icon" href="https://cdn.jsdelivr.net/npm/@tabler/icons@3.2.0/icons/outline/clipboard-heart.svg" type="image/svg+xml">
 </head>
 <body>
@@ -33,15 +33,6 @@
         </div>
 
         <div class="header-actions">
-          <button id="btnOpenParticipants" class="btn-header-action" type="button" title="Base de Datos de Participantes">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M9 7m-4 0a4 4 0 1 0 8 0a4 4 0 1 0 -8 0" />
-              <path d="M3 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2" />
-              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-              <path d="M21 21v-2a4 4 0 0 0 -3 -3.85" />
-            </svg>
-            <span id="headerParticipantsCount">0</span>
-          </button>
           <div id="netStatusBadge" class="badge-network">
             <span class="dot-indicator"></span>
             <span id="netStatusText">Online</span>
@@ -244,49 +235,6 @@
       <button id="btnLimpiarCompletadas" class="btn-secondary" type="button">Limpiar Registros Ya Sincronizados</button>
     </div>
 
-    <!-- MODAL DE BASE DE DATOS DE PARTICIPANTES -->
-    <div id="participantsBackdrop" class="drawer-backdrop"></div>
-    <div id="participantsModal" class="modal-card-dialog">
-      <div class="modal-header">
-        <div class="modal-title-group">
-          <span class="modal-icon">👥</span>
-          <div>
-            <h2>Base de Datos de Participantes</h2>
-            <p>Reconciliación automática y cero errores caligráficos</p>
-          </div>
-        </div>
-        <button id="btnCloseParticipants" class="drawer-close" type="button">✕</button>
-      </div>
-
-      <div class="modal-body">
-        <div class="stats-grid">
-          <div class="stat-card">
-            <span class="stat-num" id="statTotalParticipantes">0</span>
-            <span class="stat-lbl">Participantes en Memoria</span>
-          </div>
-          <div class="stat-card">
-            <span class="stat-num" id="statTotalMunicipios">0</span>
-            <span class="stat-lbl">Municipios Vinculados</span>
-          </div>
-        </div>
-
-        <div class="import-box">
-          <label class="import-label">
-            <strong>📥 Cargar archivo CSV de Google Sheets</strong>
-            <span>Descarga el CSV de tu hoja de Fichas (Archivo &gt; Descargar &gt; Valores separados por comas) y súbelo para asociar los 10 municipios:</span>
-          </label>
-          <div class="file-upload-row">
-            <input id="csvFileInput" type="file" accept=".csv,text/csv">
-            <button id="btnUploadCsv" class="btn-action-main btn-sm" type="button">Subir y Reconciliar</button>
-          </div>
-        </div>
-
-        <div id="participantsBreakdown" class="participants-breakdown">
-          <!-- Desglose por municipio -->
-        </div>
-      </div>
-    </div>
-
     <!-- MODAL DE PROCESAMIENTO / CARGA -->
     <div id="processingModal" class="processing-modal">
       <div class="processing-card">
@@ -301,7 +249,7 @@
 
   </div>
 
-  <script src="/static/js/db.js?v=8"></script>
-  <script src="/static/js/app.js?v=8"></script>
+  <script src="/static/js/db.js?v=9"></script>
+  <script src="/static/js/app.js?v=9"></script>
 </body>
 </html>

@@ -31,8 +31,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Header y Modos
   const tabModoFicha = document.getElementById('tabModoFicha');
   const tabModoTest = document.getElementById('tabModoTest');
-  const btnOpenParticipants = document.getElementById('btnOpenParticipants');
-  const headerParticipantsCount = document.getElementById('headerParticipantsCount');
   const netStatusBadge = document.getElementById('netStatusBadge');
   const netStatusText = document.getElementById('netStatusText');
   const brandSubtitle = document.getElementById('brandSubtitle');
@@ -103,15 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const drawerQueueList = document.getElementById('drawerQueueList');
   const btnLimpiarCompletadas = document.getElementById('btnLimpiarCompletadas');
 
-  // Modal Participantes
-  const participantsBackdrop = document.getElementById('participantsBackdrop');
-  const participantsModal = document.getElementById('participantsModal');
-  const btnCloseParticipants = document.getElementById('btnCloseParticipants');
-  const csvFileInput = document.getElementById('csvFileInput');
-  const btnUploadCsv = document.getElementById('btnUploadCsv');
-  const statTotalParticipantes = document.getElementById('statTotalParticipantes');
-  const statTotalMunicipios = document.getElementById('statTotalMunicipios');
-  const participantsBreakdown = document.getElementById('participantsBreakdown');
+
 
   // Modal Procesamiento y Toasts
   const processingModal = document.getElementById('processingModal');
@@ -899,92 +889,7 @@ document.addEventListener('DOMContentLoaded', () => {
     showToast(`Se eliminaron ${borradas} registros ya sincronizados.`, 'info');
   });
 
-  // -------------------------------------------------------------
-  // MODAL DE BASE DE DATOS DE PARTICIPANTES (IMPORTACIÓN CSV)
-  // -------------------------------------------------------------
-  btnOpenParticipants.addEventListener('click', async () => {
-    await cargarResumenParticipantes();
-    participantsBackdrop.style.display = 'block';
-    participantsModal.classList.add('open');
-  });
 
-  btnCloseParticipants.addEventListener('click', cerrarModalParticipantes);
-  participantsBackdrop.addEventListener('click', cerrarModalParticipantes);
-
-  function cerrarModalParticipantes() {
-    participantsBackdrop.style.display = 'none';
-    participantsModal.classList.remove('open');
-  }
-
-  async function cargarResumenParticipantes() {
-    try {
-      const resp = await fetch('/api/participants');
-      if (!resp.ok) return;
-      const data = await resp.json();
-
-      headerParticipantsCount.textContent = data.total || 0;
-      statTotalParticipantes.textContent = data.total || 0;
-
-      const porMun = data.por_municipio || {};
-      const numMuns = Object.keys(porMun).length;
-      statTotalMunicipios.textContent = numMuns;
-
-      participantsBreakdown.innerHTML = '';
-      if (numMuns === 0) {
-        participantsBreakdown.innerHTML = `
-          <div style="font-size: 0.72rem; color: var(--text-muted); text-align: center; padding: 10px;">
-            Aún no hay participantes en memoria. Sube tu CSV de Google Sheets arriba.
-          </div>
-        `;
-      } else {
-        for (const [mun, count] of Object.entries(porMun)) {
-          const row = document.createElement('div');
-          row.className = 'mun-row';
-          row.innerHTML = `
-            <span class="mun-name">📍 ${mun}</span>
-            <span class="mun-count">${count}</span>
-          `;
-          participantsBreakdown.appendChild(row);
-        }
-      }
-    } catch (e) {
-      console.warn('Error cargando participantes:', e);
-    }
-  }
-  cargarResumenParticipantes();
-
-  btnUploadCsv.addEventListener('click', async () => {
-    const file = csvFileInput.files && csvFileInput.files[0];
-    if (!file) {
-      showToast('Por favor selecciona un archivo .csv para importar.', 'error');
-      return;
-    }
-
-    mostrarModalProcesamiento('Importando Participantes', 'Indexando nombres, edades, municipios y EPS para coincidencia difusa...');
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const resp = await fetch('/api/participants/import', {
-        method: 'POST',
-        body: formData
-      });
-      const data = await resp.json();
-
-      ocultarModalProcesamiento();
-      if (resp.ok && data.success) {
-        showToast(data.message, 'success');
-        csvFileInput.value = '';
-        await cargarResumenParticipantes();
-      } else {
-        throw new Error(data.error || 'Error al importar archivo CSV');
-      }
-    } catch (err) {
-      ocultarModalProcesamiento();
-      console.error('Error importando CSV:', err);
-      showToast('Error al importar CSV: ' + err.message, 'error');
-    }
-  });
 
   // -------------------------------------------------------------
   // MONITOREO DE RED (ONLINE / OFFLINE)
