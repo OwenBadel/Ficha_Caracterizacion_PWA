@@ -7,7 +7,7 @@
   <meta name="description" content="PWA Mobile-First para captura de Fichas de Caracterización y Pre/Post Test SSR ITS con IA de Visión y sincronización en Google Sheets.">
   <meta name="theme-color" content="#10b981">
   <link rel="manifest" href="/manifest.json">
-  <link rel="stylesheet" href="/static/css/styles.css?v=7">
+  <link rel="stylesheet" href="/static/css/styles.css?v=8">
   <link rel="icon" href="https://cdn.jsdelivr.net/npm/@tabler/icons@3.2.0/icons/outline/clipboard-heart.svg" type="image/svg+xml">
 </head>
 <body>
@@ -104,7 +104,10 @@
               <path d="M5 12l5 5l10 -10" />
             </svg>
           </div>
-          <button id="btnRetake1" class="slot-retake" type="button">🔄 Repetir</button>
+          <div id="slotActions1" class="slot-actions">
+            <button id="btnRotate1" class="slot-action-btn" type="button" title="Girar 90°">🔄 Rotar</button>
+            <button id="btnRetake1" class="slot-action-btn" type="button" title="Tomar de nuevo">📸 Repetir</button>
+          </div>
         </div>
 
         <!-- Slot Foto 2 -->
@@ -124,7 +127,10 @@
               <path d="M5 12l5 5l10 -10" />
             </svg>
           </div>
-          <button id="btnRetake2" class="slot-retake" type="button">🔄 Repetir</button>
+          <div id="slotActions2" class="slot-actions">
+            <button id="btnRotate2" class="slot-action-btn" type="button" title="Girar 90°">🔄 Rotar</button>
+            <button id="btnRetake2" class="slot-action-btn" type="button" title="Tomar de nuevo">📸 Repetir</button>
+          </div>
         </div>
       </section>
 
@@ -137,7 +143,7 @@
               <path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z" />
               <path d="M9 15l2 2l4 -4" />
             </svg>
-            <span>Hoja Única de Evaluación<br><strong>Pre-Test o Post-Test (Anexo 4)</strong></span>
+            <span>Hoja Única<br><strong>Pre o Post Test</strong><br><small style="color:var(--text-dim);font-size:0.72rem;">(Anexo 4 SSR ITS)</small></span>
           </div>
           <img id="imgPreviewTest" class="slot-image" alt="Vista previa Test">
           <div id="badgeCheckTest" class="slot-badge-completed">
@@ -145,7 +151,10 @@
               <path d="M5 12l5 5l10 -10" />
             </svg>
           </div>
-          <button id="btnRetakeTest" class="slot-retake" type="button">🔄 Repetir Foto</button>
+          <div id="slotActionsTest" class="slot-actions">
+            <button id="btnRotateTest" class="slot-action-btn" type="button" title="Girar 90°">🔄 Rotar</button>
+            <button id="btnRetakeTest" class="slot-action-btn" type="button" title="Tomar de nuevo">📸 Repetir</button>
+          </div>
         </div>
       </section>
 
@@ -292,7 +301,7 @@
 
   </div>
 
-  <script src="/static/js/db.js?v=7"></script>
-  <script src="/static/js/app.js?v=7"></script>
+  <script src="/static/js/db.js?v=8"></script>
+  <script src="/static/js/app.js?v=8"></script>
 </body>
 </html>

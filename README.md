@@ -1,16 +1,17 @@
 # 📱 PROJ-006: Digitalizador Móvil de Fichas de Caracterización (PWA + IA Visión + Google Sheets)
 
-Aplicación Web Progresiva (**PWA Mobile-First**) diseñada para digitalizar en campo "Fichas de Caracterización" físicas mediante dos fotografías (Anverso y Reverso), extraer 43 variables con IA de Visión (Gemini 2.0/1.5 Flash o GPT-4o) con normalización estricta a **MAYÚSCULAS**, e insertar automáticamente cada registro como una fila ordenada en **Google Sheets**.
+Aplicación Web Progresiva (**PWA Mobile-First**) diseñada para digitalizar en campo "Fichas de Caracterización" físicas y evaluaciones "Pre/Post Test (Anexo 4)" mediante fotografías asistidas, extraer variables con IA de Visión (**Google Gemini 2.5 Flash** como motor primario forense) con normalización estricta a **MAYÚSCULAS**, auto-orientación vertical inteligente de capturas horizontales, e insertar automáticamente cada registro como una fila ordenada en **Google Sheets**.
 
 ---
 
 ## 🌟 Características Principales
 
 * 📱 **Mobile-First & PWA:** Diseñada para navegador de celular y configurable como app nativa ("Añadir a pantalla de inicio"). Carga ultrarrápida y soporte offline mediante Service Worker.
-* 📸 **Captura Guiada en 2 Pasos:** Disparador gigante que activa la cámara del celular (`capture="environment"`). Guía al encuestador: *Foto 1 (Anverso)* ➔ *Foto 2 (Reverso)*. Permite previsualizar y repetir cualquier foto si sale borrosa.
-* ⚡ **Modo Inmediato:** Envía automáticamente ambas fotos a la IA y sube los datos a Google Sheets al instante.
+* 📸 **Captura Guiada y Auto-Orientación Vertical:** Disparador gigante con corrección inteligente de orientación: si una foto es tomada en horizontal (paisaje), se transforma automáticamente a vertical (retrato 3:4) con máxima nitidez forense (3200px / 95% calidad), más botones interactivos de "Rotar 90°" y "Repetir".
+* 📝 **Modo Dual (Fichas y Tests):** Soporte tanto para Fichas de Caracterización (2 fotos) como para hojas de Pre-Test y Post-Test (1 foto vertical estética).
+* ⚡ **Modo Inmediato:** Envía automáticamente las fotos a la IA y sube los datos a Google Sheets al instante.
 * 📦 **Modo Cola (Offline-First / Batch):** Almacena las fotos y encuestas localmente en el dispositivo (**IndexedDB**). Cuenta las encuestas pendientes, permite revisarlas en un drawer visual y sincronizarlas todas juntas al volver a tener buena conexión ("🚀 Sincronizar Todas Ahora").
-* 🧠 **IA de Visión Multimodal (OCR Estricto):** Convierte todo a mayúsculas, interpreta checkboxes marcados con "X", deja campos vacíos como `""` y retorna exactamente las 43 columnas requeridas.
+* 🧠 **IA de Visión Multimodal (Gemini 2.5 Flash):** Convierte todo a mayúsculas, interpreta checkboxes marcados con "X", deja campos vacíos como `""` y retorna exactamente las columnas requeridas.
 * 📊 **Google Sheets API v4 Automatizado:** Inserta directamente en la hoja de cálculo usando Service Account oficial (o Webhook de Google Apps Script), creando los encabezados automáticamente si la hoja está vacía.
 
 ---
@@ -27,18 +28,19 @@ PROJ_006_Ficha_Caracterizacion_PWA/
 ├── backend/
 │   ├── __init__.py
 │   ├── schema.py               # Modelo Pydantic y 43 columnas canónicas
-│   ├── vision_service.py       # Extracción con Gemini / OpenAI GPT-4o
-│   ├── sheets_service.py       # Inserción en Google Sheets con Service Account
+│   ├── schema_test.py          # Modelo Pydantic para Pre-Test / Post-Test
+│   ├── vision_service.py       # Extracción con Gemini 2.5 Flash / OpenRouter / OpenAI
+│   ├── sheets_service.py       # Inserción en Google Sheets con Service Account / Webhook
 │   └── main.py                 # Servidor FastAPI y entrega de la PWA estática
 └── frontend/
     ├── index.html              # Interfaz de usuario Mobile-First
     ├── manifest.json           # Manifiesto PWA para instalación
-    ├── sw.js                   # Service Worker para funcionamiento offline
+    ├── sw.js                   # Service Worker para funcionamiento offline (v8)
     ├── css/
     │   └── styles.css          # Diseño Dark Glassmorphism, micro-animaciones
     └── js/
         ├── db.js               # Persistencia local con IndexedDB (cola offline)
-        └── app.js              # Lógica de interfaz, cámara y sincronización
+        └── app.js              # Lógica de interfaz, cámara, auto-orientación y sincronización
 ```
 
 ---
@@ -61,18 +63,24 @@ PROJ_006_Ficha_Caracterizacion_PWA/
 
 ---
 
-### 2. Configurar la IA de Visión (Google Gemini u OpenAI)
+### 2. Configurar la IA de Visión (Google Gemini 2.5 Flash como Primario)
 
-La app viene preconfigurada para usar **Google Gemini 2.0 Flash / 1.5 Flash** (rápido, económico y con excelente precisión para tablas y casillas en español).
+La app viene preconfigurada para usar **Google Gemini 2.5 Flash** como modelo primario prioritario (máxima velocidad, costo eficiente y precisión forense para tablas, casillas y texto manuscrito en español).
 
 En el archivo `.env`:
 ```env
+# Opción A: Mediante OpenRouter
+VISION_PROVIDER=openrouter
+OPENROUTER_API_KEY=tu_clave_openrouter
+OPENROUTER_MODEL=google/gemini-2.5-flash
+
+# Opción B: Directo con Google Gemini API
 VISION_PROVIDER=gemini
 GEMINI_API_KEY=tu_clave_de_google_ai_studio
-GEMINI_MODEL=gemini-2.0-flash
+GEMINI_MODEL=gemini-2.5-flash
 ```
 
-*(Si deseas usar OpenAI, coloca `VISION_PROVIDER=openai`, `OPENAI_API_KEY=tu_clave` y `OPENAI_MODEL=gpt-4o`).*
+*(Si deseas usar OpenAI GPT-4o, coloca `VISION_PROVIDER=openai`, `OPENAI_API_KEY=tu_clave` y `OPENAI_MODEL=gpt-4o`).*
 
 ---
 

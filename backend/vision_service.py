@@ -253,21 +253,39 @@ def optimizar_imagen_bytes(img_bytes: bytes, max_dim: int = 3200, calidad: int =
     """
     Preserva MÁXIMA FIDELIDAD VISUAL Y RESOLUCIÓN (Ultra High Quality hasta 3200px, 95% calidad y subsampling 4:4:4).
     Garantiza que el payload a la IA mantenga nitidez fotográfica absoluta para que los modelos
-    (Qwen2.5-VL 72B, Gemini 2.5 Flash) puedan leer con precisión forense números continuos (teléfonos, cédulas),
+    (Gemini 2.5 Flash, Qwen2.5-VL 72B) puedan leer con precisión forense números continuos (teléfonos, cédulas),
     trazos tenues de bolígrafo y casillas de verificación sin artefactos de compresión.
+    Garantiza orientación vertical: si la foto fue tomada en horizontal, se rota automáticamente 90° a vertical.
     """
     try:
         import io
-        from PIL import Image
+        from PIL import Image, ImageOps
         img = Image.open(io.BytesIO(img_bytes))
+
+        # 1. Aplicar orientación EXIF embebida si existe
+        try:
+            img = ImageOps.exif_transpose(img)
+        except Exception:
+            pass
+
+        # 2. Si la foto es horizontal (ancho > alto), rotar 90° en sentido horario para ponerla en vertical
+        fue_rotada = False
+        if img.width > img.height:
+            logger.info(f"Foto horizontal detectada ({img.width}x{img.height}). Orientando automáticamente a vertical...")
+            img = img.transpose(Image.Transpose.ROTATE_270)
+            fue_rotada = True
+
         w, h = img.size
 
-        # Si la imagen ya es JPEG de alta calidad (<= 3200px) y peso manejable (<= 10MB), no recompilar
-        if max(w, h) <= max_dim and len(img_bytes) <= 10 * 1024 * 1024 and getattr(img, 'format', '') == 'JPEG':
+        # Si no fue rotada y ya es JPEG de alta calidad (<= 3200px) y peso manejable (<= 10MB), conservar
+        if not fue_rotada and max(w, h) <= max_dim and len(img_bytes) <= 10 * 1024 * 1024 and getattr(img, 'format', '') == 'JPEG':
             return img_bytes, "image/jpeg"
 
         if img.mode in ("RGBA", "P", "LA"):
             img = img.convert("RGB")
+        elif img.mode != "RGB":
+            img = img.convert("RGB")
+
         if max(w, h) > max_dim:
             scale = max_dim / max(w, h)
             new_w, new_h = max(1, int(w * scale)), max(1, int(h * scale))
@@ -381,7 +399,7 @@ class VisionService:
         except ImportError:
             import google.generativeai as legacy_genai
             legacy_genai.configure(api_key=self.gemini_api_key)
-            model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+            model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
             model = legacy_genai.GenerativeModel(
                 model_name=model_name,
                 generation_config={"temperature": 0.0, "response_mime_type": "application/json"}
@@ -448,11 +466,11 @@ class VisionService:
         b64_1 = base64.b64encode(img1).decode("utf-8")
         b64_2 = base64.b64encode(img2).decode("utf-8")
 
-        primary_model = os.getenv("OPENROUTER_MODEL", "qwen/qwen2.5-vl-72b-instruct").strip()
+        primary_model = os.getenv("OPENROUTER_MODEL", "google/gemini-2.5-flash").strip()
         candidate_models = [
             primary_model,
-            "qwen/qwen2.5-vl-72b-instruct",
             "google/gemini-2.5-flash",
+            "qwen/qwen2.5-vl-72b-instruct",
             "openai/gpt-4o-mini"
         ]
         models_to_try = list(dict.fromkeys(candidate_models))
@@ -591,12 +609,12 @@ class VisionService:
             http_client=http_client
         )
         b64 = base64.b64encode(img).decode("utf-8")
-        primary_model = os.getenv("OPENROUTER_MODEL", "qwen/qwen2.5-vl-72b-instruct").strip()
+        primary_model = os.getenv("OPENROUTER_MODEL", "google/gemini-2.5-flash").strip()
         candidate_models = [
             primary_model,
             "google/gemini-2.5-flash",
-            "openai/gpt-4o-mini",
-            "qwen/qwen2.5-vl-72b-instruct"
+            "qwen/qwen2.5-vl-72b-instruct",
+            "openai/gpt-4o-mini"
         ]
         models_to_try = list(dict.fromkeys(candidate_models))
 
@@ -684,7 +702,7 @@ class VisionService:
         except ImportError:
             import google.generativeai as legacy_genai
             legacy_genai.configure(api_key=self.gemini_api_key)
-            model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+            model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
             model = legacy_genai.GenerativeModel(
                 model_name=model_name,
                 generation_config={"temperature": 0.0, "response_mime_type": "application/json"}

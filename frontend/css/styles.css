@@ -356,6 +356,50 @@ body {
   height: 14px;
 }
 
+.slot-actions {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: none;
+  align-items: center;
+  gap: 6px;
+  z-index: 10;
+  max-width: 90%;
+}
+
+.slot-action-btn {
+  background: rgba(11, 15, 25, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: #fff;
+  font-family: var(--font-body);
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 5px 9px;
+  border-radius: var(--radius-full);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.slot-action-btn:hover {
+  background: rgba(16, 185, 129, 0.35);
+  border-color: rgba(16, 185, 129, 0.6);
+  transform: translateY(-1px);
+}
+
+.slot-action-btn:active {
+  transform: scale(0.93);
+  background: var(--color-primary);
+  color: #042f2e;
+}
+
 .slot-retake {
   position: absolute;
   bottom: 8px;
@@ -984,18 +1028,23 @@ body {
   box-shadow: 0 0 10px var(--color-primary-glow);
 }
 
-/* ---------------- SLOT ÚNICO DE TEST ---------------- */
+/* ---------------- SLOT ÚNICO DE TEST (VERTICAL Y ESTÉTICO) ---------------- */
 .test-photo-section {
   width: 100%;
   display: flex;
   justify-content: center;
-  margin-bottom: 16px;
+  align-items: center;
+  margin: 4px 0 16px 0;
 }
 
 .photo-slot-single {
   width: 100% !important;
-  max-width: 380px;
-  height: 240px !important;
+  max-width: 250px !important;
+  aspect-ratio: 3 / 4 !important;
+  height: auto !important;
+  border-radius: var(--radius-md);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  margin: 0 auto;
 }
 
 /* ---------------- BADGES DE TIPO EN LA COLA ---------------- */

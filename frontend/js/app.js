@@ -57,6 +57,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const imgPreview2 = document.getElementById('imgPreview2');
   const badgeCheck1 = document.getElementById('badgeCheck1');
   const badgeCheck2 = document.getElementById('badgeCheck2');
+  const slotActions1 = document.getElementById('slotActions1');
+  const slotActions2 = document.getElementById('slotActions2');
+  const btnRotate1 = document.getElementById('btnRotate1');
+  const btnRotate2 = document.getElementById('btnRotate2');
   const btnRetake1 = document.getElementById('btnRetake1');
   const btnRetake2 = document.getElementById('btnRetake2');
 
@@ -65,6 +69,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const placeholderFotoTest = document.getElementById('placeholderFotoTest');
   const imgPreviewTest = document.getElementById('imgPreviewTest');
   const badgeCheckTest = document.getElementById('badgeCheckTest');
+  const slotActionsTest = document.getElementById('slotActionsTest');
+  const btnRotateTest = document.getElementById('btnRotateTest');
   const btnRetakeTest = document.getElementById('btnRetakeTest');
 
   // Disparador de Cámara
@@ -216,55 +222,154 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Clicks directos en slots
-  if (slotFoto1) slotFoto1.addEventListener('click', () => { if (cameraInput1) { cameraInput1.value = ''; cameraInput1.click(); } });
-  if (slotFoto2) slotFoto2.addEventListener('click', () => { if (cameraInput2) { cameraInput2.value = ''; cameraInput2.click(); } });
-  if (slotFotoTest) slotFotoTest.addEventListener('click', () => { if (cameraInputTest) { cameraInputTest.value = ''; cameraInputTest.click(); } });
+  // Clicks directos en slots (solo abren cámara si aún no hay foto capturada)
+  if (slotFoto1) slotFoto1.addEventListener('click', (e) => {
+    if (e.target.closest('.slot-actions')) return;
+    if (!state.foto1Blob && cameraInput1) { cameraInput1.value = ''; cameraInput1.click(); }
+  });
+  if (slotFoto2) slotFoto2.addEventListener('click', (e) => {
+    if (e.target.closest('.slot-actions')) return;
+    if (!state.foto2Blob && cameraInput2) { cameraInput2.value = ''; cameraInput2.click(); }
+  });
+  if (slotFotoTest) slotFotoTest.addEventListener('click', (e) => {
+    if (e.target.closest('.slot-actions')) return;
+    if (!state.fotoTestBlob && cameraInputTest) { cameraInputTest.value = ''; cameraInputTest.click(); }
+  });
 
   if (btnRetake1) btnRetake1.addEventListener('click', (e) => { e.stopPropagation(); if (cameraInput1) { cameraInput1.value = ''; cameraInput1.click(); } });
   if (btnRetake2) btnRetake2.addEventListener('click', (e) => { e.stopPropagation(); if (cameraInput2) { cameraInput2.value = ''; cameraInput2.click(); } });
   if (btnRetakeTest) btnRetakeTest.addEventListener('click', (e) => { e.stopPropagation(); if (cameraInputTest) { cameraInputTest.value = ''; cameraInputTest.click(); } });
 
+  if (btnRotate1) btnRotate1.addEventListener('click', (e) => { e.stopPropagation(); rotarFoto(1); });
+  if (btnRotate2) btnRotate2.addEventListener('click', (e) => { e.stopPropagation(); rotarFoto(2); });
+  if (btnRotateTest) btnRotateTest.addEventListener('click', (e) => { e.stopPropagation(); rotarFoto('test'); });
+
   // -------------------------------------------------------------
-  // COMPRESIÓN Y RESOLUCIÓN ULTRA ALTA (3200px / 95% Calidad)
+  // ORIENTACIÓN VERTICAL AUTOMÁTICA Y RESOLUCIÓN ULTRA ALTA (3200px)
   // -------------------------------------------------------------
-  async function comprimirImagenEnCliente(file, maxDimension = 3200, quality = 0.95) {
-    if (!file || !file.type.startsWith('image/')) return file;
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-          let width = img.width;
-          let height = img.height;
-          if (Math.max(width, height) <= maxDimension) {
-            resolve(file);
-            return;
-          }
-          if (width > height) {
-            height = Math.round((height * maxDimension) / width);
-            width = maxDimension;
-          } else {
-            width = Math.round((width * maxDimension) / height);
-            height = maxDimension;
-          }
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'high';
-          ctx.drawImage(img, 0, 0, width, height);
-          canvas.toBlob((blob) => {
-            resolve(blob || file);
-          }, 'image/jpeg', quality);
+  async function cargarImagenElemento(fileOrBlob) {
+    if (typeof createImageBitmap === 'function') {
+      try {
+        const bmp = await createImageBitmap(fileOrBlob, { imageOrientation: 'from-image' });
+        return {
+          source: bmp,
+          width: bmp.width,
+          height: bmp.height,
+          close: () => bmp.close()
         };
-        img.onerror = () => resolve(file);
-        img.src = e.target.result;
+      } catch (err) {
+        console.warn('createImageBitmap no disponible o falló, usando Image fallback:', err);
+      }
+    }
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(fileOrBlob);
+      img.onload = () => {
+        resolve({
+          source: img,
+          width: img.naturalWidth || img.width,
+          height: img.naturalHeight || img.height,
+          close: () => URL.revokeObjectURL(url)
+        });
       };
-      reader.onerror = () => resolve(file);
-      reader.readAsDataURL(file);
+      img.onerror = (e) => {
+        URL.revokeObjectURL(url);
+        reject(e);
+      };
+      img.src = url;
     });
+  }
+
+  async function procesarYOrientarImagen(fileOrBlob, maxDimension = 3200, quality = 0.95, forceRotate90 = false) {
+    if (!fileOrBlob) return fileOrBlob;
+
+    const imgData = await cargarImagenElemento(fileOrBlob);
+    const srcW = imgData.width;
+    const srcH = imgData.height;
+
+    // Si la imagen es horizontal (ancho > alto), se orienta automáticamente a vertical rotando 90° en sentido horario.
+    // También se rota 90° si forceRotate90 es true (botón manual de rotación).
+    const esHorizontal = srcW > srcH;
+    const debeRotar = forceRotate90 || esHorizontal;
+
+    // Si rota 90°, se intercambian ancho y alto
+    let targetW = debeRotar ? srcH : srcW;
+    let targetH = debeRotar ? srcW : srcH;
+
+    // Escalar si sobrepasa la dimensión máxima manteniendo nitidez forense
+    if (Math.max(targetW, targetH) > maxDimension) {
+      if (targetW > targetH) {
+        targetH = Math.round((targetH * maxDimension) / targetW);
+        targetW = maxDimension;
+      } else {
+        targetW = Math.round((targetW * maxDimension) / targetH);
+        targetH = maxDimension;
+      }
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+
+    if (debeRotar) {
+      // Rotar 90° en sentido horario
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate(90 * Math.PI / 180);
+      const scale = targetW / srcH;
+      const drawW = srcW * scale;
+      const drawH = srcH * scale;
+      ctx.drawImage(imgData.source, -drawW / 2, -drawH / 2, drawW, drawH);
+    } else {
+      ctx.drawImage(imgData.source, 0, 0, targetW, targetH);
+    }
+
+    if (typeof imgData.close === 'function') {
+      imgData.close();
+    }
+
+    return new Promise((resolve) => {
+      canvas.toBlob((blob) => {
+        resolve(blob || fileOrBlob);
+      }, 'image/jpeg', quality);
+    });
+  }
+
+  // Rotación manual asistida de 90° en cualquier ranura
+  async function rotarFoto(tipo) {
+    let currentBlob = null;
+    let previewEl = null;
+
+    if (tipo === 1) {
+      currentBlob = state.foto1Blob;
+      previewEl = imgPreview1;
+    } else if (tipo === 2) {
+      currentBlob = state.foto2Blob;
+      previewEl = imgPreview2;
+    } else if (tipo === 'test') {
+      currentBlob = state.fotoTestBlob;
+      previewEl = imgPreviewTest;
+    }
+
+    if (!currentBlob || !previewEl) return;
+
+    try {
+      showToast('Rotando 90°...', 'info');
+      const rotatedBlob = await procesarYOrientarImagen(currentBlob, 3200, 0.95, true);
+      const newUrl = URL.createObjectURL(rotatedBlob);
+      previewEl.src = newUrl;
+
+      if (tipo === 1) state.foto1Blob = rotatedBlob;
+      else if (tipo === 2) state.foto2Blob = rotatedBlob;
+      else if (tipo === 'test') state.fotoTestBlob = rotatedBlob;
+
+      showToast('Foto rotada 90° exitosamente.', 'success');
+    } catch (err) {
+      console.error('Error al rotar foto:', err);
+      showToast('Error al rotar foto: ' + err.message, 'error');
+    }
   }
 
   // -------------------------------------------------------------
@@ -274,42 +379,56 @@ document.addEventListener('DOMContentLoaded', () => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
 
-    const tempUrl = URL.createObjectURL(file);
-    imgPreview1.src = tempUrl;
-    imgPreview1.style.display = 'block';
-    placeholderFoto1.style.display = 'none';
-    badgeCheck1.style.display = 'flex';
-    btnRetake1.style.display = 'flex';
-    slotFoto1.classList.remove('active-slot');
-    slotFoto1.classList.add('completed');
+    try {
+      showToast('Procesando foto 1...', 'info');
+      const verticalBlob = await procesarYOrientarImagen(file, 3200, 0.95, false);
+      const previewUrl = URL.createObjectURL(verticalBlob);
 
-    const highQualityBlob = await comprimirImagenEnCliente(file, 3200, 0.95);
-    state.foto1Blob = highQualityBlob;
-    state.foto1Mime = file.type || 'image/jpeg';
+      imgPreview1.src = previewUrl;
+      imgPreview1.style.display = 'block';
+      placeholderFoto1.style.display = 'none';
+      badgeCheck1.style.display = 'flex';
+      if (slotActions1) slotActions1.style.display = 'flex';
+      slotFoto1.classList.remove('active-slot');
+      slotFoto1.classList.add('completed');
 
-    if (!state.foto2Blob) setStepFicha(2);
-    else setStepFicha(3);
+      state.foto1Blob = verticalBlob;
+      state.foto1Mime = 'image/jpeg';
+
+      if (!state.foto2Blob) setStepFicha(2);
+      else setStepFicha(3);
+    } catch (err) {
+      console.error('Error procesando foto 1:', err);
+      showToast('Error procesando foto: ' + err.message, 'error');
+    }
   });
 
   cameraInput2.addEventListener('change', async (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
 
-    const tempUrl = URL.createObjectURL(file);
-    imgPreview2.src = tempUrl;
-    imgPreview2.style.display = 'block';
-    placeholderFoto2.style.display = 'none';
-    badgeCheck2.style.display = 'flex';
-    btnRetake2.style.display = 'flex';
-    slotFoto2.classList.remove('active-slot');
-    slotFoto2.classList.add('completed');
+    try {
+      showToast('Procesando foto 2...', 'info');
+      const verticalBlob = await procesarYOrientarImagen(file, 3200, 0.95, false);
+      const previewUrl = URL.createObjectURL(verticalBlob);
 
-    const highQualityBlob = await comprimirImagenEnCliente(file, 3200, 0.95);
-    state.foto2Blob = highQualityBlob;
-    state.foto2Mime = file.type || 'image/jpeg';
+      imgPreview2.src = previewUrl;
+      imgPreview2.style.display = 'block';
+      placeholderFoto2.style.display = 'none';
+      badgeCheck2.style.display = 'flex';
+      if (slotActions2) slotActions2.style.display = 'flex';
+      slotFoto2.classList.remove('active-slot');
+      slotFoto2.classList.add('completed');
 
-    if (state.foto1Blob) setStepFicha(3);
-    else setStepFicha(1);
+      state.foto2Blob = verticalBlob;
+      state.foto2Mime = 'image/jpeg';
+
+      if (state.foto1Blob) setStepFicha(3);
+      else setStepFicha(1);
+    } catch (err) {
+      console.error('Error procesando foto 2:', err);
+      showToast('Error procesando foto: ' + err.message, 'error');
+    }
   });
 
   function setStepFicha(step) {
@@ -358,14 +477,14 @@ document.addEventListener('DOMContentLoaded', () => {
     imgPreview1.style.display = 'none';
     placeholderFoto1.style.display = 'flex';
     badgeCheck1.style.display = 'none';
-    btnRetake1.style.display = 'none';
+    if (slotActions1) slotActions1.style.display = 'none';
     slotFoto1.className = 'photo-slot active-slot';
 
     imgPreview2.src = '';
     imgPreview2.style.display = 'none';
     placeholderFoto2.style.display = 'flex';
     badgeCheck2.style.display = 'none';
-    btnRetake2.style.display = 'none';
+    if (slotActions2) slotActions2.style.display = 'none';
     slotFoto2.className = 'photo-slot';
 
     cameraTriggerSection.style.display = 'flex';
@@ -380,20 +499,27 @@ document.addEventListener('DOMContentLoaded', () => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
 
-    const tempUrl = URL.createObjectURL(file);
-    imgPreviewTest.src = tempUrl;
-    imgPreviewTest.style.display = 'block';
-    placeholderFotoTest.style.display = 'none';
-    badgeCheckTest.style.display = 'flex';
-    btnRetakeTest.style.display = 'flex';
-    slotFotoTest.classList.remove('active-slot');
-    slotFotoTest.classList.add('completed');
+    try {
+      showToast('Procesando test...', 'info');
+      const verticalBlob = await procesarYOrientarImagen(file, 3200, 0.95, false);
+      const previewUrl = URL.createObjectURL(verticalBlob);
 
-    const highQualityBlob = await comprimirImagenEnCliente(file, 3200, 0.95);
-    state.fotoTestBlob = highQualityBlob;
-    state.fotoTestMime = file.type || 'image/jpeg';
+      imgPreviewTest.src = previewUrl;
+      imgPreviewTest.style.display = 'block';
+      placeholderFotoTest.style.display = 'none';
+      badgeCheckTest.style.display = 'flex';
+      if (slotActionsTest) slotActionsTest.style.display = 'flex';
+      slotFotoTest.classList.remove('active-slot');
+      slotFotoTest.classList.add('completed');
 
-    setStepTestReady();
+      state.fotoTestBlob = verticalBlob;
+      state.fotoTestMime = 'image/jpeg';
+
+      setStepTestReady();
+    } catch (err) {
+      console.error('Error procesando test:', err);
+      showToast('Error procesando test: ' + err.message, 'error');
+    }
   });
 
   function setStepTestReady() {
@@ -420,7 +546,7 @@ document.addEventListener('DOMContentLoaded', () => {
     imgPreviewTest.style.display = 'none';
     placeholderFotoTest.style.display = 'flex';
     badgeCheckTest.style.display = 'none';
-    btnRetakeTest.style.display = 'none';
+    if (slotActionsTest) slotActionsTest.style.display = 'none';
     slotFotoTest.className = 'photo-slot photo-slot-single active-slot';
 
     stepTag.textContent = 'Hoja Única';
