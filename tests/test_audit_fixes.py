@@ -23,18 +23,26 @@ from vision_service import VisionService
 
 
 def test_participant_cache_thread_safety_and_batch_io():
-    """Valida la concurrencia y persistencia eficiente en lote de ParticipantCache."""
+    """Valida la concurrencia y persistencia eficiente de ParticipantCache sin métodos CSV."""
     with tempfile.TemporaryDirectory() as tmpdir:
         cache_file = Path(tmpdir) / "test_participantes.json"
         cache = ParticipantCache(cache_file=cache_file)
 
-        # 1. Simular importación CSV de 50 filas
-        csv_data = "Nombre,Edad,Municipio,EPS,Documento\n"
-        for i in range(50):
-            csv_data += f"PARTICIPANTE PRUEBA {i},16,MAHATES,MUTUAL SER,100{i:04d}\n"
+        # Verificar que el método obsoleto CSV fue totalmente eliminado
+        assert not hasattr(cache, "importar_desde_csv")
 
-        importados = cache.importar_desde_csv(csv_data)
-        assert importados == 50
+        # 1. Simular aprendizaje de participantes
+        for i in range(50):
+            cache.aprender_participante(
+                nombre=f"PARTICIPANTE PRUEBA {i}",
+                edad="16",
+                municipio="MAHATES",
+                eapb="MUTUAL SER",
+                documento=f"100{i:04d}",
+                guardar_inmediato=False
+            )
+        cache.guardar()
+
         assert cache.contar() == 50
         assert cache_file.exists()
 

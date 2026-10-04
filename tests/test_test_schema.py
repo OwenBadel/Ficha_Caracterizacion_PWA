@@ -110,13 +110,9 @@ def test_participant_cache_fuzzy_match(tmp_path):
     assert match1["municipio"] == "MAHATES"
     assert match1["edad"] == "17"
 
-    # Simular importación masiva desde CSV
-    csv_sample = """Marca temporal,NOMBRE COMPLETO DE QUIEN DILIGENCIA LA FICHA,TERRITORIO,Nombre completo del participante,Tipo de documento identidad,Numero de documento identidad,Edad,Municipio,EPS (si tienes)
-2026/09/15,PAMELA VERGARA,TURBANA,ANA LUCIA HERRERA SILVA,TI,1048293847,15,TURBANA,MUTUAL SER
-2026/09/15,PAMELA VERGARA,TURBANA,JORGE ELIECER PEÑA BLANCO,TI,1048293848,16,TURBANA,COOSALUD
-"""
-    total = cache.importar_desde_csv(csv_sample)
-    assert total == 2
+    # Simular aprendizaje de participantes adicionales
+    cache.aprender_participante("ANA LUCIA HERRERA SILVA", edad="15", municipio="TURBANA", eapb="MUTUAL SER", documento="1048293847")
+    cache.aprender_participante("JORGE ELIECER PEÑA BLANCO", edad="16", municipio="TURBANA", eapb="COOSALUD", documento="1048293848")
     assert cache.contar() == 3
 
     match2 = cache.buscar_coincidencia("ANA LUSIA HERRERA SILVA")

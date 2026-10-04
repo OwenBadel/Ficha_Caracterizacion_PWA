@@ -259,7 +259,7 @@ La aplicación cuenta con soporte dual de digitalización:
 ### 🌟 Características del Modo Test:
 1. **Captura Rápida de 1 Foto:** Enfoca la hoja completa del test y captura con un solo toque.
 2. **Auto-Detección y Selector de Evaluación:** La IA detecta automáticamente en el encabezado si es `PRE-TEST` o `POST-TEST`. También puedes forzar el tipo mediante el selector visual en la interfaz (`Auto (IA)`, `PRE-TEST`, `POST-TEST`).
-3. **Reconciliación Automática de Participantes:** Al cargar el CSV de Fichas previas desde el botón `👥 Participantes`, el sistema corrige de forma difusa cualquier fallo caligráfico o de OCR en el nombre, edad, municipio y EPS.
+3. **Reconciliación y Aprendizaje Continuo de Participantes:** A medida que se digitalizan las Fichas de Caracterización, el sistema aprende y registra automáticamente en segundo plano a los participantes, permitiendo corregir de forma difusa cualquier fallo caligráfico o de OCR en el nombre, edad, municipio y EPS al procesar sus correspondientes Pre y Post Tests.
 
 ### 📋 Columnas del Pre-Test y Post-Test en Google Sheets (15 Columnas)
 

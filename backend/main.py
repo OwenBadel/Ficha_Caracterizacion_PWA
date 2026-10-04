@@ -127,31 +127,6 @@ def get_participants() -> Dict[str, Any]:
     }
 
 
-@app.post("/api/participants/import")
-async def import_participants(file: UploadFile = File(...)) -> Dict[str, Any]:
-    """Importa base de participantes desde un archivo CSV exportado de Google Sheets."""
-    try:
-        content_bytes = await file.read()
-        try:
-            csv_text = content_bytes.decode("utf-8")
-        except UnicodeDecodeError:
-            csv_text = content_bytes.decode("latin-1")
-
-        importados = await run_in_threadpool(participant_cache.importar_desde_csv, csv_text)
-        return {
-            "success": True,
-            "message": f"Se importaron {importados} participantes exitosamente.",
-            "total_en_cache": participant_cache.contar(),
-            "resumen": participant_cache.obtener_resumen()
-        }
-    except Exception as e:
-        logger.error(f"Error importando participantes: {e}", exc_info=True)
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={"success": False, "error": str(e)}
-        )
-
-
 @app.post("/api/process-survey")
 async def process_survey(
     foto_anverso: UploadFile = File(..., description="Fotografía Página 1 (Anverso)"),

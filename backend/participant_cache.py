@@ -7,8 +7,6 @@ para evitar errores tipográficos o caligráficos al escanear los Pre-Test y Pos
 
 from __future__ import annotations
 import os
-import io
-import csv
 import json
 import logging
 import difflib
@@ -130,56 +128,6 @@ class ParticipantCache:
             return dict(mejor_match)
 
         return None
-
-    def importar_desde_csv(self, csv_texto: str) -> int:
-        """
-        Importa participantes desde un CSV exportado de Google Sheets (Fichas de Caracterización).
-        Detecta dinámicamente columnas de Nombre, Edad, Municipio/Territorio y EPS.
-        Optimizado para persistir atómicamente una sola vez al culminar el lote.
-        """
-        lector = csv.reader(io.StringIO(csv_texto), delimiter=",")
-        filas = list(lector)
-        if not filas:
-            return 0
-
-        encabezados = [limpiar_texto(c) for c in filas[0]]
-
-        def idx_col(*nombres_posibles) -> int:
-            for nom in nombres_posibles:
-                nom_limpio = limpiar_texto(nom)
-                for i, h in enumerate(encabezados):
-                    if nom_limpio in h or h in nom_limpio:
-                        return i
-            return -1
-
-        idx_nombre = idx_col("Nombre completo del participante", "NOMBRE", "PARTICIPANTE")
-        idx_edad = idx_col("Edad", "EDAD")
-        idx_mun = idx_col("Municipio", "TERRITORIO", "MUNICIPIO")
-        idx_eps = idx_col("EPS (si tienes)", "EAPB (EPS)", "EPS", "EAPB")
-        idx_doc = idx_col("Numero de documento identidad", "DOCUMENTO", "IDENTIFICACION")
-
-        if idx_nombre == -1:
-            idx_nombre = 2 if len(encabezados) > 2 else 0
-
-        agregados = 0
-        for fila in filas[1:]:
-            if not fila or len(fila) <= idx_nombre:
-                continue
-            nombre = fila[idx_nombre].strip()
-            if not nombre:
-                continue
-
-            edad = fila[idx_edad].strip() if 0 <= idx_edad < len(fila) else ""
-            municipio = fila[idx_mun].strip() if 0 <= idx_mun < len(fila) else ""
-            eps = fila[idx_eps].strip() if 0 <= idx_eps < len(fila) else ""
-            doc = fila[idx_doc].strip() if 0 <= idx_doc < len(fila) else ""
-
-            self.aprender_participante(nombre, edad, municipio, eps, doc, guardar_inmediato=False)
-            agregados += 1
-
-        self.guardar()
-        logger.info(f"Importación completada: {agregados} participantes importados.")
-        return agregados
 
     def contar(self) -> int:
         with self._lock:
