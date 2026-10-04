@@ -800,6 +800,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
   actualizarContadorCola();
+  cargarResumenParticipantes();
 
   btnOpenDrawer.addEventListener('click', async () => {
     await renderizarListaDrawer();
@@ -920,6 +921,22 @@ document.addEventListener('DOMContentLoaded', () => {
     navigator.serviceWorker.register('/sw.js')
       .then(() => console.log('Service Worker registrado correctamente'))
       .catch((e) => console.warn('Fallo registrando Service Worker:', e));
+  }
+
+  // -------------------------------------------------------------
+  // CONSULTA DE RESUMEN DE PARTICIPANTES EN CACHÉ
+  // -------------------------------------------------------------
+  async function cargarResumenParticipantes() {
+    try {
+      if (!navigator.onLine) return;
+      const res = await fetch('/api/participants');
+      if (res.ok) {
+        const data = await res.json();
+        console.log(`[Participantes] Caché sincronizado: ${data.total || 0} registros disponibles.`);
+      }
+    } catch (err) {
+      console.warn('No se pudo consultar el catálogo de participantes:', err);
+    }
   }
 
   // -------------------------------------------------------------

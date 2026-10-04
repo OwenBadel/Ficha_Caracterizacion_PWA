@@ -1,9 +1,8 @@
-// Service Worker para PWA Offline-First de Fichas de Caracterización — Ing. Owen Badel Hooker
-const CACHE_NAME = 'ficha-caracterizacion-v9';
+// Service Worker para PWA Offline-First de Fichas de Caracterización — Owen Badel Hooker
+const CACHE_NAME = 'ficha-caracterizacion-v10';
 const ASSETS_TO_CACHE = [
   '/',
   '/manifest.json',
-  '/static/index.html',
   '/static/css/styles.css',
   '/static/js/db.js',
   '/static/js/app.js'
@@ -54,12 +53,13 @@ self.addEventListener('fetch', (event) => {
         return networkResponse;
       })
       .catch(async () => {
-        const cachedResponse = await caches.match(event.request);
+        // Ignorar parámetros de búsqueda para que styles.css?v=9 coincida con /static/css/styles.css en caché
+        const cachedResponse = await caches.match(event.request, { ignoreSearch: true });
         if (cachedResponse) {
           return cachedResponse;
         }
         if (event.request.mode === 'navigate') {
-          return caches.match('/');
+          return caches.match('/', { ignoreSearch: true });
         }
       })
   );

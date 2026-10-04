@@ -15,6 +15,7 @@ from fastapi import FastAPI, File, UploadFile, Form, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, FileResponse
+from starlette.concurrency import run_in_threadpool
 import uvicorn
 from dotenv import load_dotenv
 
@@ -136,7 +137,7 @@ async def import_participants(file: UploadFile = File(...)) -> Dict[str, Any]:
         except UnicodeDecodeError:
             csv_text = content_bytes.decode("latin-1")
 
-        importados = participant_cache.importar_desde_csv(csv_text)
+        importados = await run_in_threadpool(participant_cache.importar_desde_csv, csv_text)
         return {
             "success": True,
             "message": f"Se importaron {importados} participantes exitosamente.",
@@ -183,9 +184,10 @@ async def process_survey(
                 detail="Una o ambas imágenes están vacías (0 bytes)."
             )
 
-        # 1. Extracción con IA de Visión
+        # 1. Extracción con IA de Visión (Offloaded a threadpool para proteger el event loop)
         logger.info("Iniciando extracción multimodal con IA...")
-        datos_dict = vision_service.extraer_datos_ficha(
+        datos_dict = await run_in_threadpool(
+            vision_service.extraer_datos_ficha,
             img_anverso_bytes=anverso_bytes,
             img_reverso_bytes=reverso_bytes,
             mime_type_1=mime1,
@@ -203,20 +205,21 @@ async def process_survey(
             f"Col 43 (Por qué)='{fila_ordenada[42]}'"
         )
 
-        # 2. Inserción en Google Sheets
+        # 2. Inserción en Google Sheets (Offloaded a threadpool)
         logger.info("Enviando fila estructurada a Google Sheets...")
-        sheets_result = sheets_service.insertar_encuesta(fila_ordenada)
+        sheets_result = await run_in_threadpool(sheets_service.insertar_encuesta, fila_ordenada)
 
         # 3. Aprendizaje continuo de vocabulario para futuras coincidencias difusas
         try:
-            vocabulary_learner.aprender_fila(fila_ordenada)
+            await run_in_threadpool(vocabulary_learner.aprender_fila, fila_ordenada)
             logger.info("Vocabulario adaptativo actualizado a partir de la nueva ficha procesada.")
         except Exception as e:
             logger.warning(f"No se pudo actualizar vocabulario adaptativo: {e}")
 
         # 4. Aprendizaje continuo en base de participantes
         try:
-            participant_cache.aprender_participante(
+            await run_in_threadpool(
+                participant_cache.aprender_participante,
                 nombre=fila_ordenada[2],
                 edad=fila_ordenada[5],
                 municipio=fila_ordenada[9],
@@ -278,9 +281,10 @@ async def process_test(
                 detail="La imagen del test está vacía (0 bytes)."
             )
 
-        # 1. Extracción con IA de Visión (reconciliando automáticamente con catálogo de participantes)
+        # 1. Extracción con IA de Visión (Offloaded a threadpool para proteger event loop)
         logger.info("Iniciando extracción con IA para Pre/Post Test...")
-        datos_dict = vision_service.extraer_datos_test(
+        datos_dict = await run_in_threadpool(
+            vision_service.extraer_datos_test,
             img_bytes=test_bytes,
             mime_type=mime,
             tipo_evaluacion_override=tipo_evaluacion
@@ -296,9 +300,9 @@ async def process_test(
             f"P5='{test_obj.pregunta_5}'"
         )
 
-        # 2. Inserción en Google Sheets
+        # 2. Inserción en Google Sheets (Offloaded a threadpool)
         logger.info("Enviando fila de test estructurada a Google Sheets...")
-        sheets_result = sheets_service.insertar_test(fila_ordenada)
+        sheets_result = await run_in_threadpool(sheets_service.insertar_test, fila_ordenada)
 
         return {
             "success": True,
@@ -366,7 +370,7 @@ if __name__ == "__main__":
     host = os.getenv("HOST", "0.0.0.0")
     local_ip = obtener_ip_local()
     print(f"\n=======================================================")
-    print(f"  DIGITALIZADOR DE FICHAS PWA — ING. OWEN BADEL HOOKER")
+    print(f"  DIGITALIZADOR DE FICHAS PWA — OWEN BADEL HOOKER")
     print(f"=======================================================")
     print(f"  - Desde tu PC:      http://localhost:{port}")
     print(f"  - Desde tu Celular: http://{local_ip}:{port}")

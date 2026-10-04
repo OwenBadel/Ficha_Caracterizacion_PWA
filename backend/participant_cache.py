@@ -13,6 +13,7 @@ import json
 import logging
 import difflib
 import re
+import threading
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
@@ -30,33 +31,38 @@ def limpiar_texto(val: Any) -> str:
 
 
 class ParticipantCache:
-    """Gestiona el catálogo de participantes y resuelve coincidencias difusas."""
+    """Gestiona el catálogo de participantes y resuelve coincidencias difusas de forma thread-safe."""
 
     def __init__(self, cache_file: Optional[Path] = None):
         self.cache_file = cache_file or CACHE_FILE_DEFAULT
         self.participantes: Dict[str, Dict[str, str]] = {}
+        self._lock = threading.Lock()
         self.cargar()
 
     def cargar(self):
         """Carga la base de participantes desde el archivo JSON local."""
-        if self.cache_file.exists():
-            try:
-                with open(self.cache_file, "r", encoding="utf-8") as f:
-                    self.participantes = json.load(f)
-                logger.info(f"Caché de participantes cargado: {len(self.participantes)} registros.")
-            except Exception as e:
-                logger.warning(f"Error cargando caché de participantes: {e}")
+        with self._lock:
+            if self.cache_file.exists():
+                try:
+                    with open(self.cache_file, "r", encoding="utf-8") as f:
+                        self.participantes = json.load(f)
+                    logger.info(f"Caché de participantes cargado: {len(self.participantes)} registros.")
+                except Exception as e:
+                    logger.warning(f"Error cargando caché de participantes: {e}")
+                    self.participantes = {}
+            else:
                 self.participantes = {}
-        else:
-            self.participantes = {}
 
     def guardar(self):
-        """Guarda la base de participantes a disco de manera atómica."""
-        try:
-            with open(self.cache_file, "w", encoding="utf-8") as f:
-                json.dump(self.participantes, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            logger.error(f"Error guardando caché de participantes: {e}")
+        """Guarda la base de participantes a disco de manera atómica con archivo temporal."""
+        with self._lock:
+            try:
+                temp_file = self.cache_file.with_suffix(".tmp")
+                with open(temp_file, "w", encoding="utf-8") as f:
+                    json.dump(self.participantes, f, ensure_ascii=False, indent=2)
+                temp_file.replace(self.cache_file)
+            except Exception as e:
+                logger.error(f"Error guardando caché de participantes: {e}")
 
     def aprender_participante(
         self,
@@ -64,7 +70,8 @@ class ParticipantCache:
         edad: str = "",
         municipio: str = "",
         eapb: str = "",
-        documento: str = ""
+        documento: str = "",
+        guardar_inmediato: bool = True
     ):
         """Agrega o actualiza un participante en la base."""
         nom = limpiar_texto(nombre)
@@ -79,9 +86,11 @@ class ParticipantCache:
             "documento": limpiar_texto(documento)
         }
 
-        # Guardar bajo clave canónica
-        self.participantes[nom] = item
-        self.guardar()
+        with self._lock:
+            self.participantes[nom] = item
+
+        if guardar_inmediato:
+            self.guardar()
 
     def buscar_coincidencia(self, nombre_raw: str, municipio_hint: str = "") -> Optional[Dict[str, str]]:
         """
@@ -92,16 +101,18 @@ class ParticipantCache:
         if not nom_busqueda or len(nom_busqueda) < 4:
             return None
 
-        # 1. Coincidencia exacta directa
-        if nom_busqueda in self.participantes:
-            return self.participantes[nom_busqueda]
+        with self._lock:
+            # 1. Coincidencia exacta directa
+            if nom_busqueda in self.participantes:
+                return dict(self.participantes[nom_busqueda])
+            items_copia = list(self.participantes.items())
 
         # 2. Coincidencia difusa
         mejor_match = None
         mejor_score = 0.0
         mun_hint_limpio = limpiar_texto(municipio_hint)
 
-        for clave_nom, data in self.participantes.items():
+        for clave_nom, data in items_copia:
             # Similitud en nombre
             ratio = difflib.SequenceMatcher(None, nom_busqueda, clave_nom).ratio()
 
@@ -116,7 +127,7 @@ class ParticipantCache:
         umbral = 0.78
         if mejor_score >= umbral and mejor_match:
             logger.info(f"Coincidencia difusa encontrada: '{nom_busqueda}' -> '{mejor_match['nombre']}' (Score: {mejor_score:.2f})")
-            return mejor_match
+            return dict(mejor_match)
 
         return None
 
@@ -124,7 +135,7 @@ class ParticipantCache:
         """
         Importa participantes desde un CSV exportado de Google Sheets (Fichas de Caracterización).
         Detecta dinámicamente columnas de Nombre, Edad, Municipio/Territorio y EPS.
-        Retorna la cantidad de participantes importados.
+        Optimizado para persistir atómicamente una sola vez al culminar el lote.
         """
         lector = csv.reader(io.StringIO(csv_texto), delimiter=",")
         filas = list(lector)
@@ -148,7 +159,6 @@ class ParticipantCache:
         idx_doc = idx_col("Numero de documento identidad", "DOCUMENTO", "IDENTIFICACION")
 
         if idx_nombre == -1:
-            # Si no encontró por nombre exacto, intentar por la columna 2 o 3 (índices canónicos)
             idx_nombre = 2 if len(encabezados) > 2 else 0
 
         agregados = 0
@@ -164,7 +174,7 @@ class ParticipantCache:
             eps = fila[idx_eps].strip() if 0 <= idx_eps < len(fila) else ""
             doc = fila[idx_doc].strip() if 0 <= idx_doc < len(fila) else ""
 
-            self.aprender_participante(nombre, edad, municipio, eps, doc)
+            self.aprender_participante(nombre, edad, municipio, eps, doc, guardar_inmediato=False)
             agregados += 1
 
         self.guardar()
@@ -172,19 +182,24 @@ class ParticipantCache:
         return agregados
 
     def contar(self) -> int:
-        return len(self.participantes)
+        with self._lock:
+            return len(self.participantes)
 
     def obtener_resumen(self, limit: int = 50) -> Dict[str, Any]:
         """Retorna resumen y muestra de participantes cargados."""
-        municipios = {}
-        for p in self.participantes.values():
-            m = p.get("municipio") or "SIN MUNICIPIO"
-            municipios[m] = municipios.get(m, 0) + 1
+        with self._lock:
+            municipios = {}
+            for p in self.participantes.values():
+                m = p.get("municipio") or "SIN MUNICIPIO"
+                municipios[m] = municipios.get(m, 0) + 1
+
+            total = len(self.participantes)
+            muestra = list(self.participantes.values())[:limit]
 
         return {
-            "total": len(self.participantes),
+            "total": total,
             "por_municipio": municipios,
-            "muestra": list(self.participantes.values())[:limit]
+            "muestra": muestra
         }
 
 

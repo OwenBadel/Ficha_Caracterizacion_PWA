@@ -457,7 +457,7 @@ class VisionService:
 
         import httpx
         from openai import OpenAI
-        http_client = httpx.Client(verify=False, timeout=150.0)
+        http_client = httpx.Client(verify=True, timeout=120.0)
         client = OpenAI(
             base_url="https://openrouter.ai/api/v1",
             api_key=self.openrouter_api_key,
@@ -602,7 +602,7 @@ class VisionService:
 
         import httpx
         from openai import OpenAI
-        http_client = httpx.Client(verify=False, timeout=60.0)
+        http_client = httpx.Client(verify=True, timeout=90.0)
         client = OpenAI(
             base_url="https://openrouter.ai/api/v1",
             api_key=self.openrouter_api_key,

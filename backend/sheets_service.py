@@ -41,6 +41,7 @@ class GoogleSheetsService:
         self.skip_first_col = os.getenv("GOOGLE_SHEET_SKIP_FIRST_COL", "true").lower() in ("true", "1", "yes")
 
         self._gspread_client = None
+        self._tabs_inicializados = set()
         self._init_gspread()
 
     def _init_gspread(self):
@@ -78,160 +79,118 @@ class GoogleSheetsService:
         except Exception as e:
             logger.warning(f"No se pudo inicializar gspread: {e}. Se utilizará Webhook si está configurado.")
 
-    def insertar_encuesta(self, valores_ordenados: List[str]) -> Dict[str, Any]:
+    def _ejecutar_insercion(
+        self,
+        tab_name: str,
+        headers: List[str],
+        fila: List[str],
+        webhook_url: Optional[str],
+        tipo_registro: str = "ficha"
+    ) -> Dict[str, Any]:
         """
-        Inserta una fila con los valores ordenados de la encuesta.
-        Retorna dict con status y detalles.
+        Ejecuta la inserción atómica en Google Sheets, intentando primero la API oficial (gspread)
+        con caché de encabezados en memoria, y fallback automático al Webhook de Google Apps Script.
         """
         errores = []
-
-        # Forzar que absolutamente todos los valores estén en MAYÚSCULAS
-        valores_upper = [str(v or "").strip().upper() for v in valores_ordenados]
-        fila_final = ([""] + valores_upper) if self.skip_first_col else valores_upper
-        headers_final = (["Marca temporal"] + COLUMNAS_FICHA) if self.skip_first_col else COLUMNAS_FICHA
 
         # 1. Intentar con API Oficial (gspread) si está configurado
         if self._gspread_client and self.sheet_id:
             try:
                 sheet = self._gspread_client.open_by_key(self.sheet_id)
                 try:
-                    worksheet = sheet.worksheet(self.sheet_tab)
+                    worksheet = sheet.worksheet(tab_name)
                 except Exception:
                     # Crear la pestaña si no existe
-                    worksheet = sheet.add_worksheet(title=self.sheet_tab, rows=1000, cols=len(headers_final))
-                    worksheet.append_row(headers_final, value_input_option="USER_ENTERED")
+                    worksheet = sheet.add_worksheet(title=tab_name, rows=1000, cols=len(headers))
+                    worksheet.append_row(headers, value_input_option="USER_ENTERED")
+                    self._tabs_inicializados.add(tab_name)
 
-                # Verificar si tiene encabezados
-                primera_fila = worksheet.row_values(1)
-                if not primera_fila:
-                    worksheet.append_row(headers_final, value_input_option="USER_ENTERED")
+                # Verificar encabezados una única vez por pestaña durante el ciclo de vida del servicio
+                if tab_name not in self._tabs_inicializados:
+                    primera_fila = worksheet.row_values(1)
+                    if not primera_fila:
+                        worksheet.append_row(headers, value_input_option="USER_ENTERED")
+                    self._tabs_inicializados.add(tab_name)
 
                 # Insertar los datos
-                res = worksheet.append_row(fila_final, value_input_option="USER_ENTERED")
+                res = worksheet.append_row(fila, value_input_option="USER_ENTERED")
                 return {
                     "success": True,
                     "method": "google_sheets_api",
                     "sheet_id": self.sheet_id,
-                    "tab": self.sheet_tab,
-                    "updated_cells": getattr(res, "get", lambda k, d: d)("updates", {}).get("updatedCells", len(fila_final))
+                    "tab": tab_name,
+                    "updated_cells": getattr(res, "get", lambda k, d: d)("updates", {}).get("updatedCells", len(fila))
                 }
             except Exception as e:
-                err_msg = f"Error en Google Sheets API: {e}"
+                err_msg = f"Error en Google Sheets API ({tipo_registro}): {e}"
                 logger.error(err_msg)
                 errores.append(err_msg)
 
-        # 2. Intentar con Webhook de Google Apps Script si está disponible
-        if self.webhook_url:
+        # 2. Intentar con Webhook de Google Apps Script como alternativa
+        if webhook_url:
             try:
                 payload = {
-                    "headers": headers_final,
-                    "row": fila_final,
-                    "data": dict(zip(headers_final, fila_final))
+                    "tipo": tipo_registro,
+                    "tab": tab_name,
+                    "headers": headers,
+                    "row": fila,
+                    "data": dict(zip(headers, fila))
                 }
-                resp = requests.post(self.webhook_url, json=payload, timeout=45)
-                # Google Apps Script responde con 302 Found redirigiendo a script.googleusercontent.com/macros/echo
-                # Si hubo redirección exitosa previa en resp.history, doPost() ya insertó los datos en Google Sheets
-                # incluso si el endpoint de eco de Google responde con un 404 transitorio.
+                resp = requests.post(webhook_url, json=payload, timeout=45)
                 hubo_redirect_exitoso = any(h.status_code in [301, 302, 307, 308] for h in resp.history)
 
                 if resp.status_code in [200, 201, 302] or hubo_redirect_exitoso:
                     return {
                         "success": True,
                         "method": "apps_script_webhook",
+                        "tab": tab_name,
                         "status_code": resp.status_code,
                         "redirected": hubo_redirect_exitoso
                     }
                 else:
-                    errores.append(f"Webhook respondió con código HTTP {resp.status_code}: {resp.text[:150]}")
+                    errores.append(f"Webhook ({tipo_registro}) respondió con código HTTP {resp.status_code}: {resp.text[:150]}")
             except Exception as e:
-                err_msg = f"Error en Webhook Google Apps Script: {e}"
+                err_msg = f"Error en Webhook Google Apps Script ({tipo_registro}): {e}"
                 logger.error(err_msg)
                 errores.append(err_msg)
 
-        if not self._gspread_client and not self.webhook_url:
+        if not self._gspread_client and not webhook_url:
             raise ValueError(
-                "No hay método de integración configurado para Google Sheets. "
+                f"No hay método de integración configurado para Google Sheets ({tipo_registro}). "
                 "Configura GOOGLE_SHEET_ID y credentials.json O BIEN define GOOGLE_APPS_SCRIPT_URL en .env"
             )
 
-        raise RuntimeError("Falló la inserción en Google Sheets: " + " | ".join(errores))
+        raise RuntimeError(f"Falló la inserción ({tipo_registro}) en Google Sheets: " + " | ".join(errores))
+
+    def insertar_encuesta(self, valores_ordenados: List[str]) -> Dict[str, Any]:
+        """
+        Inserta una fila con los valores ordenados de la encuesta.
+        Retorna dict con status y detalles.
+        """
+        valores_upper = [str(v or "").strip().upper() for v in valores_ordenados]
+        fila_final = ([""] + valores_upper) if self.skip_first_col else valores_upper
+        headers_final = (["Marca temporal"] + COLUMNAS_FICHA) if self.skip_first_col else COLUMNAS_FICHA
+        return self._ejecutar_insercion(
+            tab_name=self.sheet_tab,
+            headers=headers_final,
+            fila=fila_final,
+            webhook_url=self.webhook_url,
+            tipo_registro="ficha"
+        )
 
     def insertar_test(self, valores_ordenados: List[str]) -> Dict[str, Any]:
         """
         Inserta una fila con los 14 valores ordenados de Pre/Post Test (+ Marca temporal).
         Retorna dict con status y detalles.
         """
-        errores = []
-
-        # Forzar que absolutamente todos los valores estén en MAYÚSCULAS
         valores_upper = [str(v or "").strip().upper() for v in valores_ordenados]
         timestamp_str = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         fila_final = [timestamp_str] + valores_upper
-        headers_final = ENCABEZADOS_TEST_SHEETS
-
-        # 1. Intentar con API Oficial (gspread) si está configurado
-        if self._gspread_client and self.sheet_id:
-            try:
-                sheet = self._gspread_client.open_by_key(self.sheet_id)
-                try:
-                    worksheet = sheet.worksheet(self.sheet_tab_tests)
-                except Exception:
-                    # Crear la pestaña si no existe con los encabezados
-                    worksheet = sheet.add_worksheet(title=self.sheet_tab_tests, rows=1000, cols=len(headers_final))
-                    worksheet.append_row(headers_final, value_input_option="USER_ENTERED")
-
-                # Verificar si tiene encabezados
-                primera_fila = worksheet.row_values(1)
-                if not primera_fila:
-                    worksheet.append_row(headers_final, value_input_option="USER_ENTERED")
-
-                # Insertar los datos
-                res = worksheet.append_row(fila_final, value_input_option="USER_ENTERED")
-                return {
-                    "success": True,
-                    "method": "google_sheets_api",
-                    "sheet_id": self.sheet_id,
-                    "tab": self.sheet_tab_tests,
-                    "updated_cells": getattr(res, "get", lambda k, d: d)("updates", {}).get("updatedCells", len(fila_final))
-                }
-            except Exception as e:
-                err_msg = f"Error en Google Sheets API (Test): {e}"
-                logger.error(err_msg)
-                errores.append(err_msg)
-
-        # 2. Intentar con Webhook de Google Apps Script
         url_destino = self.webhook_url_tests or self.webhook_url
-        if url_destino:
-            try:
-                payload = {
-                    "tipo": "pre_post_test",
-                    "tab": self.sheet_tab_tests,
-                    "headers": headers_final,
-                    "row": fila_final,
-                    "data": dict(zip(headers_final, fila_final))
-                }
-                resp = requests.post(url_destino, json=payload, timeout=45)
-                hubo_redirect_exitoso = any(h.status_code in [301, 302, 307, 308] for h in resp.history)
-
-                if resp.status_code in [200, 201, 302] or hubo_redirect_exitoso:
-                    return {
-                        "success": True,
-                        "method": "apps_script_webhook",
-                        "tab": self.sheet_tab_tests,
-                        "status_code": resp.status_code,
-                        "redirected": hubo_redirect_exitoso
-                    }
-                else:
-                    errores.append(f"Webhook Test respondió con código HTTP {resp.status_code}: {resp.text[:150]}")
-            except Exception as e:
-                err_msg = f"Error en Webhook Google Apps Script (Test): {e}"
-                logger.error(err_msg)
-                errores.append(err_msg)
-
-        if not self._gspread_client and not url_destino:
-            raise ValueError(
-                "No hay método de integración configurado para Google Sheets de Test. "
-                "Configura GOOGLE_APPS_SCRIPT_URL_TESTS o GOOGLE_APPS_SCRIPT_URL en .env"
-            )
-
-        raise RuntimeError("Falló la inserción del Test en Google Sheets: " + " | ".join(errores))
+        return self._ejecutar_insercion(
+            tab_name=self.sheet_tab_tests,
+            headers=ENCABEZADOS_TEST_SHEETS,
+            fila=fila_final,
+            webhook_url=url_destino,
+            tipo_registro="pre_post_test"
+        )

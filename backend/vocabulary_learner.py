@@ -1,6 +1,6 @@
 """
 vocabulary_learner.py — Módulo de Vocabulario Adaptativo y Guía de Coincidencias (Fuzzy Matching)
-Digitalizador de Fichas de Caracterización (PROJ-006 — Ing. Owen Badel Hooker)
+Digitalizador de Fichas de Caracterización (PROJ-006 — Owen Badel Hooker)
 
 Permite que el sistema aprenda términos frecuentes y respuestas de formularios anteriores
 para todas las columnas de texto abierto, actuando como guía de coincidencia para auto-corregir
@@ -13,6 +13,7 @@ import json
 import re
 import difflib
 import logging
+import threading
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
@@ -167,62 +168,65 @@ SEMILLA_INICIAL: Dict[str, Dict[str, int]] = {
 
 
 class VocabularyLearner:
-    """Gestiona el aprendizaje dinámico y la corrección difusa de términos por columna."""
+    """Gestiona el aprendizaje dinámico y la corrección difusa de términos por columna de forma thread-safe."""
 
     def __init__(self, cache_path: Path = CACHE_FILE):
         self.cache_path = cache_path
+        self._lock = threading.Lock()
         self.vocabulario: Dict[str, Dict[str, int]] = {}
         self._cargar_cache()
 
     def _cargar_cache(self):
         """Carga el vocabulario persistido o inicializa/fusiona con la semilla base."""
-        if self.cache_path.exists():
-            try:
-                with open(self.cache_path, "r", encoding="utf-8") as f:
-                    cargado = json.load(f)
-                self.vocabulario = cargado
-            except Exception as e:
-                logger.warning(f"No se pudo leer {self.cache_path}: {e}. Usando semilla inicial.")
+        with self._lock:
+            if self.cache_path.exists():
+                try:
+                    with open(self.cache_path, "r", encoding="utf-8") as f:
+                        cargado = json.load(f)
+                    self.vocabulario = cargado
+                except Exception as e:
+                    logger.warning(f"No se pudo leer {self.cache_path}: {e}. Usando semilla inicial.")
+                    self.vocabulario = json.loads(json.dumps(SEMILLA_INICIAL))
+            else:
                 self.vocabulario = json.loads(json.dumps(SEMILLA_INICIAL))
-        else:
-            self.vocabulario = json.loads(json.dumps(SEMILLA_INICIAL))
 
-        # Asegurar que todas las columnas de la semilla existan y estén enriquecidas
-        actualizado = False
-        for col, terminos_semilla in SEMILLA_INICIAL.items():
-            if col not in self.vocabulario:
-                self.vocabulario[col] = {}
-                actualizado = True
-            for termino, peso in terminos_semilla.items():
-                if termino not in self.vocabulario[col]:
-                    self.vocabulario[col][termino] = peso
+            # Asegurar que todas las columnas de la semilla existan y estén enriquecidas
+            actualizado = False
+            for col, terminos_semilla in SEMILLA_INICIAL.items():
+                if col not in self.vocabulario:
+                    self.vocabulario[col] = {}
+                    actualizado = True
+                for termino, peso in terminos_semilla.items():
+                    if termino not in self.vocabulario[col]:
+                        self.vocabulario[col][termino] = peso
+                        actualizado = True
+
+            # Limpiar si YADEL estaba erróneamente en dirección de residencia
+            if "Dirección de residencia (barrio o vereda)" in self.vocabulario:
+                if "YADEL" in self.vocabulario["Dirección de residencia (barrio o vereda)"]:
+                    del self.vocabulario["Dirección de residencia (barrio o vereda)"]["YADEL"]
                     actualizado = True
 
-        # Limpiar si YADEL estaba erróneamente en dirección de residencia
-        if "Dirección de residencia (barrio o vereda)" in self.vocabulario:
-            if "YADEL" in self.vocabulario["Dirección de residencia (barrio o vereda)"]:
-                del self.vocabulario["Dirección de residencia (barrio o vereda)"]["YADEL"]
+            # Garantizar que YADEL esté presente en ¿Cual?_3
+            if "¿Cual?_3" not in self.vocabulario:
+                self.vocabulario["¿Cual?_3"] = {}
+            if self.vocabulario["¿Cual?_3"].get("YADEL", 0) < 80:
+                self.vocabulario["¿Cual?_3"]["YADEL"] = 80
                 actualizado = True
-
-        # Garantizar que YADEL esté presente en ¿Cual?_3
-        if "¿Cual?_3" not in self.vocabulario:
-            self.vocabulario["¿Cual?_3"] = {}
-        if self.vocabulario["¿Cual?_3"].get("YADEL", 0) < 80:
-            self.vocabulario["¿Cual?_3"]["YADEL"] = 80
-            actualizado = True
 
         if actualizado or not self.cache_path.exists():
             self._guardar_cache()
 
     def _guardar_cache(self):
-        """Persiste el vocabulario en disco de forma atómica."""
-        try:
-            temp_path = self.cache_path.with_suffix(".tmp")
-            with open(temp_path, "w", encoding="utf-8") as f:
-                json.dump(self.vocabulario, f, indent=2, ensure_ascii=False)
-            temp_path.replace(self.cache_path)
-        except Exception as e:
-            logger.error(f"Error al guardar vocabulario en {self.cache_path}: {e}")
+        """Persiste el vocabulario en disco de forma atómica y segura entre hilos."""
+        with self._lock:
+            try:
+                temp_path = self.cache_path.with_suffix(".tmp")
+                with open(temp_path, "w", encoding="utf-8") as f:
+                    json.dump(self.vocabulario, f, indent=2, ensure_ascii=False)
+                temp_path.replace(self.cache_path)
+            except Exception as e:
+                logger.error(f"Error al guardar vocabulario en {self.cache_path}: {e}")
 
     def obtener_terminos_frecuentes(self, columna: str, limite: int = 15) -> List[str]:
         """Devuelve los términos más frecuentes de una columna específica."""
@@ -336,23 +340,24 @@ class VocabularyLearner:
             return
 
         cambios = False
-        for col in COLUMNAS_APRENDIZAJE:
-            val = dict_data.get(col)
-            if not val:
-                continue
-            s = str(val).strip().upper()
-            if not s or s in ["NONE", "NULL", "N/A", "UNDEFINED", "NO"]:
-                continue
+        with self._lock:
+            for col in COLUMNAS_APRENDIZAJE:
+                val = dict_data.get(col)
+                if not val:
+                    continue
+                s = str(val).strip().upper()
+                if not s or s in ["NONE", "NULL", "N/A", "UNDEFINED", "NO"]:
+                    continue
 
-            if len(s) > 50:
-                continue
+                if len(s) > 50:
+                    continue
 
-            if col not in self.vocabulario:
-                self.vocabulario[col] = {}
+                if col not in self.vocabulario:
+                    self.vocabulario[col] = {}
 
-            actual = self.vocabulario[col].get(s, 0)
-            self.vocabulario[col][s] = actual + 1
-            cambios = True
+                actual = self.vocabulario[col].get(s, 0)
+                self.vocabulario[col][s] = actual + 1
+                cambios = True
 
         if cambios:
             self._guardar_cache()

@@ -12,6 +12,7 @@ if str(backend_dir) not in sys.path:
 import test_schema
 import test_test_schema
 import test_image_orientation
+import test_audit_fixes
 
 def run():
     print("--- 1. Ejecutando pruebas de test_schema.py ---")
@@ -43,6 +44,14 @@ def run():
             func = getattr(test_image_orientation, attr)
             if callable(func):
                 func()
+
+    print("\n--- 4. Ejecutando pruebas de test_audit_fixes.py ---")
+    for attr in dir(test_audit_fixes):
+        if attr.startswith("test_"):
+            func = getattr(test_audit_fixes, attr)
+            if callable(func):
+                func()
+                print(f"  [PASS] {attr}")
 
     print("\n=========================================")
     print("TODAS LAS PRUEBAS COMPLETADAS CON ÉXITO (VERDE)")
