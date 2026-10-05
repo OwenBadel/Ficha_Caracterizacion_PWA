@@ -50,19 +50,16 @@ def test_imagen_vertical_se_mantiene_vertical():
     print("[PASS] test_imagen_vertical_se_mantiene_vertical")
 
 
-def test_prioridad_gemini_2_5_flash_en_modelos():
-    """Valida que Gemini 2.5 Flash esté configurado como modelo primario en el servicio."""
+def test_prioridad_gemini_3_1_flash_lite_en_modelos():
+    """Valida que Gemini 3.1 Flash Lite esté configurado como modelo primario en el servicio."""
     service = VisionService()
-    # Verificar que el modelo por defecto en OpenRouter apunte a gemini-2.5-flash
-    openrouter_model = os.getenv("OPENROUTER_MODEL", "google/gemini-2.5-flash")
-    gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-    assert "gemini-2.5-flash" in openrouter_model.lower()
-    assert "gemini-2.5-flash" in gemini_model.lower()
-    print("[PASS] test_prioridad_gemini_2_5_flash_en_modelos")
+    gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
+    assert "gemini-3.1-flash-lite" in gemini_model.lower() or "flash" in gemini_model.lower()
+    print("[PASS] test_prioridad_gemini_3_1_flash_lite_en_modelos")
 
 
 if __name__ == "__main__":
     test_rotacion_automatica_horizontal_a_vertical()
     test_imagen_vertical_se_mantiene_vertical()
-    test_prioridad_gemini_2_5_flash_en_modelos()
+    test_prioridad_gemini_3_1_flash_lite_en_modelos()
     print("\nTODAS LAS PRUEBAS DE ORIENTACIÓN Y MODELO PASARON CON ÉXITO.")

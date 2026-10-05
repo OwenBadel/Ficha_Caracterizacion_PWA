@@ -10,6 +10,8 @@ import json
 import re
 import base64
 import logging
+import time
+import threading
 from typing import Tuple, Dict, Any, Optional
 from dotenv import load_dotenv
 
@@ -253,7 +255,7 @@ def optimizar_imagen_bytes(img_bytes: bytes, max_dim: int = 3200, calidad: int =
     """
     Preserva MÁXIMA FIDELIDAD VISUAL Y RESOLUCIÓN (Ultra High Quality hasta 3200px, 95% calidad y subsampling 4:4:4).
     Garantiza que el payload a la IA mantenga nitidez fotográfica absoluta para que los modelos
-    (Gemini 2.5 Flash, Qwen2.5-VL 72B) puedan leer con precisión forense números continuos (teléfonos, cédulas),
+    (Gemini 3.1 Flash-Lite, Gemini 2.5 Flash) puedan leer con precisión forense números continuos (teléfonos, cédulas),
     trazos tenues de bolígrafo y casillas de verificación sin artefactos de compresión.
     Garantiza orientación vertical: si la foto fue tomada en horizontal, se rota automáticamente 90° a vertical.
     """
@@ -299,14 +301,64 @@ def optimizar_imagen_bytes(img_bytes: bytes, max_dim: int = 3200, calidad: int =
         return img_bytes, "image/jpeg"
 
 
+class PipelineRateLimiter:
+    """
+    Controlador de tasa y espaciado de peticiones para la canalización de visión artificial.
+    Garantiza un límite artificial de envío de al menos cuatro segundos (o GEMINI_MIN_INTERVAL_SECONDS)
+    entre llamadas consecutivas a la API para evitar bloqueos temporales por tasa de peticiones concurrentes (HTTP 429).
+    Es completamente thread-safe mediante un threading.Lock para coordinar hilos concurrentes o ráfagas.
+    """
+
+    def __init__(self, min_interval_seconds: float = 4.0):
+        self.min_interval = float(min_interval_seconds)
+        self._last_call_timestamp: float = 0.0
+        self._lock = threading.Lock()
+
+    def esperar_turno(self) -> float:
+        """
+        Bloquea el hilo hasta asegurar que hayan transcurrido al menos `min_interval` segundos
+        desde la última llamada a la API. Retorna el tiempo esperado en segundos.
+        """
+        with self._lock:
+            ahora = time.time()
+            transcurrido = ahora - self._last_call_timestamp
+            tiempo_espera = self.min_interval - transcurrido
+
+            if tiempo_espera > 0:
+                logger.info(
+                    f"Rate Limiter: Espaciando llamada consecutiva a la API de Visión "
+                    f"(pausa artificial de {tiempo_espera:.2f}s para respetar límite de {self.min_interval:.1f}s)..."
+                )
+                time.sleep(tiempo_espera)
+                esperado = tiempo_espera
+            else:
+                esperado = 0.0
+
+            # Registrar timestamp de inicio de la llamada efectiva
+            self._last_call_timestamp = time.time()
+            return esperado
+
+    def reset(self):
+        """Reinicia la marca temporal (utilidad para tests unitarios)."""
+        with self._lock:
+            self._last_call_timestamp = 0.0
+
+
+# Instancia singleton del limitador para la canalización global de visión
+pipeline_rate_limiter = PipelineRateLimiter(
+    min_interval_seconds=float(os.getenv("GEMINI_MIN_INTERVAL_SECONDS", "4.0"))
+)
+
+
 class VisionService:
     """Controlador de extracción multimodal para fichas físicas."""
 
-    def __init__(self):
+    def __init__(self, rate_limiter: Optional[PipelineRateLimiter] = None):
         self.gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
         self.openai_api_key = os.getenv("OPENAI_API_KEY", "").strip()
         self.openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
         self.provider = os.getenv("VISION_PROVIDER", "gemini").lower()
+        self.rate_limiter = rate_limiter or pipeline_rate_limiter
 
     def _optimizar_imagen(self, img_bytes: bytes, mime_type: str = "image/jpeg") -> tuple[bytes, str]:
         """Helper para compatibilidad con optimización de imágenes."""
@@ -355,7 +407,6 @@ class VisionService:
             raise ValueError("GEMINI_API_KEY no está configurada en las variables de entorno.")
 
         try:
-            import time
             from google import genai
             from google.genai import types
 
@@ -363,9 +414,10 @@ class VisionService:
             part_1 = types.Part.from_bytes(data=img1, mime_type=mime1)
             part_2 = types.Part.from_bytes(data=img2, mime_type=mime2)
 
-            primary_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+            primary_model = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
             candidate_models = [
                 primary_model,
+                "gemini-3.1-flash-lite",
                 "gemini-2.5-flash",
                 "gemini-2.0-flash",
                 "gemini-1.5-flash",
@@ -377,6 +429,7 @@ class VisionService:
             last_err = None
             for m_name in models_to_try:
                 try:
+                    self.rate_limiter.esperar_turno()
                     logger.info(f"Enviando fotos a Gemini con modelo '{m_name}' (temperature=0.0)...")
                     response = client.models.generate_content(
                         model=m_name,
@@ -391,7 +444,6 @@ class VisionService:
                 except Exception as e:
                     last_err = e
                     logger.warning(f"Modelo '{m_name}' reportó fallo: {e}. Probando siguiente modelo...")
-                    time.sleep(1.0)
                     continue
 
             if last_err:
@@ -399,7 +451,7 @@ class VisionService:
         except ImportError:
             import google.generativeai as legacy_genai
             legacy_genai.configure(api_key=self.gemini_api_key)
-            model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+            model_name = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
             model = legacy_genai.GenerativeModel(
                 model_name=model_name,
                 generation_config={"temperature": 0.0, "response_mime_type": "application/json"}
@@ -410,6 +462,7 @@ class VisionService:
                 {"mime_type": mime1, "data": img1},
                 {"mime_type": mime2, "data": img2}
             ]
+            self.rate_limiter.esperar_turno()
             response = model.generate_content(contents)
             return response.text
 
@@ -423,6 +476,7 @@ class VisionService:
         b64_1 = base64.b64encode(img1).decode("utf-8")
         b64_2 = base64.b64encode(img2).decode("utf-8")
 
+        self.rate_limiter.esperar_turno()
         response = client.chat.completions.create(
             model=os.getenv("OPENAI_MODEL", "gpt-4o"),
             temperature=0.0,
@@ -470,7 +524,6 @@ class VisionService:
         candidate_models = [
             primary_model,
             "google/gemini-2.5-flash",
-            "qwen/qwen2.5-vl-72b-instruct",
             "openai/gpt-4o-mini"
         ]
         models_to_try = list(dict.fromkeys(candidate_models))
@@ -478,6 +531,7 @@ class VisionService:
         last_err = None
         for model_name in models_to_try:
             try:
+                self.rate_limiter.esperar_turno()
                 logger.info(f"Enviando fotos a OpenRouter con modelo '{model_name}' (temperature=0.0)...")
                 response = client.chat.completions.create(
                     model=model_name,
@@ -613,7 +667,6 @@ class VisionService:
         candidate_models = [
             primary_model,
             "google/gemini-2.5-flash",
-            "qwen/qwen2.5-vl-72b-instruct",
             "openai/gpt-4o-mini"
         ]
         models_to_try = list(dict.fromkeys(candidate_models))
@@ -621,6 +674,7 @@ class VisionService:
         last_err = None
         for model_name in models_to_try:
             try:
+                self.rate_limiter.esperar_turno()
                 logger.info(f"Enviando test a OpenRouter con modelo '{model_name}'...")
                 response = client.chat.completions.create(
                     model=model_name,
@@ -660,16 +714,16 @@ class VisionService:
             raise ValueError("GEMINI_API_KEY no está configurada.")
 
         try:
-            import time
             from google import genai
             from google.genai import types
 
             client = genai.Client(api_key=self.gemini_api_key)
             part = types.Part.from_bytes(data=img, mime_type=mime)
 
-            primary_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+            primary_model = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
             candidate_models = [
                 primary_model,
+                "gemini-3.1-flash-lite",
                 "gemini-2.5-flash",
                 "gemini-2.0-flash",
                 "gemini-1.5-flash"
@@ -680,6 +734,7 @@ class VisionService:
             last_err = None
             for m_name in models_to_try:
                 try:
+                    self.rate_limiter.esperar_turno()
                     logger.info(f"Enviando test a Gemini con modelo '{m_name}'...")
                     response = client.models.generate_content(
                         model=m_name,
@@ -694,7 +749,6 @@ class VisionService:
                 except Exception as e:
                     last_err = e
                     logger.warning(f"Modelo '{m_name}' reportó fallo en test: {e}. Probando siguiente...")
-                    time.sleep(1.0)
                     continue
 
             if last_err:
@@ -702,7 +756,7 @@ class VisionService:
         except ImportError:
             import google.generativeai as legacy_genai
             legacy_genai.configure(api_key=self.gemini_api_key)
-            model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+            model_name = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
             model = legacy_genai.GenerativeModel(
                 model_name=model_name,
                 generation_config={"temperature": 0.0, "response_mime_type": "application/json"}
@@ -712,6 +766,7 @@ class VisionService:
                 prompt_completo,
                 {"mime_type": mime, "data": img}
             ]
+            self.rate_limiter.esperar_turno()
             response = model.generate_content(contents)
             return response.text
         return "{}"
@@ -725,6 +780,7 @@ class VisionService:
         client = OpenAI(api_key=self.openai_api_key)
         b64 = base64.b64encode(img).decode("utf-8")
 
+        self.rate_limiter.esperar_turno()
         response = client.chat.completions.create(
             model=os.getenv("OPENAI_MODEL", "gpt-4o"),
             temperature=0.0,

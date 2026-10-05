@@ -769,6 +769,12 @@ document.addEventListener('DOMContentLoaded', () => {
         await window.surveyDB.actualizarEstado(item.id, 'error', { errorMsg: err.message });
         fallidas++;
       }
+
+      // Límite artificial de al menos 4 segundos entre llamadas consecutivas para evitar bloqueos por tasa de concurrencia
+      if (i < total - 1) {
+        procDesc.textContent = `Pausa de 4s para respetar tasa de peticiones concurrentes (${i + 1}/${total})...`;
+        await new Promise(resolve => setTimeout(resolve, 4000));
+      }
     }
 
     state.isSyncing = false;

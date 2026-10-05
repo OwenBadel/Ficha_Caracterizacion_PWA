@@ -12,16 +12,18 @@ services:
       - key: HOST
         value: 0.0.0.0
       - key: VISION_PROVIDER
-        value: openrouter
-      - key: OPENROUTER_MODEL
-        value: qwen/qwen2.5-vl-72b-instruct
+        value: gemini
+      - key: GEMINI_MODEL
+        value: gemini-3.1-flash-lite
+      - key: GEMINI_MIN_INTERVAL_SECONDS
+        value: "4.0"
       - key: GOOGLE_SHEET_TAB
         value: Respuestas
       - key: GOOGLE_SHEET_TAB_TESTS
         value: Respuestas de formulario 1
       - key: GOOGLE_SHEET_SKIP_FIRST_COL
         value: "true"
-      - key: OPENROUTER_API_KEY
+      - key: GEMINI_API_KEY
         sync: false
       - key: GOOGLE_APPS_SCRIPT_URL
         sync: false

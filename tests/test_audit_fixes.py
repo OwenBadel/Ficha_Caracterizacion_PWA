@@ -19,7 +19,7 @@ if str(backend_dir) not in sys.path:
 from participant_cache import ParticipantCache
 from vocabulary_learner import VocabularyLearner
 from sheets_service import GoogleSheetsService
-from vision_service import VisionService
+from vision_service import VisionService, PipelineRateLimiter, pipeline_rate_limiter
 
 
 def test_participant_cache_thread_safety_and_batch_io():
@@ -120,6 +120,50 @@ def test_frontend_scripts_integrity():
     assert "function cargarResumenParticipantes" in app_text
 
 
+def test_pipeline_rate_limiter_and_qwen_removal():
+    """Valida la disciplina de throttling de 4s del Rate Limiter y la remoción total de Qwen."""
+    import time
+    # 1. Validar que la configuración global de rate limit sea de al menos 4.0s
+    assert pipeline_rate_limiter.min_interval >= 4.0, "El intervalo mínimo debe ser al menos 4.0 segundos"
+
+    # 2. Validar funcionamiento y cálculo de espera con un limiter de prueba rápido (0.15s)
+    limiter = PipelineRateLimiter(min_interval_seconds=0.15)
+    t0 = time.time()
+    espera1 = limiter.esperar_turno()
+    assert espera1 == 0.0
+
+    # Llamada consecutiva inmediata: debe esperar el remanente
+    espera2 = limiter.esperar_turno()
+    t1 = time.time()
+    assert espera2 > 0.0
+    assert (t1 - t0) >= 0.14, f"Se esperaba al menos 0.14s transcurridos, pero fue {t1 - t0}"
+
+    # 3. Concurrencia de múltiples hilos espaciados
+    hilos = []
+    tiempos = []
+
+    def peticion():
+        t = limiter.esperar_turno()
+        tiempos.append(t)
+
+    for _ in range(3):
+        h = threading.Thread(target=peticion)
+        hilos.append(h)
+        h.start()
+
+    for h in hilos:
+        h.join()
+
+    assert len(tiempos) == 3
+
+    # 4. Verificar que Qwen fue completamente purgado del código y render.yaml
+    vision_file = Path(__file__).resolve().parent.parent / "backend" / "vision_service.py"
+    render_file = Path(__file__).resolve().parent.parent / "render.yaml"
+
+    assert "qwen" not in vision_file.read_text(encoding="utf-8").lower(), "Qwen no debe existir en vision_service.py"
+    assert "qwen" not in render_file.read_text(encoding="utf-8").lower(), "Qwen no debe existir en render.yaml"
+
+
 if __name__ == "__main__":
     test_participant_cache_thread_safety_and_batch_io()
     print("[PASS] test_participant_cache_thread_safety_and_batch_io")
@@ -131,4 +175,6 @@ if __name__ == "__main__":
     print("[PASS] test_vision_service_ssl_security")
     test_frontend_scripts_integrity()
     print("[PASS] test_frontend_scripts_integrity")
+    test_pipeline_rate_limiter_and_qwen_removal()
+    print("[PASS] test_pipeline_rate_limiter_and_qwen_removal")
     print("Todas las pruebas de auditoría pasaron exitosamente.")
