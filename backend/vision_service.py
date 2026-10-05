@@ -356,8 +356,13 @@ class VisionService:
     def __init__(self, rate_limiter: Optional[PipelineRateLimiter] = None):
         self.gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
         self.openai_api_key = os.getenv("OPENAI_API_KEY", "").strip()
-        self.openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
-        self.provider = os.getenv("VISION_PROVIDER", "gemini").lower()
+        provider_env = os.getenv("VISION_PROVIDER", "gemini").lower().strip()
+        # Si el entorno en Render aún tiene 'openrouter' pero no hay clave válida o se configuró Gemini, conmutar a Gemini
+        if provider_env == "openrouter" and self.gemini_api_key and not self.openrouter_api_key:
+            logger.info("Detectado VISION_PROVIDER=openrouter sin API Key; conmutando automáticamente a Gemini.")
+            self.provider = "gemini"
+        else:
+            self.provider = provider_env
         self.rate_limiter = rate_limiter or pipeline_rate_limiter
 
     def _optimizar_imagen(self, img_bytes: bytes, mime_type: str = "image/jpeg") -> tuple[bytes, str]:
@@ -520,13 +525,16 @@ class VisionService:
         b64_1 = base64.b64encode(img1).decode("utf-8")
         b64_2 = base64.b64encode(img2).decode("utf-8")
 
-        primary_model = os.getenv("OPENROUTER_MODEL", "google/gemini-2.5-flash").strip()
+        raw_model = os.getenv("OPENROUTER_MODEL", "google/gemini-2.5-flash").strip()
+        # Lista blanca estricta: solo se admiten modelos oficiales autorizados
+        modelos_autorizados = ("google/gemini-2.5-flash", "openai/gpt-4o-mini", "openai/gpt-4o")
+        primary_model = raw_model if raw_model in modelos_autorizados else "google/gemini-2.5-flash"
         candidate_models = [
             primary_model,
             "google/gemini-2.5-flash",
             "openai/gpt-4o-mini"
         ]
-        models_to_try = list(dict.fromkeys(candidate_models))
+        models_to_try = [m for m in list(dict.fromkeys(candidate_models)) if m in modelos_autorizados]
 
         last_err = None
         for model_name in models_to_try:
@@ -663,13 +671,16 @@ class VisionService:
             http_client=http_client
         )
         b64 = base64.b64encode(img).decode("utf-8")
-        primary_model = os.getenv("OPENROUTER_MODEL", "google/gemini-2.5-flash").strip()
+        raw_model = os.getenv("OPENROUTER_MODEL", "google/gemini-2.5-flash").strip()
+        # Lista blanca estricta: solo se admiten modelos oficiales autorizados
+        modelos_autorizados = ("google/gemini-2.5-flash", "openai/gpt-4o-mini", "openai/gpt-4o")
+        primary_model = raw_model if raw_model in modelos_autorizados else "google/gemini-2.5-flash"
         candidate_models = [
             primary_model,
             "google/gemini-2.5-flash",
             "openai/gpt-4o-mini"
         ]
-        models_to_try = list(dict.fromkeys(candidate_models))
+        models_to_try = [m for m in list(dict.fromkeys(candidate_models)) if m in modelos_autorizados]
 
         last_err = None
         for model_name in models_to_try:
