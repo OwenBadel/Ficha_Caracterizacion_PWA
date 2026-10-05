@@ -22,7 +22,8 @@ document.addEventListener('DOMContentLoaded', () => {
     fotoTestMime: 'image/jpeg',
     tipoEvaluacion: 'AUTO', // 'AUTO', 'PRE-TEST', 'POST-TEST'
 
-    isSyncing: false
+    isSyncing: false,
+    drawerOpen: false
   };
 
   // -------------------------------------------------------------
@@ -90,9 +91,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Barra de Cola y Drawer
   const bottomQueueBar = document.getElementById('bottomQueueBar');
+  const syncProgressBar = document.getElementById('syncProgressBar');
   const queueCountBadge = document.getElementById('queueCountBadge');
   const queueLabel = document.getElementById('queueLabel');
+  const queueSubLabel = document.getElementById('queueSubLabel');
   const btnSyncAllNow = document.getElementById('btnSyncAllNow');
+  const btnSyncIcon = document.getElementById('btnSyncIcon');
+  const btnSyncText = document.getElementById('btnSyncText');
   const btnOpenDrawer = document.getElementById('btnOpenDrawer');
 
   const drawerBackdrop = document.getElementById('drawerBackdrop');
@@ -686,8 +691,18 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       await actualizarContadorCola();
+      if (state.drawerOpen) await renderizarListaDrawer();
       const count = await window.surveyDB.contarPendientes();
-      showToast(`📦 Registro guardado en la cola local (${count} pendientes).`, 'success');
+
+      if (state.isSyncing) {
+        showToast(`📦 Registro agregado al final de la cola activa (${count} en proceso).`, 'success');
+      } else {
+        showToast(`📦 Registro guardado en cola (${count} pendientes).`, 'success');
+        if (navigator.onLine) {
+          // Iniciar sincronización en segundo plano automáticamente de forma no bloqueante
+          iniciarSincronizacionSegundoPlano(false);
+        }
+      }
     } catch (err) {
       console.error('Error guardando en IDB:', err);
       showToast('Error al guardar en el dispositivo: ' + err.message, 'error');
@@ -695,98 +710,168 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // -------------------------------------------------------------
-  // SINCRONIZAR TODA LA COLA (BATCH MULTI-FORMATO)
+  // SINCRONIZACIÓN EN SEGUNDO PLANO (CONTINUOUS FIFO BACKGROUND WORKER)
   // -------------------------------------------------------------
-  btnSyncAllNow.addEventListener('click', sincronizarColaCompleta);
+  btnSyncAllNow.addEventListener('click', () => {
+    iniciarSincronizacionSegundoPlano(true);
+  });
 
-  async function sincronizarColaCompleta() {
+  function actualizarBarraSincronizacionUI(estaSincronizando, textoDetalle = '') {
+    if (estaSincronizando) {
+      if (syncProgressBar) syncProgressBar.style.display = 'block';
+      if (queueCountBadge) queueCountBadge.classList.add('syncing');
+      if (queueLabel) queueLabel.textContent = textoDetalle || 'Sincronizando en segundo plano...';
+      if (queueSubLabel) queueSubLabel.textContent = 'Segundo plano activo • Toca para ver cola';
+      if (btnSyncAllNow) {
+        btnSyncAllNow.disabled = true;
+        btnSyncAllNow.style.opacity = '0.9';
+      }
+      if (btnSyncText) btnSyncText.textContent = 'En proceso...';
+      if (btnSyncIcon) btnSyncIcon.innerHTML = '<span class="spinner-inline"></span>';
+    } else {
+      if (syncProgressBar) syncProgressBar.style.display = 'none';
+      if (queueCountBadge) queueCountBadge.classList.remove('syncing');
+      if (queueSubLabel) queueSubLabel.textContent = 'Toca para ver la cola';
+      if (btnSyncText) btnSyncText.textContent = 'Sincronizar';
+      if (btnSyncIcon) {
+        btnSyncIcon.innerHTML = `
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 12v-3a3 3 0 0 1 3 -3h13m-3 -3l3 3l-3 3" />
+            <path d="M20 12v3a3 3 0 0 1 -3 3h-13m3 3l-3 -3l3 -3" />
+          </svg>
+        `;
+      }
+      actualizarContadorCola();
+    }
+  }
+
+  async function iniciarSincronizacionSegundoPlano(iniciadoManualmente = false) {
     if (!navigator.onLine) {
-      showToast('No tienes conexión a Internet para sincronizar.', 'error');
+      if (iniciadoManualmente) {
+        showToast('No tienes conexión a Internet para sincronizar.', 'error');
+      }
       return;
     }
 
-    const pendientes = await window.surveyDB.obtenerPendientes();
-    if (pendientes.length === 0) {
-      showToast('No hay registros pendientes en la cola.', 'info');
+    if (state.isSyncing) {
+      if (iniciadoManualmente) {
+        showToast('La sincronización en segundo plano ya está en curso.', 'info');
+      }
+      return;
+    }
+
+    const iniciales = await window.surveyDB.obtenerPendientes();
+    if (iniciales.length === 0) {
+      if (iniciadoManualmente) {
+        showToast('No hay registros pendientes en la cola.', 'info');
+      }
       return;
     }
 
     state.isSyncing = true;
-    btnSyncAllNow.disabled = true;
+    actualizarBarraSincronizacionUI(true, `Iniciando sincronización (${iniciales.length} pendientes)...`);
+    if (iniciadoManualmente) {
+      showToast(`⚡ Sincronización en segundo plano activa (${iniciales.length} registros). Puedes seguir capturando fotos libremente.`, 'info');
+    }
 
     let exitosas = 0;
     let fallidas = 0;
-    const total = pendientes.length;
+    const fallidosEnEstaSesion = new Set();
 
-    mostrarModalProcesamiento('Sincronizando Lote en Cola', `Procesando registro 1 de ${total}...`);
+    try {
+      while (state.isSyncing) {
+        if (!navigator.onLine) {
+          showToast('⚠️ Conexión perdida. Pausando sincronización en segundo plano.', 'error');
+          break;
+        }
 
-    for (let i = 0; i < total; i++) {
-      const item = pendientes[i];
-      const esTest = item.tipo === 'test';
-      procDesc.textContent = `Procesando ${esTest ? 'Test' : 'Ficha'} ${i + 1} de ${total}... (IA + Google Sheets)`;
+        // Consultar la cola viva en IndexedDB en orden cronológico FIFO (el más antiguo primero)
+        const todosPendientes = await window.surveyDB.obtenerPendientes();
+        const pendientes = todosPendientes.filter(it => !fallidosEnEstaSesion.has(it.id));
 
-      try {
+        if (pendientes.length === 0) {
+          // Cola totalmente procesada
+          break;
+        }
+
+        const item = pendientes[0];
+        const esTest = item.tipo === 'test';
+        const restantes = pendientes.length;
+
+        actualizarBarraSincronizacionUI(true, `Sincronizando ${esTest ? 'Test' : 'Ficha'} (${restantes} en cola)...`);
         await window.surveyDB.actualizarEstado(item.id, 'syncing');
+        await actualizarContadorCola();
+        if (state.drawerOpen) await renderizarListaDrawer();
 
-        let resp;
-        if (esTest) {
-          const formData = new FormData();
-          formData.append('foto_test', item.anversoBlob || item.fotoBlob, 'test.jpg');
-          if (item.tipoEvaluacion && item.tipoEvaluacion !== 'AUTO') {
-            formData.append('tipo_evaluacion', item.tipoEvaluacion);
+        try {
+          let resp;
+          if (esTest) {
+            const formData = new FormData();
+            formData.append('foto_test', item.anversoBlob || item.fotoBlob, 'test.jpg');
+            if (item.tipoEvaluacion && item.tipoEvaluacion !== 'AUTO') {
+              formData.append('tipo_evaluacion', item.tipoEvaluacion);
+            }
+            formData.append('modo', 'batch');
+
+            resp = await fetch('/api/process-test', {
+              method: 'POST',
+              body: formData
+            });
+          } else {
+            const formData = new FormData();
+            formData.append('foto_anverso', item.anversoBlob, 'anverso.jpg');
+            formData.append('foto_reverso', item.reversoBlob, 'reverso.jpg');
+            formData.append('modo', 'batch');
+
+            resp = await fetch('/api/process-survey', {
+              method: 'POST',
+              body: formData
+            });
           }
-          formData.append('modo', 'batch');
 
-          resp = await fetch('/api/process-test', {
-            method: 'POST',
-            body: formData
-          });
-        } else {
-          const formData = new FormData();
-          formData.append('foto_anverso', item.anversoBlob, 'anverso.jpg');
-          formData.append('foto_reverso', item.reversoBlob, 'reverso.jpg');
-          formData.append('modo', 'batch');
+          const resData = await resp.json();
 
-          resp = await fetch('/api/process-survey', {
-            method: 'POST',
-            body: formData
-          });
+          if (resp.ok && resData.success) {
+            await window.surveyDB.actualizarEstado(item.id, 'synced', {
+              extractedData: resData.datos_extraidos,
+              sheetsResult: resData.sheets_result
+            });
+            exitosas++;
+            showToast(`✅ ${esTest ? 'Test' : 'Ficha'} sincronizada (${restantes - 1} restantes)`, 'success');
+          } else {
+            throw new Error(resData.detail || resData.error || 'Error de servidor');
+          }
+        } catch (err) {
+          console.error(`Error sincronizando item ${item.id}:`, err);
+          fallidosEnEstaSesion.add(item.id);
+          await window.surveyDB.actualizarEstado(item.id, 'error', { errorMsg: err.message });
+          fallidas++;
+          showToast(`❌ Error sincronizando ${esTest ? 'test' : 'ficha'}: ${err.message}`, 'error');
         }
 
-        const resData = await resp.json();
+        await actualizarContadorCola();
+        if (state.drawerOpen) await renderizarListaDrawer();
+        cargarResumenParticipantes();
 
-        if (resp.ok && resData.success) {
-          await window.surveyDB.actualizarEstado(item.id, 'synced', {
-            extractedData: resData.datos_extraidos,
-            sheetsResult: resData.sheets_result
-          });
-          exitosas++;
-        } else {
-          throw new Error(resData.detail || resData.error || 'Error de servidor');
+        // Verificar si continúan habiendo elementos pendientes no fallidos para aplicar el límite de tasa de 4s
+        const pendientesPost = (await window.surveyDB.obtenerPendientes()).filter(it => !fallidosEnEstaSesion.has(it.id));
+        if (pendientesPost.length > 0) {
+          actualizarBarraSincronizacionUI(true, `Pausa de 4s (tasa de peticiones) • ${pendientesPost.length} pendientes...`);
+          await new Promise(resolve => setTimeout(resolve, 4000));
         }
-      } catch (err) {
-        console.error(`Error sincronizando item ${item.id}:`, err);
-        await window.surveyDB.actualizarEstado(item.id, 'error', { errorMsg: err.message });
-        fallidas++;
       }
+    } finally {
+      state.isSyncing = false;
+      actualizarBarraSincronizacionUI(false);
+      await actualizarContadorCola();
+      if (state.drawerOpen) await renderizarListaDrawer();
+      cargarResumenParticipantes();
 
-      // Límite artificial de al menos 4 segundos entre llamadas consecutivas para evitar bloqueos por tasa de concurrencia
-      if (i < total - 1) {
-        procDesc.textContent = `Pausa de 4s para respetar tasa de peticiones concurrentes (${i + 1}/${total})...`;
-        await new Promise(resolve => setTimeout(resolve, 4000));
+      if (exitosas > 0 && fallidas === 0) {
+        showToast(`🚀 ¡Completado! Se sincronizaron los ${exitosas} registros en segundo plano.`, 'success');
+      } else if (exitosas > 0 && fallidas > 0) {
+        showToast(`Sincronización en segundo plano: ${exitosas} exitosas, ${fallidas} con error.`, 'info');
       }
-    }
-
-    state.isSyncing = false;
-    ocultarModalProcesamiento();
-    await actualizarContadorCola();
-    await renderizarListaDrawer();
-    cargarResumenParticipantes();
-
-    if (fallidas === 0) {
-      showToast(`🚀 ¡Completado! Se sincronizaron los ${exitosas} registros con Google Sheets.`, 'success');
-    } else {
-      showToast(`Sincronización terminada: ${exitosas} exitosas, ${fallidas} con error.`, 'error');
     }
   }
 
@@ -797,9 +882,12 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       if (window.surveyDB) {
         const count = await window.surveyDB.contarPendientes();
-        queueCountBadge.textContent = count;
-        queueLabel.textContent = `${count} ${count === 1 ? 'registro pendiente' : 'registros pendientes'}`;
-        btnSyncAllNow.disabled = (count === 0 || !navigator.onLine || state.isSyncing);
+        if (queueCountBadge) queueCountBadge.textContent = count;
+        if (!state.isSyncing) {
+          if (queueLabel) queueLabel.textContent = `${count} ${count === 1 ? 'registro pendiente' : 'registros pendientes'}`;
+          if (queueSubLabel) queueSubLabel.textContent = 'Toca para ver la cola';
+          if (btnSyncAllNow) btnSyncAllNow.disabled = (count === 0 || !navigator.onLine);
+        }
       }
     } catch (err) {
       console.error('Error consultando cola:', err);
@@ -809,6 +897,7 @@ document.addEventListener('DOMContentLoaded', () => {
   cargarResumenParticipantes();
 
   btnOpenDrawer.addEventListener('click', async () => {
+    state.drawerOpen = true;
     await renderizarListaDrawer();
     drawerBackdrop.style.display = 'block';
     drawerContainer.style.display = 'flex';
@@ -818,6 +907,7 @@ document.addEventListener('DOMContentLoaded', () => {
   drawerBackdrop.addEventListener('click', cerrarDrawer);
 
   function cerrarDrawer() {
+    state.drawerOpen = false;
     drawerBackdrop.style.display = 'none';
     drawerContainer.style.display = 'none';
   }
@@ -912,7 +1002,11 @@ document.addEventListener('DOMContentLoaded', () => {
         netStatusText.textContent = 'Offline';
       }
     }
-    if (!isOnline) {
+    actualizarContadorCola();
+    if (isOnline) {
+      // Reanudar sincronización de la cola automáticamente en segundo plano si hay pendientes
+      iniciarSincronizacionSegundoPlano(false);
+    } else {
       showToast('⚠️ Estás sin conexión. Las capturas se guardarán en cola local.', 'error');
     }
   }

@@ -751,6 +751,49 @@ body {
   filter: grayscale(0.8);
 }
 
+.sync-progress-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #10b981, #06b6d4, #3b82f6, #10b981);
+  background-size: 200% 100%;
+  animation: shimmerSync 1.5s infinite linear;
+  z-index: 35;
+}
+
+@keyframes shimmerSync {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.queue-counter-badge.syncing {
+  background: linear-gradient(135deg, #06b6d4, #0284c7);
+  box-shadow: 0 0 12px rgba(6, 182, 212, 0.6);
+  animation: pulseSyncBadge 1.2s infinite ease-in-out;
+}
+
+@keyframes pulseSyncBadge {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.12); }
+}
+
+.spinner-inline {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spinInline 0.8s linear infinite;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+@keyframes spinInline {
+  to { transform: rotate(360deg); }
+}
+
 /* ---------------- DRAWER DE COLA (MODAL DESLIZANTE) ---------------- */
 .drawer-backdrop {
   position: fixed;
