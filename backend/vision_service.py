@@ -246,7 +246,7 @@ def _limpiar_bloque_json(texto: str) -> str:
     return _reparar_json_truncado(texto)
 
 
-def optimizar_imagen_bytes(img_bytes: bytes, max_dim: int = 1400, calidad: int = 90) -> tuple[bytes, str]:
+def optimizar_imagen_bytes(img_bytes: bytes, max_dim: int = 1280, calidad: int = 90) -> tuple[bytes, str]:
     """
     Optimiza la imagen manteniendo alta resolución y nitidez para el modelo de visión (1400px).
     Garantiza orientación vertical si fue capturada rotada.
@@ -361,21 +361,19 @@ class VisionService:
         b64_1 = base64.b64encode(img1).decode("utf-8")
         b64_2 = base64.b64encode(img2).decode("utf-8")
 
-        prompt_completo = f"{SYSTEM_PROMPT}\n\n{USER_PROMPT}"
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": USER_PROMPT, "images": [b64_1, b64_2]},
+            {"role": "assistant", "content": "<think>\n</think>\n"}
+        ]
         payload = {
             "model": self.ollama_model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": prompt_completo,
-                    "images": [b64_1, b64_2]
-                }
-            ],
+            "messages": messages,
             "format": "json",
             "options": {
                 "temperature": 0.0,
-                "num_ctx": 16384,
-                "num_predict": 4096
+                "num_ctx": 8192,
+                "num_predict": 1200
             },
             "stream": False
         }
@@ -383,8 +381,8 @@ class VisionService:
         endpoint = f"{self.ollama_base_url}/api/chat"
         logger.info(f"Enviando fotos de Ficha a Ollama ({self.ollama_model}) en {endpoint}...")
 
-        # Intentar con modelo primario y fallback si es necesario
-        modelos_a_probar = [self.ollama_model, "qwen3-vl", "minicpm-v"]
+        # Ejecución directa con el modelo soberano configurado (sin fallbacks destructivos a modelos inferiores)
+        modelos_a_probar = [self.ollama_model]
         modelos_unicos = list(dict.fromkeys(modelos_a_probar))
         ultimo_error = None
 
@@ -401,7 +399,7 @@ class VisionService:
                         logger.warning(f"Ollama con modelo '{mod}' retornó HTTP {resp.status_code}: {resp.text}")
                 except Exception as ex:
                     ultimo_error = ex
-                    logger.warning(f"Error invocando modelo '{mod}' en Ollama: {ex}. Probando siguiente...")
+                    logger.warning(f"Error invocando modelo '{mod}' en Ollama: {ex}.")
 
         if ultimo_error:
             raise ultimo_error
@@ -481,21 +479,19 @@ class VisionService:
         import httpx
         b64 = base64.b64encode(img).decode("utf-8")
 
-        prompt_completo = f"{SYSTEM_PROMPT_TEST}\n\n{USER_PROMPT_TEST}"
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT_TEST},
+            {"role": "user", "content": USER_PROMPT_TEST, "images": [b64]},
+            {"role": "assistant", "content": "<think>\n</think>\n"}
+        ]
         payload = {
             "model": self.ollama_model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": prompt_completo,
-                    "images": [b64]
-                }
-            ],
+            "messages": messages,
             "format": "json",
             "options": {
                 "temperature": 0.0,
-                "num_ctx": 6144,
-                "num_predict": 2500
+                "num_ctx": 4096,
+                "num_predict": 800
             },
             "stream": False
         }
@@ -503,7 +499,7 @@ class VisionService:
         endpoint = f"{self.ollama_base_url}/api/chat"
         logger.info(f"Enviando test a Ollama ({self.ollama_model}) en {endpoint}...")
 
-        modelos_a_probar = [self.ollama_model, "qwen3-vl", "minicpm-v"]
+        modelos_a_probar = [self.ollama_model]
         modelos_unicos = list(dict.fromkeys(modelos_a_probar))
         ultimo_error = None
 
@@ -528,7 +524,7 @@ class VisionService:
                         logger.warning(f"Ollama test con modelo '{mod}' retornó HTTP {resp.status_code}: {resp.text}")
                 except Exception as ex:
                     ultimo_error = ex
-                    logger.warning(f"Error en Ollama test con modelo '{mod}': {ex}. Probando siguiente...")
+                    logger.warning(f"Error en Ollama test con modelo '{mod}': {ex}.")
 
         if ultimo_error:
             raise ultimo_error
