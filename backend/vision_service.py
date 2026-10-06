@@ -153,12 +153,19 @@ Tu misión es inspeccionar minuciosamente los trazos de tinta manuscrita en el p
 2. DETECCIÓN DE MARCAS EN PREGUNTAS DICOTÓMICAS (1, 2, 3, 4, 6, 7, 8, 9):
    Cada una de estas preguntas tiene debajo dos opciones con paréntesis:
         Verdadero (  )    Falso (  )
+
+   🚨 REGLA CARDINAL: CERO SESGO MÉDICO O JUICIO CIENTÍFICO 🚨
+   - Esto es una evaluación educativa (Pre-Test). Los participantes tienen dudas, mitos y responden erróneamente por desinformación.
+   - ESTRICTAMENTE PROHIBIDO responder según lo que sea médicamente correcto. Tu único trabajo es observar la tinta física del papel.
+   - Si el participante marcó "FALSO" en una afirmación que científicamente es verdadera (como en la pregunta 8: 'La sífilis tiene tratamiento y puede prevenirse', o en la pregunta 7: 'Existe vacuna para prevenir la Hepatitis B'), DEBES TRANSCRIBIR OBLIGATORIAMENTE "FALSO".
+   - Jamás pongas "VERDADERO" por lógica médica si la 'X' está en el lado de "Falso".
    
-   - La opción 'Verdadero' está a la IZQUIERDA.
-   - La opción 'Falso' está a la DERECHA.
-   - El participante marca con una 'X', un visto bueno (✔), un punto, cruz o raya de bolígrafo.
-   - Si la marca manuscrita está dentro del paréntesis de Verdadero, o marcando/tachando la palabra Verdadero -> extrae "VERDADERO".
-   - Si la marca manuscrita está dentro del paréntesis de Falso, o marcando/tachando la palabra Falso -> extrae "FALSO".
+   GEOMETRÍA FÍSICA DE LAS CASILLAS:
+   - La opción 'Verdadero (  )' está SIEMPRE a la IZQUIERDA.
+   - La opción 'Falso (  )' está SIEMPRE a la DERECHA.
+   - El participante marca con una 'X', cruz (+), visto bueno (✔), punto, tilde o tachón de bolígrafo.
+   - Si la marca está en el paréntesis o sobre la opción de la DERECHA ('Falso') -> extrae estrictamente "FALSO".
+   - Si la marca está en el paréntesis o sobre la opción de la IZQUIERDA ('Verdadero') -> extrae estrictamente "VERDADERO".
    - Si ninguna opción tiene trazos manuscritos de tinta -> devuelve "".
 
 3. PREGUNTA 5 ("¿Cuál de las siguientes acciones ayuda a prevenir el VIH?"):
@@ -190,7 +197,7 @@ USER_PROMPT_TEST = """Analiza la fotografía adjunta correspondiente al formato 
   "5. ¿CUÁL DE LAS SIGUIENTES ACCIONES AYUDA A PREVENIR EL VIH?": "Opción seleccionada o vacía",
   "6. LA PREP ES UN MEDICAMENTO QUE AYUDA A PREVENIR EL VIH EN PERSONAS CON MAYOR RIESGO DE EXPOSICIÓN.": "VERDADERO o FALSO o vacío",
   "7. EXISTE VACUNA PARA PREVENIR LA HEPATITIS B.": "VERDADERO o FALSO o vacío",
-  "8. LA SÍFILIS TIENE TRATAMIENTO Y PUEDE PREVENIRSE.": "VERDADERO o FALSO o vacío",
+  "8. LA SÍFILIS TIENE TRATAMIENTO Y PUEDE PREVENIRSE.": "VERDADERO o FALSO (observa estrictamente la casilla marcada con X, CERO sesgo médico)",
   "9. RESPETAR LAS DIFERENCIAS Y EVITAR LA DISCRIMINACIÓN AYUDA A CONSTRUIR RELACIONES SALUDABLES.": "VERDADERO o FALSO o vacío"
 }
 Devuelve EXCLUSIVAMENTE el JSON sin bloques markdown ni comentarios.
