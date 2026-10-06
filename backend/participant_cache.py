@@ -337,16 +337,28 @@ class ParticipantCache:
                 idx_doc = i
 
         # Fallback a posiciones ordinales según especificación si no se identificaron por nombre
-        if idx_nombre == -1:
-            idx_nombre = 3
-        if idx_doc == -1:
-            idx_doc = 5
-        if idx_edad == -1:
-            idx_edad = 6
-        if idx_municipio == -1:
-            idx_municipio = 10 if len(header) > 10 else 2
-        if idx_eps == -1:
-            idx_eps = 12 if len(header) > 12 else -1
+        if len(header) <= 5:
+            # Estructura simplificada de 4 columnas: [Nombre, Edad, Municipio, EPS]
+            if idx_nombre == -1:
+                idx_nombre = 0
+            if idx_edad == -1:
+                idx_edad = 1
+            if idx_municipio == -1:
+                idx_municipio = 2
+            if idx_eps == -1:
+                idx_eps = 3
+        else:
+            # Estructura completa de 13 columnas del formulario
+            if idx_nombre == -1:
+                idx_nombre = 3
+            if idx_doc == -1:
+                idx_doc = 5
+            if idx_edad == -1:
+                idx_edad = 6
+            if idx_municipio == -1:
+                idx_municipio = 10 if len(header) > 10 else 2
+            if idx_eps == -1:
+                idx_eps = 12 if len(header) > 12 else -1
 
         registros: List[Dict[str, str]] = []
         for fila in filas[1:]:
@@ -354,13 +366,13 @@ class ParticipantCache:
                 continue
 
             nombre = fila[idx_nombre].strip()
-            if not nombre or len(nombre) < 4:
+            if not nombre or len(nombre) < 3:
                 continue
 
             edad = fila[idx_edad].strip() if 0 <= idx_edad < len(fila) else ""
             municipio = fila[idx_municipio].strip() if 0 <= idx_municipio < len(fila) else ""
-            if not municipio and 0 <= 2 < len(fila):
-                municipio = fila[2].strip()  # Fallback a TERRITORIO
+            if not municipio and 0 <= 2 < len(fila) and len(header) > 5:
+                municipio = fila[2].strip()  # Fallback a TERRITORIO en formulario completo
             eps = fila[idx_eps].strip() if 0 <= idx_eps < len(fila) else ""
             doc = fila[idx_doc].strip() if 0 <= idx_doc < len(fila) else ""
 
