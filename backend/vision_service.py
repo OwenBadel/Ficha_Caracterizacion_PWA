@@ -129,33 +129,51 @@ Devuelve ÚNICAMENTE un objeto JSON válido con las siguientes 43 claves canóni
 """
 
 # ======================================================================
-# PROMPTS CANÓNICOS DE EVALUACIONES PRE-TEST Y POST-TEST
+# PROMPTS CANÓNICOS DE EVALUACIONES PRE-TEST Y POST-TEST (ANEXO 4)
 # ======================================================================
 
-SYSTEM_PROMPT_TEST = """Eres un sistema experto en transcripción OCR y digitalización forense de evaluaciones físicas de conocimiento (Pre-Test y Post-Test de Salud Sexual y Reproductiva / ITS - Anexo 4).
-Tu misión es transcribir con EXACTITUD Y FIDELIDAD VISUAL ABSOLUTA la información de la imagen adjunta (1 sola página: formato de evaluación).
+SYSTEM_PROMPT_TEST = """Eres un sistema forense de alta precisión especializado en la transcripción OCR de evaluaciones físicas de salud sexual y reproductiva (Pre-Test y Post-Test de Salud Sexual y Reproductiva / ITS - Anexo 4).
+Tu misión es inspeccionar minuciosamente los trazos de tinta manuscrita en el papel físico.
 
-1. CERO ALUCINACIONES: Extrae ÚNICAMENTE lo que esté físicamente marcado con una marca manuscrita (X, visto bueno ✔, raya, cruz) o escrito a mano con tinta.
-2. CASILLAS VACÍAS: Si una pregunta no fue marcada o un campo está en blanco, devuelve cadena vacía "".
-3. TODO EN MAYÚSCULAS: Todo el texto debe devolverse en MAYÚSCULAS sin excepción.
-4. TIPO DE EVALUACIÓN:
-   - "PRE-TEST" si el encabezado dice "PRE-TEST".
-   - "POST-TEST" si el encabezado dice "POST-TEST".
-5. DATOS DEL PARTICIPANTE:
-   - NOMBRE: Nombre completo manuscrito.
-   - EDAD: Edad en número entero.
-   - MUNICIPIO: Municipio cabecera.
-   - EAPB: EPS o Entidad prestadora de salud.
-6. PREGUNTAS DICOTÓMICAS (1, 2, 3, 4, 6, 7, 8, 9):
-   - "VERDADERO" si la marca está en Verdadero (  ).
-   - "FALSO" si la marca está en Falso (  ).
-   - Cadena vacía "" si ninguna está marcada.
-7. PREGUNTA 5 ("¿Cuál de las siguientes acciones ayuda a prevenir el VIH?"):
-   - "TODAS LAS ANTERIORES"
-   - "USAR PRESERVATIVO"
-   - "TENER INFORMACIÓN CLARA SOBRE SALUD SEXUAL"
-   - "EVITAR COMPARTIR AGUJAS O ELEMENTOS CORTOPUNZANTES"
-   - Cadena vacía "" si ninguna está marcada.
+======================================================================
+🚨 REGLAS ESTRICTAS DE FIDELIDAD VISUAL Y CERO ALUCINACIÓN 🚨
+======================================================================
+
+1. CERO TEXTO IMPRESO EN CAMPOS MANUSCRITOS:
+   - "TIPO DE EVALUACIÓN": Revisa el título superior:
+     * Si dice "PRE-TEST PARTICIPANTES- ANEXO Nº 4" -> "PRE-TEST"
+     * Si dice "POST TEST PARTICIPANTES- ANEXO Nº 4" o "POST-TEST" -> "POST-TEST"
+   - "NOMBRE": Extrae ÚNICAMENTE el nombre y apellidos escritos a mano con bolígrafo al lado de "NOMBRE:".
+   - "EDAD": Extrae únicamente los dígitos de la edad escrita a mano (ej: 14, 15, 16).
+   - "MUNICIPIO": Extrae el municipio manuscrito (MAHATES, TURBANA, TURBACO, BARRANCO DE LOBA, SAN JACINTO DEL CAUCA, CALAMAR, MORALES, SANTA ROSA DEL SUR, ARENAL, SOPLAVIENTO).
+   - "EAPB (EPS)": Extrae ÚNICAMENTE la entidad de salud manuscrita (ej: MUTUAL SER, COOSALUD, NUEVA EPS, SURA, SANITAS, SALUD TOTAL, etc.).
+     🚨 REGLA VITAL EN EAPB: Si el participante NO escribió nada en la línea de EAPB (está vacía o en blanco), DEVUELVE OBLIGATORIAMENTE string vacío "".
+     ESTRICTAMENTE PROHIBIDO copiar o extraer la frase impresa de abajo que dice 'Marque con una X dependiendo de la afirmación:' o cualquier otro texto instructivo del formulario. Si no hay EPS manuscrita, devuelve "".
+
+2. DETECCIÓN DE MARCAS EN PREGUNTAS DICOTÓMICAS (1, 2, 3, 4, 6, 7, 8, 9):
+   Cada una de estas preguntas tiene debajo dos opciones con paréntesis:
+        Verdadero (  )    Falso (  )
+   
+   - La opción 'Verdadero' está a la IZQUIERDA.
+   - La opción 'Falso' está a la DERECHA.
+   - El participante marca con una 'X', un visto bueno (✔), un punto, cruz o raya de bolígrafo.
+   - Si la marca manuscrita está dentro del paréntesis de Verdadero, o marcando/tachando la palabra Verdadero -> extrae "VERDADERO".
+   - Si la marca manuscrita está dentro del paréntesis de Falso, o marcando/tachando la palabra Falso -> extrae "FALSO".
+   - Si ninguna opción tiene trazos manuscritos de tinta -> devuelve "".
+
+3. PREGUNTA 5 ("¿Cuál de las siguientes acciones ayuda a prevenir el VIH?"):
+   Tiene 4 opciones en lista vertical, cada una con un paréntesis (  ) a la IZQUIERDA del texto:
+        (  ) Tener información clara sobre salud sexual.
+        (  ) Usar preservativo.
+        (  ) Evitar compartir agujas o elementos cortopunzantes.
+        (  ) Todas las anteriores.
+   
+   - Examina cuál de los 4 paréntesis de la izquierda tiene la marca manuscrita (X, ✔, punto, raya):
+     * Si la marca está en la primera opción -> "TENER INFORMACIÓN CLARA SOBRE SALUD SEXUAL"
+     * Si la marca está en la segunda opción -> "USAR PRESERVATIVO"
+     * Si la marca está en la tercera opción -> "EVITAR COMPARTIR AGUJAS O ELEMENTOS CORTOPUNZANTES"
+     * Si la marca está en la cuarta opción -> "TODAS LAS ANTERIORES"
+     * Si no hay ninguna marca -> ""
 """
 
 USER_PROMPT_TEST = """Analiza la fotografía adjunta correspondiente al formato físico de evaluación (Pre-Test o Post-Test Anexo 4) y genera un objeto JSON válido con las siguientes claves exactas:
@@ -164,7 +182,7 @@ USER_PROMPT_TEST = """Analiza la fotografía adjunta correspondiente al formato 
   "NOMBRE": "NOMBRE COMPLETO DEL PARTICIPANTE",
   "EDAD": "EDAD",
   "MUNICIPIO": "MUNICIPIO",
-  "EAPB (EPS)": "EPS O EAPB",
+  "EAPB (EPS)": "EPS MANUSCRITA o vacía (NUNCA el texto impreso 'Marque con una X...')",
   "1. EL USO CORRECTO DEL PRESERVATIVO AYUDA A PREVENIR ITS COMO VIH Y SÍFILIS.": "VERDADERO o FALSO o vacío",
   "2. LAS ITS PUEDEN TRANSMITIRSE DE LA MADRE AL BEBÉ DURANTE EL EMBARAZO.": "VERDADERO o FALSO o vacío",
   "3. UNA PERSONA CON VIH SIEMPRE SE VE ENFERMA.": "VERDADERO o FALSO o vacío",
@@ -194,9 +212,9 @@ def _limpiar_bloque_json(texto: str) -> str:
     return texto
 
 
-def optimizar_imagen_bytes(img_bytes: bytes, max_dim: int = 2560, calidad: int = 92) -> tuple[bytes, str]:
+def optimizar_imagen_bytes(img_bytes: bytes, max_dim: int = 1800, calidad: int = 92) -> tuple[bytes, str]:
     """
-    Optimiza la imagen manteniendo alta resolución y nitidez para el modelo de visión.
+    Optimiza la imagen manteniendo alta resolución y nitidez para el modelo de visión (1800px).
     Garantiza orientación vertical si fue capturada rotada.
     """
     try:
@@ -322,6 +340,7 @@ class VisionService:
             "format": "json",
             "options": {
                 "temperature": 0.0,
+                "num_ctx": 16384,
                 "num_predict": 4096
             },
             "stream": False
@@ -441,6 +460,7 @@ class VisionService:
             "format": "json",
             "options": {
                 "temperature": 0.0,
+                "num_ctx": 16384,
                 "num_predict": 2048
             },
             "stream": False

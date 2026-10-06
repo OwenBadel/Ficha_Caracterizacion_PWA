@@ -1035,11 +1035,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const maestroCount = h.patron_maestro_participantes || 0;
         const modelo = h.ollama_model || 'qwen3-vl';
         if (netStatusText && h.ollama_online) {
-          netStatusText.textContent = `Ollama GPU (${maestroCount})`;
+          netStatusText.textContent = `Ollama GPU`;
           netStatusText.title = `Motor: Ollama ${modelo} | Patrón Maestro: ${maestroCount} registros`;
         }
         if (brandSubtitle) {
           brandSubtitle.textContent = `Ollama ${modelo} • ${maestroCount} Maestros`;
+        }
+        if (masterCacheCount) {
+          masterCacheCount.textContent = maestroCount;
         }
       }
     } catch (err) {
@@ -1047,8 +1050,140 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // -------------------------------------------------------------
+  // GESTIÓN DEL PATRÓN MAESTRO DE PARTICIPANTES (JARO-WINKLER)
+  // -------------------------------------------------------------
+  const btnOpenMasterModal = document.getElementById('btnOpenMasterModal');
+  const btnCloseMasterModal = document.getElementById('btnCloseMasterModal');
+  const masterBackdrop = document.getElementById('masterBackdrop');
+  const masterModal = document.getElementById('masterModal');
+  const masterCacheCount = document.getElementById('masterCacheCount');
+  const statTotalParticipantes = document.getElementById('statTotalParticipantes');
+  const statTotalMunicipios = document.getElementById('statTotalMunicipios');
+  const participantsBreakdown = document.getElementById('participantsBreakdown');
+  const inputMasterSheetId = document.getElementById('inputMasterSheetId');
+  const btnSyncMasterSheet = document.getElementById('btnSyncMasterSheet');
+  const inputMasterExcel = document.getElementById('inputMasterExcel');
+  const btnUploadMasterExcel = document.getElementById('btnUploadMasterExcel');
+
+  async function actualizarEstadisticasPatronMaestro() {
+    try {
+      if (!navigator.onLine) return;
+      const res = await fetch('/api/participants/stats');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data.success || !data.stats) return;
+
+      const total = data.stats.total || 0;
+      const porMun = data.stats.por_municipio || {};
+      const numMunicipios = Object.keys(porMun).length;
+
+      if (masterCacheCount) masterCacheCount.textContent = total;
+      if (statTotalParticipantes) statTotalParticipantes.textContent = total;
+      if (statTotalMunicipios) statTotalMunicipios.textContent = numMunicipios;
+
+      if (participantsBreakdown) {
+        participantsBreakdown.innerHTML = '';
+        const sortedMuns = Object.entries(porMun).sort((a, b) => b[1] - a[1]);
+        if (sortedMuns.length === 0) {
+          participantsBreakdown.innerHTML = '<span style="font-size:0.75rem; color:var(--text-muted); display:block; padding:8px 4px;">Sin participantes en memoria aún. Sincroniza desde Sheets o sube un archivo.</span>';
+        } else {
+          sortedMuns.forEach(([mun, count]) => {
+            const row = document.createElement('div');
+            row.className = 'mun-row';
+            row.innerHTML = `<span class="mun-name">${mun}</span><span class="mun-count">${count}</span>`;
+            participantsBreakdown.appendChild(row);
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('Error obteniendo stats de patrón maestro:', e);
+    }
+  }
+
+  function abrirModalPatronMaestro() {
+    actualizarEstadisticasPatronMaestro();
+    if (masterBackdrop) masterBackdrop.style.display = 'block';
+    if (masterModal) masterModal.classList.add('open');
+  }
+
+  function cerrarModalPatronMaestro() {
+    if (masterBackdrop) masterBackdrop.style.display = 'none';
+    if (masterModal) masterModal.classList.remove('open');
+  }
+
+  if (btnOpenMasterModal) btnOpenMasterModal.addEventListener('click', abrirModalPatronMaestro);
+  if (btnCloseMasterModal) btnCloseMasterModal.addEventListener('click', cerrarModalPatronMaestro);
+  if (masterBackdrop) masterBackdrop.addEventListener('click', cerrarModalPatronMaestro);
+
+  if (btnSyncMasterSheet) {
+    btnSyncMasterSheet.addEventListener('click', async () => {
+      const sheetIdVal = inputMasterSheetId ? inputMasterSheetId.value.trim() : '';
+      btnSyncMasterSheet.disabled = true;
+      btnSyncMasterSheet.textContent = 'Sincronizando...';
+      try {
+        const formData = new FormData();
+        if (sheetIdVal) formData.append('sheet_id', sheetIdVal);
+
+        const res = await fetch('/api/participants/sync-sheet', {
+          method: 'POST',
+          body: formData
+        });
+        const result = await res.json();
+        if (result.success) {
+          showToast(`🏛️ Sincronizados ${result.total_cargados} participantes exitosamente.`, 'success');
+          actualizarEstadisticasPatronMaestro();
+          cargarResumenParticipantes();
+        } else {
+          showToast(result.detail || result.error || 'Error en sincronización con Sheets.', 'error');
+        }
+      } catch (err) {
+        showToast('Error conectando al servidor: ' + err.message, 'error');
+      } finally {
+        btnSyncMasterSheet.disabled = false;
+        btnSyncMasterSheet.textContent = '🔄 Sincronizar';
+      }
+    });
+  }
+
+  if (btnUploadMasterExcel) {
+    btnUploadMasterExcel.addEventListener('click', async () => {
+      if (!inputMasterExcel || !inputMasterExcel.files || inputMasterExcel.files.length === 0) {
+        showToast('Selecciona un archivo Excel (.xlsx) o CSV primero.', 'error');
+        return;
+      }
+      const file = inputMasterExcel.files[0];
+      const formData = new FormData();
+      formData.append('file', file);
+
+      btnUploadMasterExcel.disabled = true;
+      btnUploadMasterExcel.textContent = 'Cargando...';
+      try {
+        const res = await fetch('/api/participants/upload-file', {
+          method: 'POST',
+          body: formData
+        });
+        const result = await res.json();
+        if (result.success) {
+          showToast(`📁 Ingestados ${result.total_cargados} participantes del archivo.`, 'success');
+          actualizarEstadisticasPatronMaestro();
+          cargarResumenParticipantes();
+          inputMasterExcel.value = '';
+        } else {
+          showToast(result.detail || result.error || 'Error al procesar archivo.', 'error');
+        }
+      } catch (err) {
+        showToast('Error al subir archivo: ' + err.message, 'error');
+      } finally {
+        btnUploadMasterExcel.disabled = false;
+        btnUploadMasterExcel.textContent = 'Subir';
+      }
+    });
+  }
+
   // Llamar al inicio
   cargarResumenParticipantes();
+  actualizarEstadisticasPatronMaestro();
 
 
   // -------------------------------------------------------------

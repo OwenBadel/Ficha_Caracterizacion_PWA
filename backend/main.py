@@ -447,6 +447,105 @@ async def process_test(
         )
 
 
+# =====================================================================
+# ENDPOINTS DE PATRÓN MAESTRO Y CACHÉ DE PARTICIPANTES (JARO-WINKLER)
+# =====================================================================
+
+@app.get("/api/participants/stats")
+async def get_participant_stats():
+    """Retorna la cantidad de participantes y municipios en la memoria viva Jaro-Winkler."""
+    try:
+        resumen = await run_in_threadpool(participant_cache.obtener_resumen)
+        return {"success": True, "stats": resumen}
+    except Exception as e:
+        logger.error(f"Error consultando estadísticas de participantes: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
+
+@app.post("/api/participants/sync-sheet")
+async def sync_participants_from_sheet(sheet_id: Optional[str] = Form(None)):
+    """
+    Descarga y sincroniza la pestaña 'PATRON MAESTRO' de Google Sheets.
+    Si sheet_id no se proporciona, usa el GOOGLE_SHEET_ID configurado en el entorno.
+    """
+    target_id = sheet_id or os.getenv("GOOGLE_SHEET_ID")
+    if not target_id:
+        raise HTTPException(
+            status_code=400,
+            detail="No se proporcionó un ID ni URL de Google Sheets y GOOGLE_SHEET_ID no está configurado en .env."
+        )
+
+    try:
+        total = await run_in_threadpool(
+            participant_cache.sincronizar_desde_google_sheets,
+            sheet_id=target_id,
+            tab_name="PATRON MAESTRO"
+        )
+        resumen = await run_in_threadpool(participant_cache.obtener_resumen)
+        return {
+            "success": True,
+            "message": f"Sincronización exitosa: {total} participantes registrados en la memoria de la IA.",
+            "total_cargados": total,
+            "stats": resumen
+        }
+    except Exception as e:
+        logger.error(f"Error sincronizando PATRON MAESTRO desde Google Sheets: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": str(e),
+                "detail": "Error al conectar con Google Sheets. Asegúrese de que la hoja tenga permisos de lectura y la pestaña se llame 'PATRON MAESTRO'."
+            }
+        )
+
+
+@app.post("/api/participants/upload-file")
+async def upload_participants_file(file: UploadFile = File(...)):
+    """Sube un archivo Excel (.xlsx/.xls) o CSV con el Patrón Maestro para ingestarlo."""
+    try:
+        import tempfile
+        ext = Path(file.filename or "").suffix.lower()
+        if ext not in [".xlsx", ".xls", ".csv"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Formato de archivo '{ext}' no soportado. Debe ser .xlsx o .csv."
+            )
+
+        contenido = await file.read()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+            tmp.write(contenido)
+            tmp_path = Path(tmp.name)
+
+        try:
+            total = await run_in_threadpool(
+                participant_cache.sincronizar_desde_archivo_local,
+                ruta_archivo=tmp_path
+            )
+        finally:
+            if tmp_path.exists():
+                tmp_path.unlink()
+
+        resumen = await run_in_threadpool(participant_cache.obtener_resumen)
+        return {
+            "success": True,
+            "message": f"Archivo ingestatado con éxito: {total} participantes incorporados a la memoria.",
+            "total_cargados": total,
+            "stats": resumen
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error procesando archivo de participantes: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
+
 # Servir Frontend PWA estático
 if FRONTEND_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")

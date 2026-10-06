@@ -377,10 +377,15 @@ class ParticipantCache:
     def sincronizar_desde_google_sheets(self, sheet_id: str, tab_name: str = "PATRON MAESTRO") -> int:
         """
         Descarga automáticamente la pestaña 'PATRON MAESTRO' de Google Sheets vía exportación CSV.
+        Soporta tanto el ID directo como la URL completa del navegador.
         Requiere que la hoja tenga permisos de lectura con enlace.
         """
+        cadena = str(sheet_id or "").strip()
+        match = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", cadena)
+        id_limpio = match.group(1) if match else cadena
+
         tab_encoded = urllib.parse.quote(tab_name)
-        url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={tab_encoded}"
+        url = f"https://docs.google.com/spreadsheets/d/{id_limpio}/gviz/tq?tqx=out:csv&sheet={tab_encoded}"
         logger.info(f"Descargando PATRÓN MAESTRO desde Google Sheets: {url}")
 
         req = urllib.request.Request(

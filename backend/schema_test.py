@@ -125,16 +125,27 @@ def normalizar_municipio(val: Any) -> str:
 
 
 def normalizar_eps(val: Any) -> str:
-    """Asigna la EAPB/EPS a una del catálogo oficial o preserva nombre válido."""
+    """Asigna la EAPB/EPS a una del catálogo oficial o preserva nombre válido, descartando instrucciones impresas."""
     txt = normalizar_texto_base(val)
     if not txt:
         return ""
+
+    # Filtrar frases o instrucciones impresas del formulario que la IA pueda confundir
+    frases_prohibidas = ["MARQUE", "AFIRMACION", "AFIRMACIÓN", "DEPENDIENDO", "CON UNA X", "INSTRUCCION", "PREGUNTA", "VERDADERO", "FALSO"]
+    if any(p in txt for p in frases_prohibidas) or len(txt) > 30:
+        return ""
+
     if txt in EPS_VALIDAS:
         return txt
     coincidencias = difflib.get_close_matches(txt, EPS_VALIDAS, n=1, cutoff=0.65)
     if coincidencias:
         return coincidencias[0]
+
+    # Si no coincide con ninguna EPS y parece texto basura o demasiado largo
+    if len(txt) > 20:
+        return ""
     return txt
+
 
 
 class PrePostTest(BaseModel):

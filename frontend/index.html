@@ -33,6 +33,10 @@
         </div>
 
         <div class="header-actions">
+          <button id="btnOpenMasterModal" class="badge-master" type="button" title="Sincronizar Catálogo Maestro de Participantes">
+            <span class="master-icon">🏛️</span>
+            <span id="masterCacheCount" class="master-count">...</span>
+          </button>
           <div id="netStatusBadge" class="badge-network">
             <span class="dot-indicator"></span>
             <span id="netStatusText">Online</span>
@@ -238,6 +242,66 @@
       <button id="btnLimpiarCompletadas" class="btn-secondary" type="button">Limpiar Registros Ya Sincronizados</button>
     </div>
 
+    <!-- BACKDROP & MODAL PATRÓN MAESTRO -->
+    <div id="masterBackdrop" class="drawer-backdrop" style="display: none;"></div>
+    <div id="masterModal" class="modal-card-dialog">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="modal-icon">🏛️</span>
+          <div>
+            <h2>Patrón Maestro de Participantes</h2>
+            <p>Reconciliación fonética Jaro-Winkler de Nombres, Edades y EPS</p>
+          </div>
+        </div>
+        <button id="btnCloseMasterModal" class="drawer-close" type="button">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <span id="statTotalParticipantes" class="stat-num">0</span>
+            <span class="stat-lbl">Participantes en Memoria</span>
+          </div>
+          <div class="stat-card">
+            <span id="statTotalMunicipios" class="stat-num">0</span>
+            <span class="stat-lbl">Municipios Registrados</span>
+          </div>
+        </div>
+
+        <div class="import-box">
+          <div class="import-label">
+            <strong>Sincronizar desde Google Sheets</strong>
+            <span>Importa la pestaña <code>PATRON MAESTRO</code> de tu hoja conectada</span>
+          </div>
+          <div class="file-upload-row">
+            <input type="text" id="inputMasterSheetId" placeholder="ID o URL (opcional si está en .env)" style="flex: 1; padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.75rem;" />
+            <button id="btnSyncMasterSheet" class="btn-action-main btn-sm" type="button">
+              🔄 Sincronizar
+            </button>
+          </div>
+        </div>
+
+        <div class="import-box">
+          <div class="import-label">
+            <strong>O Importar Archivo Excel / CSV</strong>
+            <span>Formato de columnas: Nombre, Edad, Municipio, EPS</span>
+          </div>
+          <div class="file-upload-row">
+            <input type="file" id="inputMasterExcel" accept=".xlsx,.xls,.csv" />
+            <button id="btnUploadMasterExcel" class="btn-action-sub btn-sm" type="button">
+              Subir
+            </button>
+          </div>
+        </div>
+
+        <div class="import-label" style="margin-top: 4px;">
+          <strong>Distribución por Municipio:</strong>
+        </div>
+        <div id="participantsBreakdown" class="participants-breakdown">
+          <!-- Renderizado dinámico -->
+        </div>
+      </div>
+    </div>
+
     <!-- MODAL DE PROCESAMIENTO / CARGA -->
     <div id="processingModal" class="processing-modal">
       <div class="processing-card">
@@ -252,7 +316,7 @@
 
   </div>
 
-  <script src="/static/js/db.js?v=11"></script>
-  <script src="/static/js/app.js?v=11"></script>
+  <script src="/static/js/db.js?v=12"></script>
+  <script src="/static/js/app.js?v=12"></script>
 </body>
 </html>

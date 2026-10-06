@@ -136,6 +136,27 @@ body {
   gap: 8px;
 }
 
+.btn-master-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #10b981;
+  padding: 5px 9px;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-master-badge:hover {
+  background: rgba(16, 185, 129, 0.25);
+  border-color: #10b981;
+}
+
+
 .badge-network {
   display: flex;
   align-items: center;
@@ -1112,6 +1133,37 @@ body {
   background: rgba(245, 158, 11, 0.15);
   color: #fbbf24;
   border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+/* ---------------- BADGE DEL PATRÓN MAESTRO EN CABECERA ---------------- */
+.badge-master {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #34d399;
+  padding: 5px 10px;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.badge-master:hover {
+  background: rgba(16, 185, 129, 0.22);
+  border-color: #34d399;
+  transform: translateY(-1px);
+}
+
+.master-icon {
+  font-size: 0.95rem;
+}
+
+.master-count {
+  font-family: var(--font-heading);
+  letter-spacing: 0.02em;
 }
 
 /* ---------------- MODAL DE PARTICIPANTES ---------------- */
