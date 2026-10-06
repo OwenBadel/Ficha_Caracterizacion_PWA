@@ -197,6 +197,33 @@ Devuelve EXCLUSIVAMENTE el JSON sin bloques markdown ni comentarios.
 """
 
 
+def _reparar_json_truncado(texto: str) -> str:
+    """Si el JSON fue cortado a mitad de una clave o valor, lo auto-cierra para recuperar lo extraído."""
+    texto = texto.strip()
+    if not texto.startswith("{"):
+        start = texto.find("{")
+        if start != -1:
+            texto = texto[start:]
+        else:
+            return texto
+    if texto.endswith("}"):
+        return texto
+
+    lineas = texto.splitlines()
+    lineas_limpias = []
+    for l in lineas:
+        if l.count('"') % 2 != 0:
+            break
+        lineas_limpias.append(l)
+
+    texto_reparado = "\n".join(lineas_limpias).rstrip()
+    if texto_reparado.endswith(","):
+        texto_reparado = texto_reparado[:-1]
+    if not texto_reparado.endswith("}"):
+        texto_reparado += "\n}"
+    return texto_reparado
+
+
 def _limpiar_bloque_json(texto: str) -> str:
     """Elimina delimitadores markdown ```json y ``` para obtener JSON puro."""
     texto = texto.strip()
@@ -209,7 +236,7 @@ def _limpiar_bloque_json(texto: str) -> str:
     end = texto.rfind("}")
     if start != -1 and end != -1 and end > start:
         return texto[start:end + 1]
-    return texto
+    return _reparar_json_truncado(texto)
 
 
 def optimizar_imagen_bytes(img_bytes: bytes, max_dim: int = 1400, calidad: int = 90) -> tuple[bytes, str]:
@@ -460,8 +487,8 @@ class VisionService:
             "format": "json",
             "options": {
                 "temperature": 0.0,
-                "num_ctx": 4096,
-                "num_predict": 1024
+                "num_ctx": 6144,
+                "num_predict": 2500
             },
             "stream": False
         }
@@ -473,7 +500,7 @@ class VisionService:
         modelos_unicos = list(dict.fromkeys(modelos_a_probar))
         ultimo_error = None
 
-        with httpx.Client(timeout=120.0) as client:
+        with httpx.Client(timeout=180.0) as client:
             for mod in modelos_unicos:
                 try:
                     payload["model"] = mod
