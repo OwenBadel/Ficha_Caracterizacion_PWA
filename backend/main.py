@@ -43,6 +43,29 @@ logger = logging.getLogger("main_api")
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = PROJECT_DIR / "frontend"
+PENDIENTES_FILE = PROJECT_DIR / "backend" / "pendientes_sincronizacion.json"
+
+
+def guardar_pendiente_local(tipo: str, fila: list, error: str):
+    """Guarda una fila en contingencia local si Google Sheets tiene timeout."""
+    try:
+        data = []
+        if PENDIENTES_FILE.exists():
+            try:
+                data = json.loads(PENDIENTES_FILE.read_text(encoding="utf-8"))
+            except Exception:
+                data = []
+        data.append({
+            "timestamp": datetime.now().isoformat(),
+            "tipo": tipo,
+            "fila": fila,
+            "error": error
+        })
+        PENDIENTES_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        logger.info(f"Registro ({tipo}) salvaguardado en contingencia local: {PENDIENTES_FILE}")
+    except Exception as e:
+        logger.error(f"Error guardando pendiente local: {e}")
+
 
 load_dotenv(PROJECT_DIR / ".env")
 
@@ -321,9 +344,20 @@ async def process_survey(
             f"Col 43 (Por qué)='{fila_ordenada[42]}'"
         )
 
-        # 2. Inserción en Google Sheets (Offloaded a threadpool)
+        # 2. Inserción en Google Sheets (Offloaded a threadpool con contingencia)
         logger.info("Enviando fila estructurada a Google Sheets...")
-        sheets_result = await run_in_threadpool(sheets_service.insertar_encuesta, fila_ordenada)
+        sheets_result = None
+        try:
+            sheets_result = await run_in_threadpool(sheets_service.insertar_encuesta, fila_ordenada)
+        except Exception as sheet_err:
+            logger.error(f"Error escribiendo encuesta en Google Sheets: {sheet_err}")
+            guardar_pendiente_local("ficha", fila_ordenada, str(sheet_err))
+            sheets_result = {
+                "success": False,
+                "error": str(sheet_err),
+                "saved_locally": True,
+                "message": "Ficha procesada correctamente por la IA. Google Sheets tardó en responder; guardada localmente para sincronización."
+            }
 
         # 3. Aprendizaje continuo de vocabulario para futuras coincidencias difusas
         try:
@@ -416,13 +450,24 @@ async def process_test(
             f"P5='{test_obj.pregunta_5}'"
         )
 
-        # 2. Inserción en Google Sheets (Offloaded a threadpool)
+        # 2. Inserción en Google Sheets (Offloaded a threadpool con contingencia)
         logger.info(f"Enviando fila de test estructurada a Google Sheets (Pestaña: '{test_obj.tipo_evaluacion}')...")
-        sheets_result = await run_in_threadpool(
-            sheets_service.insertar_test,
-            valores_ordenados=fila_ordenada,
-            tipo_evaluacion=test_obj.tipo_evaluacion
-        )
+        sheets_result = None
+        try:
+            sheets_result = await run_in_threadpool(
+                sheets_service.insertar_test,
+                valores_ordenados=fila_ordenada,
+                tipo_evaluacion=test_obj.tipo_evaluacion
+            )
+        except Exception as sheet_err:
+            logger.error(f"Error escribiendo test en Google Sheets: {sheet_err}")
+            guardar_pendiente_local(test_obj.tipo_evaluacion, fila_ordenada, str(sheet_err))
+            sheets_result = {
+                "success": False,
+                "error": str(sheet_err),
+                "saved_locally": True,
+                "message": f"{test_obj.tipo_evaluacion} procesado correctamente por la IA. Google Sheets tardó en responder; guardado localmente para sincronización."
+            }
 
         return {
             "success": True,
@@ -565,6 +610,61 @@ async def clear_participants():
             status_code=500,
             content={"success": False, "error": str(e)}
         )
+
+
+@app.get("/api/pending-sync")
+async def get_pending_sync_count():
+    """Retorna la cantidad de registros en cola de contingencia local."""
+    if not PENDIENTES_FILE.exists():
+        return {"total_pendientes": 0, "pendientes": []}
+    try:
+        data = json.loads(PENDIENTES_FILE.read_text(encoding="utf-8"))
+        return {"total_pendientes": len(data), "pendientes": data}
+    except Exception:
+        return {"total_pendientes": 0, "pendientes": []}
+
+
+@app.post("/api/sync-pending")
+async def sync_pending_records():
+    """Reintenta la inserción en Google Sheets de todos los registros encolados por timeout."""
+    if not PENDIENTES_FILE.exists():
+        return {"success": True, "total_sincronizados": 0, "message": "No hay registros en cola."}
+    try:
+        data = json.loads(PENDIENTES_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {"success": True, "total_sincronizados": 0, "message": "Cola vacía o inválida."}
+
+    if not data:
+        return {"success": True, "total_sincronizados": 0, "message": "No hay registros en cola."}
+
+    exitosos = []
+    fallidos = []
+
+    for item in data:
+        tipo = item.get("tipo", "ficha")
+        fila = item.get("fila", [])
+        try:
+            if tipo in ["PRE-TEST", "POST-TEST", "pre_test", "post_test"]:
+                # La fila guardada para test contiene: [timestamp, tipo, nombre, ...] (15 columnas)
+                # insertar_test espera los 14 valores ordenados sin timestamp (lo agrega automáticamente)
+                vals = fila[1:] if len(fila) == 15 else fila
+                await run_in_threadpool(sheets_service.insertar_test, valores_ordenados=vals, tipo_evaluacion=tipo)
+            else:
+                # insertar_encuesta espera los 43 valores sin timestamp
+                vals = fila[1:] if len(fila) == 44 else fila
+                await run_in_threadpool(sheets_service.insertar_encuesta, valores_ordenados=vals)
+            exitosos.append(item)
+        except Exception as e:
+            item["error"] = str(e)
+            fallidos.append(item)
+
+    PENDIENTES_FILE.write_text(json.dumps(fallidos, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {
+        "success": True,
+        "total_sincronizados": len(exitosos),
+        "total_restantes": len(fallidos),
+        "message": f"Sincronizados {len(exitosos)} registros exitosamente en Google Sheets."
+    }
 
 
 # Servir Frontend PWA estático

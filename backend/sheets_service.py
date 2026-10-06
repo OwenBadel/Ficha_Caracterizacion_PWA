@@ -12,6 +12,7 @@ import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import requests
+import time
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -126,35 +127,50 @@ class GoogleSheetsService:
                 logger.error(err_msg)
                 errores.append(err_msg)
 
-        # 2. Intentar con Webhook de Google Apps Script como alternativa
+        # 2. Intentar con Webhook de Google Apps Script como alternativa con reintentos
         if webhook_url:
-            try:
-                payload = {
-                    "tipo": tipo_registro,
-                    "tab": tab_name,
-                    "sheet_name": tab_name,
-                    "hoja": tab_name,
-                    "headers": headers,
-                    "row": fila,
-                    "data": dict(zip(headers, fila))
-                }
-                resp = requests.post(webhook_url, json=payload, timeout=45)
-                hubo_redirect_exitoso = any(h.status_code in [301, 302, 307, 308] for h in resp.history)
+            payload = {
+                "tipo": tipo_registro,
+                "tab": tab_name,
+                "sheet_name": tab_name,
+                "hoja": tab_name,
+                "headers": headers,
+                "row": fila,
+                "data": dict(zip(headers, fila))
+            }
+            max_intentos = 3
+            timeout_segundos = 65
+            for intento in range(1, max_intentos + 1):
+                try:
+                    logger.info(f"Enviando webhook Google Apps Script ({tipo_registro}, intento {intento}/{max_intentos})...")
+                    resp = requests.post(webhook_url, json=payload, timeout=timeout_segundos)
+                    hubo_redirect_exitoso = any(h.status_code in [301, 302, 307, 308] for h in resp.history)
 
-                if resp.status_code in [200, 201, 302] or hubo_redirect_exitoso:
-                    return {
-                        "success": True,
-                        "method": "apps_script_webhook",
-                        "tab": tab_name,
-                        "status_code": resp.status_code,
-                        "redirected": hubo_redirect_exitoso
-                    }
-                else:
-                    errores.append(f"Webhook ({tipo_registro}) respondió con código HTTP {resp.status_code}: {resp.text[:150]}")
-            except Exception as e:
-                err_msg = f"Error en Webhook Google Apps Script ({tipo_registro}): {e}"
-                logger.error(err_msg)
-                errores.append(err_msg)
+                    if resp.status_code in [200, 201, 302] or hubo_redirect_exitoso:
+                        return {
+                            "success": True,
+                            "method": "apps_script_webhook",
+                            "tab": tab_name,
+                            "status_code": resp.status_code,
+                            "redirected": hubo_redirect_exitoso,
+                            "intento": intento
+                        }
+                    else:
+                        errores.append(f"Webhook ({tipo_registro}, intento {intento}) respondió con código HTTP {resp.status_code}: {resp.text[:150]}")
+                except requests.exceptions.Timeout as e:
+                    err_msg = f"Timeout ({timeout_segundos}s) en Webhook Google Apps Script ({tipo_registro}, intento {intento}/{max_intentos}): {e}"
+                    logger.warning(err_msg)
+                    if intento == max_intentos:
+                        errores.append(err_msg)
+                    else:
+                        time.sleep(2.0)
+                except Exception as e:
+                    err_msg = f"Error en Webhook Google Apps Script ({tipo_registro}, intento {intento}/{max_intentos}): {e}"
+                    logger.error(err_msg)
+                    if intento == max_intentos:
+                        errores.append(err_msg)
+                    else:
+                        time.sleep(1.5)
 
         if not self._gspread_client and not webhook_url:
             raise ValueError(
