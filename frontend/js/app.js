@@ -1176,7 +1176,34 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast('Error al subir archivo: ' + err.message, 'error');
       } finally {
         btnUploadMasterExcel.disabled = false;
-        btnUploadMasterExcel.textContent = 'Subir';
+        btnUploadMasterExcel.textContent = '📁 Subir Archivo Local';
+      }
+    });
+  }
+
+  const btnResetMaster = document.getElementById('btnResetMaster');
+  if (btnResetMaster) {
+    btnResetMaster.addEventListener('click', async () => {
+      if (!confirm('¿Seguro que deseas vaciar la memoria de participantes a 0? Podrás sincronizar de nuevo en cualquier momento.')) {
+        return;
+      }
+      btnResetMaster.disabled = true;
+      btnResetMaster.textContent = 'Vaciando...';
+      try {
+        const res = await fetch('/api/participants/clear', { method: 'POST' });
+        const result = await res.json();
+        if (result.success) {
+          showToast('🗑️ Memoria de participantes reiniciada a 0.', 'info');
+          actualizarEstadisticasPatronMaestro();
+          cargarResumenParticipantes();
+        } else {
+          showToast('Error al vaciar memoria.', 'error');
+        }
+      } catch (err) {
+        showToast('Error de conexión: ' + err.message, 'error');
+      } finally {
+        btnResetMaster.disabled = false;
+        btnResetMaster.textContent = '🗑️ Vaciar Memoria (Reiniciar a 0 Registros)';
       }
     });
   }

@@ -68,9 +68,10 @@ sheets_service = GoogleSheetsService()
 
 @app.on_event("startup")
 async def startup_event():
-    """Inicialización desatendida y sincronización del Patrón Maestro."""
+    """Inicialización desatendida y verificación de estado."""
+    auto_sync = os.getenv("AUTO_SYNC_ON_STARTUP", "false").lower() == "true"
     sheet_id = os.getenv("GOOGLE_SHEET_ID", "").strip()
-    if sheet_id:
+    if auto_sync and sheet_id:
         try:
             logger.info(f"Auto-sincronizando PATRON MAESTRO desde Google Sheet ID: {sheet_id}...")
             total = participant_cache.sincronizar_desde_google_sheets(sheet_id)
@@ -540,6 +541,26 @@ async def upload_participants_file(file: UploadFile = File(...)):
         raise
     except Exception as e:
         logger.error(f"Error procesando archivo de participantes: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(e)}
+        )
+
+
+@app.post("/api/participants/clear")
+async def clear_participants():
+    """Vacía por completo la memoria de participantes para reiniciar a 0."""
+    try:
+        await run_in_threadpool(participant_cache.limpiar)
+        resumen = await run_in_threadpool(participant_cache.obtener_resumen)
+        return {
+            "success": True,
+            "message": "Memoria de participantes vaciada a 0 registros.",
+            "total": 0,
+            "stats": resumen
+        }
+    except Exception as e:
+        logger.error(f"Error vaciando memoria de participantes: {e}", exc_info=True)
         return JSONResponse(
             status_code=500,
             content={"success": False, "error": str(e)}

@@ -181,6 +181,13 @@ class ParticipantCache:
             except Exception as e:
                 logger.error(f"Error guardando caché de participantes: {e}")
 
+    def limpiar(self):
+        """Vacía por completo la base de participantes en memoria y en disco."""
+        with self._lock:
+            self.participantes = {}
+        self.guardar()
+        logger.info("Memoria viva de participantes reiniciada a 0 registros.")
+
     def aprender_participante(
         self,
         nombre: str,

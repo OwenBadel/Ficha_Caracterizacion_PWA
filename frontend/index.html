@@ -272,10 +272,10 @@
             <strong>Sincronizar desde Google Sheets</strong>
             <span>Importa la pestaña <code>PATRON MAESTRO</code> de tu hoja conectada</span>
           </div>
-          <div class="file-upload-row">
-            <input type="text" id="inputMasterSheetId" placeholder="ID o URL (opcional si está en .env)" style="flex: 1; padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.75rem;" />
-            <button id="btnSyncMasterSheet" class="btn-action-main btn-sm" type="button">
-              🔄 Sincronizar
+          <div class="master-form-col">
+            <input type="text" id="inputMasterSheetId" class="master-input-field" placeholder="ID o URL (opcional si ya está en .env)" />
+            <button id="btnSyncMasterSheet" class="btn-master-action" type="button">
+              🔄 Sincronizar desde Google Sheets
             </button>
           </div>
         </div>
@@ -283,17 +283,21 @@
         <div class="import-box">
           <div class="import-label">
             <strong>O Importar Archivo Excel / CSV</strong>
-            <span>Formato de columnas: Nombre, Edad, Municipio, EPS</span>
+            <span>Columnas: Nombre, Edad, Municipio, EPS</span>
           </div>
-          <div class="file-upload-row">
-            <input type="file" id="inputMasterExcel" accept=".xlsx,.xls,.csv" />
-            <button id="btnUploadMasterExcel" class="btn-action-sub btn-sm" type="button">
-              Subir
+          <div class="master-form-col">
+            <input type="file" id="inputMasterExcel" class="master-file-field" accept=".xlsx,.xls,.csv" />
+            <button id="btnUploadMasterExcel" class="btn-master-sub" type="button">
+              📁 Subir Archivo Local
             </button>
           </div>
         </div>
 
-        <div class="import-label" style="margin-top: 4px;">
+        <button id="btnResetMaster" class="btn-master-reset" type="button">
+          🗑️ Vaciar Memoria (Reiniciar a 0 Registros)
+        </button>
+
+        <div class="import-label" style="margin-top: 6px;">
           <strong>Distribución por Municipio:</strong>
         </div>
         <div id="participantsBreakdown" class="participants-breakdown">
@@ -316,7 +320,7 @@
 
   </div>
 
-  <script src="/static/js/db.js?v=12"></script>
-  <script src="/static/js/app.js?v=12"></script>
+  <script src="/static/js/db.js?v=13"></script>
+  <script src="/static/js/app.js?v=13"></script>
 </body>
 </html>

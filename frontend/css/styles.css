@@ -1263,46 +1263,148 @@ body {
 }
 
 .import-box {
-  background: rgba(0, 0, 0, 0.25);
+  background: rgba(0, 0, 0, 0.3);
   border: 1px dashed rgba(255, 255, 255, 0.15);
   border-radius: var(--radius-md);
   padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .import-label {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   font-size: 0.75rem;
   color: var(--text-muted);
 }
 
 .import-label strong {
   color: var(--text-main);
-  font-size: 0.8rem;
+  font-size: 0.82rem;
 }
 
-.file-upload-row {
+.master-form-col {
   display: flex;
+  flex-direction: column;
   gap: 8px;
-  align-items: center;
-  margin-top: 4px;
+  width: 100%;
 }
 
-.file-upload-row input[type="file"] {
+.master-input-field {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.4);
+  color: #fff;
+  font-size: 0.82rem;
+  font-family: inherit;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.master-input-field:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.25);
+}
+
+.master-file-field {
+  width: 100%;
+  box-sizing: border-box;
   font-size: 0.75rem;
   color: var(--text-muted);
-  flex: 1;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.btn-sm {
-  padding: 8px 12px !important;
-  font-size: 0.75rem !important;
-  border-radius: var(--radius-sm) !important;
-  white-space: nowrap;
+.btn-master-action {
+  width: 100%;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: linear-gradient(135deg, #10b981, #06b6d4);
+  color: #fff;
+  font-family: var(--font-heading);
+  font-size: 0.88rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  min-height: 44px;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3);
+  transition: all 0.2s ease;
+}
+
+.btn-master-action:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(16, 185, 129, 0.4);
+}
+
+.btn-master-action:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-master-sub {
+  width: 100%;
+  padding: 11px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.05);
+  color: #e2e8f0;
+  font-family: var(--font-heading);
+  font-size: 0.82rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  min-height: 42px;
+  transition: all 0.2s ease;
+}
+
+.btn-master-sub:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.btn-master-sub:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-master-reset {
+  width: 100%;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.08);
+  color: #f87171;
+  font-family: var(--font-heading);
+  font-size: 0.78rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  min-height: 40px;
+  transition: all 0.2s ease;
+}
+
+.btn-master-reset:hover {
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #fca5a5;
 }
 
 .participants-breakdown {
@@ -1311,16 +1413,17 @@ body {
   gap: 6px;
   max-height: 180px;
   overflow-y: auto;
-  background: rgba(0, 0, 0, 0.2);
+  background: rgba(0, 0, 0, 0.25);
   border-radius: var(--radius-sm);
   padding: 8px;
+  -webkit-overflow-scrolling: touch;
 }
 
 .mun-row {
   display: flex;
   justify-content: space-between;
   font-size: 0.75rem;
-  padding: 4px 6px;
+  padding: 5px 8px;
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.02);
 }
@@ -1333,4 +1436,38 @@ body {
 .mun-count {
   color: var(--color-accent);
   font-weight: 700;
+}
+
+/* Adaptabilidad especial para móviles pequeños */
+@media (max-width: 480px) {
+  .modal-card-dialog {
+    width: 94%;
+    max-height: 85vh;
+    padding: 0;
+  }
+
+  .modal-header {
+    padding: 14px;
+  }
+
+  .modal-header h2 {
+    font-size: 0.95rem;
+  }
+
+  .modal-body {
+    padding: 14px;
+    gap: 12px;
+  }
+
+  .stats-grid {
+    gap: 8px;
+  }
+
+  .stat-card {
+    padding: 10px;
+  }
+
+  .stat-num {
+    font-size: 1.35rem;
+  }
 }
