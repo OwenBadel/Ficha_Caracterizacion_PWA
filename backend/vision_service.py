@@ -212,9 +212,9 @@ def _limpiar_bloque_json(texto: str) -> str:
     return texto
 
 
-def optimizar_imagen_bytes(img_bytes: bytes, max_dim: int = 1800, calidad: int = 92) -> tuple[bytes, str]:
+def optimizar_imagen_bytes(img_bytes: bytes, max_dim: int = 1400, calidad: int = 90) -> tuple[bytes, str]:
     """
-    Optimiza la imagen manteniendo alta resolución y nitidez para el modelo de visión (1800px).
+    Optimiza la imagen manteniendo alta resolución y nitidez para el modelo de visión (1400px).
     Garantiza orientación vertical si fue capturada rotada.
     """
     try:
@@ -460,8 +460,8 @@ class VisionService:
             "format": "json",
             "options": {
                 "temperature": 0.0,
-                "num_ctx": 16384,
-                "num_predict": 2048
+                "num_ctx": 4096,
+                "num_predict": 1024
             },
             "stream": False
         }
@@ -473,13 +473,21 @@ class VisionService:
         modelos_unicos = list(dict.fromkeys(modelos_a_probar))
         ultimo_error = None
 
-        with httpx.Client(timeout=180.0) as client:
+        with httpx.Client(timeout=120.0) as client:
             for mod in modelos_unicos:
                 try:
                     payload["model"] = mod
                     resp = client.post(endpoint, json=payload)
                     if resp.status_code == 200:
-                        contenido = resp.json().get("message", {}).get("content", "{}")
+                        msg = resp.json().get("message", {})
+                        contenido = msg.get("content", "")
+                        # Si content viene vacío porque el modelo razonador puso el JSON en thinking
+                        if not contenido or not contenido.strip():
+                            thinking = msg.get("thinking", "")
+                            if thinking and "{" in thinking and "}" in thinking:
+                                match = re.search(r"(\{.*\})", thinking, re.DOTALL)
+                                if match:
+                                    contenido = match.group(1)
                         if contenido and contenido.strip():
                             return contenido
                     else:
