@@ -50,16 +50,16 @@ def test_imagen_vertical_se_mantiene_vertical():
     print("[PASS] test_imagen_vertical_se_mantiene_vertical")
 
 
-def test_prioridad_gemini_3_1_flash_lite_en_modelos():
-    """Valida que Gemini 3.1 Flash Lite esté configurado como modelo primario en el servicio."""
+def test_prioridad_ollama_qwen_en_modelos():
+    """Valida que Ollama con Qwen3-VL esté configurado como modelo primario soberano."""
     service = VisionService()
-    gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
-    assert "gemini-3.1-flash-lite" in gemini_model.lower() or "flash" in gemini_model.lower()
-    print("[PASS] test_prioridad_gemini_3_1_flash_lite_en_modelos")
+    assert service.provider == "ollama"
+    assert "qwen" in service.ollama_model.lower()
+    print("[PASS] test_prioridad_ollama_qwen_en_modelos")
 
 
 if __name__ == "__main__":
     test_rotacion_automatica_horizontal_a_vertical()
     test_imagen_vertical_se_mantiene_vertical()
-    test_prioridad_gemini_3_1_flash_lite_en_modelos()
+    test_prioridad_ollama_qwen_en_modelos()
     print("\nTODAS LAS PRUEBAS DE ORIENTACIÓN Y MODELO PASARON CON ÉXITO.")

@@ -1,10 +1,11 @@
 """
-Pruebas unitarias de regresión para las correcciones de auditoría:
+Pruebas unitarias de regresión para la arquitectura soberana:
 - Thread safety y rendimiento de I/O en ParticipantCache
 - Sincronización thread-safe en VocabularyLearner
 - Caché de verificación de pestañas en GoogleSheetsService
 - Verificación SSL obligatoria en VisionService
 - Integridad de Service Worker y scripts frontend
+- Reconciliación Jaro-Winkler con PATRON MAESTRO y remoción total de Gemini
 """
 
 import sys
@@ -16,20 +17,22 @@ backend_dir = Path(__file__).resolve().parent.parent / "backend"
 if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
 
-from participant_cache import ParticipantCache
+from participant_cache import (
+    ParticipantCache,
+    jaro_similarity,
+    jaro_winkler_similarity,
+    token_jaro_winkler_similarity
+)
 from vocabulary_learner import VocabularyLearner
 from sheets_service import GoogleSheetsService
-from vision_service import VisionService, PipelineRateLimiter, pipeline_rate_limiter
+from vision_service import VisionService
 
 
 def test_participant_cache_thread_safety_and_batch_io():
-    """Valida la concurrencia y persistencia eficiente de ParticipantCache sin métodos CSV."""
+    """Valida la concurrencia y persistencia eficiente de ParticipantCache con Jaro-Winkler."""
     with tempfile.TemporaryDirectory() as tmpdir:
         cache_file = Path(tmpdir) / "test_participantes.json"
         cache = ParticipantCache(cache_file=cache_file)
-
-        # Verificar que el método obsoleto CSV fue totalmente eliminado
-        assert not hasattr(cache, "importar_desde_csv")
 
         # 1. Simular aprendizaje de participantes
         for i in range(50):
@@ -65,6 +68,42 @@ def test_participant_cache_thread_safety_and_batch_io():
         match = cache.buscar_coincidencia("PARTICIPANTE PRUEBA 10")
         assert match is not None
         assert match["nombre"] == "PARTICIPANTE PRUEBA 10"
+
+
+def test_jaro_winkler_and_patron_maestro_reconciliation():
+    """Valida la matemática de Jaro-Winkler y la reconciliación con PATRON MAESTRO."""
+    # 1. Casos de similitud Jaro-Winkler
+    # Nombres con variaciones ortográficas típicas en campo
+    score1 = token_jaro_winkler_similarity("MAIKOL PEREZ", "MICHAEL PEREZ")
+    assert score1 >= 0.80, f"Score insuficiente: {score1}"
+
+    score2 = token_jaro_winkler_similarity("YEISON RODRIGUEZ", "JEYSON RODRIGUEZ")
+    assert score2 >= 0.85, f"Score insuficiente: {score2}"
+
+    # Inversión de nombre/apellido: "PEREZ MICHAEL" vs "MICHAEL PEREZ"
+    score_inv = token_jaro_winkler_similarity("PEREZ MICHAEL", "MICHAEL PEREZ")
+    assert score_inv >= 0.90, f"Token score insuficiente para orden invertido: {score_inv}"
+
+    # 2. Ingesta de PATRON MAESTRO desde CSV con las columnas exactas del usuario
+    csv_maestro = """Marca temporal,NOMBRE COMPLETO DE QUIEN DILIGENCIA LA FICHA:,TERRITORIO:,Nombre completo del participante:,Tipo de documento identidad:,Numero de documento identidad:,Edad:,Grado escolar:,Teléfono de contacto:,Dirección de residencia (barrio o vereda):,Municipio:,Zona:,EPS (si tienes):
+2026/02/01 10:00:00,PAMELA VERGARA,MAHATES,MICHAEL STEVEN PEREZ,TI,1045678901,15,9°,3001234567,BARRIO EL CARMEN,MAHATES,URBANA,MUTUAL SER
+2026/02/01 10:05:00,KAREN TORRES,TURBANA,ANA SOFIA MARTINEZ,TI,1045678902,14,8°,3019876543,SECTOR CENTRO,TURBANA,URBANA,COOSALUD
+"""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cache_file = Path(tmpdir) / "test_patron.json"
+        cache = ParticipantCache(cache_file=cache_file)
+        cargados = cache.sincronizar_desde_csv_texto(csv_maestro)
+        assert cargados == 2
+        assert cache.contar() == 2
+
+        # Reconciliar un test escrito a mano con error ("MAIKOL PEREZ") en MAHATES
+        match = cache.buscar_coincidencia("MAIKOL PEREZ", municipio_hint="MAHATES")
+        assert match is not None
+        assert match["nombre"] == "MICHAEL STEVEN PEREZ"
+        assert match["edad"] == "15"
+        assert match["municipio"] == "MAHATES"
+        assert match["eapb"] == "MUTUAL SER"
+        assert match["documento"] == "1045678901"
 
 
 def test_vocabulary_learner_thread_safety():
@@ -120,53 +159,21 @@ def test_frontend_scripts_integrity():
     assert "function cargarResumenParticipantes" in app_text
 
 
-def test_pipeline_rate_limiter_and_qwen_removal():
-    """Valida la disciplina de throttling de 4s del Rate Limiter y la remoción total de Qwen."""
-    import time
-    # 1. Validar que la configuración global de rate limit sea de al menos 4.0s
-    assert pipeline_rate_limiter.min_interval >= 4.0, "El intervalo mínimo debe ser al menos 4.0 segundos"
-
-    # 2. Validar funcionamiento y cálculo de espera con un limiter de prueba rápido (0.15s)
-    limiter = PipelineRateLimiter(min_interval_seconds=0.15)
-    t0 = time.time()
-    espera1 = limiter.esperar_turno()
-    assert espera1 == 0.0
-
-    # Llamada consecutiva inmediata: debe esperar el remanente
-    espera2 = limiter.esperar_turno()
-    t1 = time.time()
-    assert espera2 > 0.0
-    assert (t1 - t0) >= 0.14, f"Se esperaba al menos 0.14s transcurridos, pero fue {t1 - t0}"
-
-    # 3. Concurrencia de múltiples hilos espaciados
-    hilos = []
-    tiempos = []
-
-    def peticion():
-        t = limiter.esperar_turno()
-        tiempos.append(t)
-
-    for _ in range(3):
-        h = threading.Thread(target=peticion)
-        hilos.append(h)
-        h.start()
-
-    for h in hilos:
-        h.join()
-
-    assert len(tiempos) == 3
-
-    # 4. Verificar que Qwen fue completamente purgado del código y render.yaml
+def test_gemini_and_external_apis_removed():
+    """Verifica que los modelos de Gemini y llamadas obsoletas fueron completamente removidos de vision_service."""
     vision_file = Path(__file__).resolve().parent.parent / "backend" / "vision_service.py"
-    render_file = Path(__file__).resolve().parent.parent / "render.yaml"
+    contenido = vision_file.read_text(encoding="utf-8")
 
-    assert "qwen" not in vision_file.read_text(encoding="utf-8").lower(), "Qwen no debe existir en vision_service.py"
-    assert "qwen" not in render_file.read_text(encoding="utf-8").lower(), "Qwen no debe existir en render.yaml"
+    assert "google.genai" not in contenido, "google.genai aún presente en vision_service.py"
+    assert "_procesar_con_gemini" not in contenido, "_procesar_con_gemini aún presente en vision_service.py"
+    assert "openrouter" not in contenido.lower(), "OpenRouter aún presente en vision_service.py"
 
 
 if __name__ == "__main__":
     test_participant_cache_thread_safety_and_batch_io()
     print("[PASS] test_participant_cache_thread_safety_and_batch_io")
+    test_jaro_winkler_and_patron_maestro_reconciliation()
+    print("[PASS] test_jaro_winkler_and_patron_maestro_reconciliation")
     test_vocabulary_learner_thread_safety()
     print("[PASS] test_vocabulary_learner_thread_safety")
     test_sheets_service_tab_cache()
@@ -175,6 +182,6 @@ if __name__ == "__main__":
     print("[PASS] test_vision_service_ssl_security")
     test_frontend_scripts_integrity()
     print("[PASS] test_frontend_scripts_integrity")
-    test_pipeline_rate_limiter_and_qwen_removal()
-    print("[PASS] test_pipeline_rate_limiter_and_qwen_removal")
+    test_gemini_and_external_apis_removed()
+    print("[PASS] test_gemini_and_external_apis_removed")
     print("Todas las pruebas de auditoría pasaron exitosamente.")

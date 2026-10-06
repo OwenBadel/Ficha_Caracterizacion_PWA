@@ -12,18 +12,20 @@ services:
       - key: HOST
         value: 0.0.0.0
       - key: VISION_PROVIDER
-        value: gemini
-      - key: GEMINI_MODEL
-        value: gemini-3.1-flash-lite
-      - key: GEMINI_MIN_INTERVAL_SECONDS
-        value: "4.0"
+        value: ollama
+      - key: OLLAMA_BASE_URL
+        value: http://localhost:11434
+      - key: OLLAMA_MODEL
+        value: qwen3-vl
       - key: GOOGLE_SHEET_TAB
         value: Respuestas
       - key: GOOGLE_SHEET_TAB_TESTS
-        value: Respuestas de formulario 1
+        value: Pre_Post_Test
+      - key: GOOGLE_SHEET_TAB_PATRON_MAESTRO
+        value: PATRON MAESTRO
       - key: GOOGLE_SHEET_SKIP_FIRST_COL
         value: "true"
-      - key: GEMINI_API_KEY
+      - key: GOOGLE_SHEET_ID
         sync: false
       - key: GOOGLE_APPS_SCRIPT_URL
         sync: false

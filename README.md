@@ -1,18 +1,21 @@
-# 📱 PROJ-006: Digitalizador Móvil de Fichas de Caracterización (PWA + IA Visión + Google Sheets)
+# 📱 PROJ-006: Digitalizador Móvil de Fichas de Caracterización (PWA + IA Visión Local GPU + Google Sheets)
+**Autoría y Diseño:** Owen Badel Hooker — Ingeniero de Sistemas / Software Architect.
 
-Aplicación Web Progresiva (**PWA Mobile-First**) diseñada para digitalizar en campo "Fichas de Caracterización" físicas y evaluaciones "Pre/Post Test (Anexo 4)" mediante fotografías asistidas, extraer variables con IA de Visión (**Google Gemini 2.5 Flash** como motor primario forense) con normalización estricta a **MAYÚSCULAS**, auto-orientación vertical inteligente de capturas horizontales, e insertar automáticamente cada registro como una fila ordenada en **Google Sheets**.
+Aplicación Web Progresiva (**PWA Mobile-First**) diseñada para digitalizar en campo "Fichas de Caracterización" físicas y evaluaciones "Pre/Post Test (Anexo 4)" mediante fotografías asistidas, extraer variables con IA de Visión Soberana (**Ollama Qwen3-VL** acelerado por hardware NVIDIA GPU en local) con normalización estricta a **MAYÚSCULAS**, auto-orientación vertical inteligente de capturas, reconciliación fonética/caligráfica con **Jaro-Winkler** contra el **PATRÓN MAESTRO**, e inserción automática de cada registro como fila ordenada en **Google Sheets**.
 
 ---
 
 ## 🌟 Características Principales
 
 * 📱 **Mobile-First & PWA:** Diseñada para navegador de celular y configurable como app nativa ("Añadir a pantalla de inicio"). Carga ultrarrápida y soporte offline mediante Service Worker.
-* 📸 **Captura Guiada y Auto-Orientación Vertical:** Disparador gigante con corrección inteligente de orientación: si una foto es tomada en horizontal (paisaje), se transforma automáticamente a vertical (retrato 3:4) con máxima nitidez forense (3200px / 95% calidad), más botones interactivos de "Rotar 90°" y "Repetir".
-* 📝 **Modo Dual (Fichas y Tests):** Soporte tanto para Fichas de Caracterización (2 fotos) como para hojas de Pre-Test y Post-Test (1 foto vertical estética).
-* ⚡ **Modo Inmediato:** Envía automáticamente las fotos a la IA y sube los datos a Google Sheets al instante.
-* 📦 **Modo Cola (Offline-First / Batch):** Almacena las fotos y encuestas localmente en el dispositivo (**IndexedDB**). Cuenta las encuestas pendientes, permite revisarlas en un drawer visual y sincronizarlas todas juntas al volver a tener buena conexión ("🚀 Sincronizar Todas Ahora").
-* 🧠 **IA de Visión Multimodal (Gemini 2.5 Flash):** Convierte todo a mayúsculas, interpreta checkboxes marcados con "X", deja campos vacíos como `""` y retorna exactamente las columnas requeridas.
-* 📊 **Google Sheets API v4 Automatizado:** Inserta directamente en la hoja de cálculo usando Service Account oficial (o Webhook de Google Apps Script), creando los encabezados automáticamente si la hoja está vacía.
+* 🧠 **IA de Visión Local Soberana (Ollama Qwen3-VL en GPU):** Extracción OCR multimodal directa en el hardware local (NVIDIA RTX 4060) a cero costo por token, sin latencias remotas, sin bloqueos concurrentes (HTTP 429) y con privacidad total de datos.
+* 🎯 **Algoritmo Jaro-Winkler con Bonificación Territorial:** Reconcilia nombres escritos a mano con variaciones ortográficas ("MAIKOL PEREZ" -> "MICHAEL STEVEN PEREZ", inversión de apellidos, etc.) comparándolos con el **PATRÓN MAESTRO** de los 10 municipios. Estandariza de forma automática e instantánea: **Nombre del participante, Edad, Municipio y EPS**.
+* 📋 **Ingesta del PATRÓN MAESTRO:** Sincronización automática directa desde la pestaña `PATRON MAESTRO` de Google Sheets o mediante archivo local (`.xlsx` o `.csv`).
+* 📸 **Captura Guiada y Auto-Orientación Vertical:** Disparador ergonómico con corrección inteligente de orientación: si una foto es tomada en horizontal, se transforma automáticamente a vertical con nitidez fotográfica y botones de rotación manual.
+* 📝 **Modo Dual (Fichas y Tests):** Soporte tanto para Fichas de Caracterización (2 fotos: Anverso y Reverso) como para hojas de Pre-Test y Post-Test (1 foto vertical).
+* ⚡ **Modo Inmediato:** Envía automáticamente las fotos al motor de visión y sube los datos a Google Sheets al instante.
+* 📦 **Modo Cola (Offline-First / Batch):** Almacena las fotos y encuestas localmente en el dispositivo (**IndexedDB**), permitiendo continuar capturando y sincronizar todo en lote al recuperar conexión.
+* 📊 **Google Sheets API v4 Automatizado:** Inserta directamente en la hoja de cálculo usando Webhook oficial de Google Apps Script.
 
 ---
 
@@ -20,266 +23,88 @@ Aplicación Web Progresiva (**PWA Mobile-First**) diseñada para digitalizar en 
 
 ```text
 PROJ_006_Ficha_Caracterizacion_PWA/
-├── AGENTS.md                   # Directiva maestra del proyecto en la Fábrica
-├── README.md                   # Esta guía completa
+├── AGENTS.md                   # Directiva maestra del proyecto
+├── README.md                   # Esta documentación completa
 ├── requirements.txt            # Dependencias Python
+├── INICIAR_APP.bat             # Lanzador interactivo con auto-inicio de Ollama
 ├── .env.example                # Plantilla de variables de entorno
 ├── .env                        # Variables locales configuradas
 ├── backend/
 │   ├── __init__.py
-│   ├── schema.py               # Modelo Pydantic y 43 columnas canónicas
+│   ├── schema.py               # Modelo Pydantic y 43 columnas canónicas de la Ficha
 │   ├── schema_test.py          # Modelo Pydantic para Pre-Test / Post-Test
-│   ├── vision_service.py       # Extracción con Gemini 2.5 Flash / OpenRouter / OpenAI
-│   ├── sheets_service.py       # Inserción en Google Sheets con Service Account / Webhook
+│   ├── participant_cache.py    # Memoria viva, Jaro-Winkler tokenizado y Patrón Maestro
+│   ├── vision_service.py       # Extracción multimodal con Ollama Qwen3-VL en GPU local
+│   ├── sheets_service.py       # Inserción en Google Sheets vía Webhook Apps Script
 │   └── main.py                 # Servidor FastAPI y entrega de la PWA estática
-└── frontend/
-    ├── index.html              # Interfaz de usuario Mobile-First
-    ├── manifest.json           # Manifiesto PWA para instalación
-    ├── sw.js                   # Service Worker para funcionamiento offline (v8)
-    ├── css/
-    │   └── styles.css          # Diseño Dark Glassmorphism, micro-animaciones
-    └── js/
-        ├── db.js               # Persistencia local con IndexedDB (cola offline)
-        └── app.js              # Lógica de interfaz, cámara, auto-orientación y sincronización
+├── frontend/
+│   ├── index.html              # Interfaz de usuario Mobile-First
+│   ├── manifest.json           # Manifiesto PWA para instalación
+│   ├── sw.js                   # Service Worker para funcionamiento offline
+│   ├── css/
+│   │   └── styles.css          # Diseño Dark Glassmorphism, micro-animaciones
+│   └── js/
+│       ├── db.js               # Persistencia local con IndexedDB (cola offline)
+│       └── app.js              # Lógica de interfaz, cámara, auto-orientación y sincronización
+└── tests/                      # Suite de pruebas unitarias automatizadas (23 tests)
 ```
 
 ---
 
-## ⚙️ Guía de Configuración Paso a Paso
+## ⚙️ Guía de Configuración y Uso
 
-### 1. Requisitos Previos e Instalación
+### 1. Variables de Entorno (`.env`)
 
-1. Asegúrate de tener Python 3.10 o superior instalado.
-2. Abre una terminal en la carpeta del proyecto y crea un entorno virtual (opcional pero recomendado):
-   ```bash
-   python -m venv venv
-   # En Windows:
-   venv\Scripts\activate
-   ```
-3. Instala las dependencias:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
----
-
-### 2. Configurar la IA de Visión (Google Gemini 2.5 Flash como Primario)
-
-La app viene preconfigurada para usar **Google Gemini 2.5 Flash** como modelo primario prioritario (máxima velocidad, costo eficiente y precisión forense para tablas, casillas y texto manuscrito en español).
-
-En el archivo `.env`:
+En el archivo `.env` en la raíz del proyecto:
 ```env
-# Opción A: Mediante OpenRouter
-VISION_PROVIDER=openrouter
-OPENROUTER_API_KEY=tu_clave_openrouter
-OPENROUTER_MODEL=google/gemini-2.5-flash
+# Proveedor Soberano Local en GPU
+VISION_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=qwen3-vl
 
-# Opción B: Directo con Google Gemini API
-VISION_PROVIDER=gemini
-GEMINI_API_KEY=tu_clave_de_google_ai_studio
-GEMINI_MODEL=gemini-2.5-flash
+# Patrón Maestro (Google Sheets)
+# Pega aquí el ID de tu hoja de cálculo (lo que está entre /d/ y /edit en la URL)
+GOOGLE_SHEET_ID=tu_google_sheet_id_aqui
+GOOGLE_SHEET_TAB_PATRON_MAESTRO=PATRON MAESTRO
+
+# Google Sheets Webhooks
+GOOGLE_APPS_SCRIPT_URL=https://script.google.com/macros/s/.../exec
+GOOGLE_APPS_SCRIPT_URL_TESTS=https://script.google.com/macros/s/.../exec
+GOOGLE_SHEET_TAB=Respuestas
+GOOGLE_SHEET_TAB_TESTS=Pre_Post_Test
 ```
 
-*(Si deseas usar OpenAI GPT-4o, coloca `VISION_PROVIDER=openai`, `OPENAI_API_KEY=tu_clave` y `OPENAI_MODEL=gpt-4o`).*
+### 2. Estructura de Columnas de `PATRON MAESTRO`
+
+El sistema lee las columnas de la pestaña `PATRON MAESTRO` automáticamente:
+1. Marca temporal
+2. NOMBRE COMPLETO DE QUIEN DILIGENCIA LA FICHA
+3. TERRITORIO (Municipio)
+4. **Nombre completo del participante** *(Mapeado a Nombre)*
+5. Tipo de documento identidad
+6. **Numero de documento identidad** *(Mapeado a Documento)*
+7. **Edad** *(Mapeado a Edad)*
+8. Grado escolar
+9. Teléfono de contacto
+10. Dirección de residencia (barrio o vereda)
+11. **Municipio** *(Mapeado a Municipio)*
+12. Zona
+13. **EPS (si tienes)** *(Mapeado a EPS / EAPB)*
+
+### 3. Iniciar la Aplicación
+
+Simplemente haz doble clic en `INICIAR_APP.bat`.
+El script:
+1. Verifica si Ollama está en ejecución; si no, lo inicia en segundo plano automáticamente.
+2. Inicia el servidor FastAPI en el puerto `8000`.
+3. Muestra la URL para abrir en tu PC (`http://localhost:8000`) y en tu Celular en la misma red Wi-Fi (`http://192.168.x.x:8000`).
 
 ---
 
-### 3. Configurar Google Sheets (Método Oficial: Service Account)
+## 🧪 Pruebas Unitarias
 
-Este es el método recomendado para producción:
-
-1. **Crear Proyecto en Google Cloud:**
-   * Ve a [Google Cloud Console](https://console.cloud.google.com/).
-   * Crea un nuevo proyecto (ej. `Ficha-Digital-Salud`).
-
-2. **Habilitar APIs:**
-   * En el menú lateral, ve a **APIs y Servicios** > **Biblioteca**.
-   * Busca y **Habilita** las dos siguientes APIs:
-     1. **Google Sheets API**
-     2. **Google Drive API**
-
-3. **Crear Cuenta de Servicio (Service Account):**
-   * Ve a **APIs y Servicios** > **Credenciales**.
-   * Haz clic en **Crear Credenciales** > **Cuenta de servicio**.
-   * Asigna un nombre (ej. `sheets-writer`) y haz clic en **Crear y Continuar**.
-   * En el rol, selecciona **Editor** (o Básico > Editor). Finaliza el asistente.
-
-4. **Descargar la Llave JSON:**
-   * En la lista de Cuentas de Servicio, haz clic en la cuenta que acabas de crear.
-   * Ve a la pestaña **Claves** (Keys) > **Agregar clave** > **Crear clave nueva**.
-   * Selecciona formato **JSON** y descárgala.
-   * Renombra ese archivo como `credentials.json` y colócalo en la raíz de `PROJ_006_Ficha_Caracterizacion_PWA/credentials.json`.
-
-5. **Compartir tu Google Sheet con la Cuenta de Servicio:**
-   * Abre tu hoja de cálculo en Google Sheets (o crea una nueva).
-   * Haz clic en el botón verde **Compartir** (Share) en la esquina superior derecha.
-   * Pega el correo electrónico de la cuenta de servicio (ejemplo: `sheets-writer@tu-proyecto.iam.gserviceaccount.com`).
-   * Asígnale permisos de **Editor** y guarda.
-
-6. **Configurar el ID en el `.env`:**
-   * Mira la URL de tu hoja de cálculo:
-     `https://docs.google.com/spreadsheets/d/1BxiMVs0XRrE...tu_id_aqui...4Q/edit`
-   * Copia esa cadena de caracteres y ponla en tu `.env`:
-     ```env
-     GOOGLE_SHEET_ID=1BxiMVs0XRrE...tu_id_aqui...4Q
-     GOOGLE_SHEET_TAB=Respuestas
-     GOOGLE_APPLICATION_CREDENTIALS=credentials.json
-     ```
-
----
-
-### 4. (Alternativa) Webhook con Google Apps Script
-
-Si prefieres no crear una Service Account de Google Cloud, puedes usar un script Webhook:
-
-1. En tu Google Sheet, ve a **Extensiones** > **Apps Script**.
-2. Pega el siguiente código:
-   ```javascript
-   function doPost(e) {
-     var ss = SpreadsheetApp.getActiveSpreadsheet();
-     var data = JSON.parse(e.postData.contents);
-     
-     // 1. Buscar la pestaña por nombre; si no existe, usar la primera hoja del libro ('Respuestas de formulario 1')
-     var sheet = null;
-     if (data.tab) {
-       sheet = ss.getSheetByName(data.tab);
-     }
-     if (!sheet) {
-       sheet = ss.getSheets()[0];
-     }
-     
-     // 2. Solo agregar encabezados si la hoja está totalmente vacía
-     if (sheet.getLastRow() === 0 && data.headers) {
-       sheet.appendRow(data.headers);
-     }
-     
-     // 3. Insertar la fila con los datos procesados
-     if (data.row) {
-       sheet.appendRow(data.row);
-     }
-     return ContentService.createTextOutput(JSON.stringify({
-       status: "ok", 
-       tab: sheet.getName(),
-       row: sheet.getLastRow()
-     })).setMimeType(ContentService.MimeType.JSON);
-   }
-   ```
-3. Haz clic en **Implementar** > **Gestionar implementaciones** (o **Nueva implementación**) > Editar > seleccionar **Versión nueva** > Tipo: **Aplicación web**.
-4. En *"Quién tiene acceso"*, selecciona **Cualquier usuario (Anyone)**.
-5. Copia la URL de la aplicación web y ponla en `.env` (o en Render):
-   ```env
-   GOOGLE_APPS_SCRIPT_URL=https://script.google.com/macros/s/.../exec
-   GOOGLE_APPS_SCRIPT_URL_TESTS=https://script.google.com/macros/s/.../exec
-   GOOGLE_SHEET_TAB_TESTS=Respuestas de formulario 1
-   ```
-
----
-
-## 🚀 Cómo Ejecutar y Usar la Aplicación
-
-### 1. Iniciar el Servidor
-Ejecuta en tu terminal:
+Para ejecutar toda la suite de pruebas automatizadas:
 ```bash
-python backend/main.py
+python tests/run_all_tests.py
 ```
-O directamente con Uvicorn:
-```bash
-uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-El servidor arrancará en `http://localhost:8000`.
-
-### 2. Abrir desde el Celular
-1. Asegúrate de que tu celular y tu computadora estén conectados a la **misma red Wi-Fi**.
-2. En tu PC, abre una terminal y escribe `ipconfig` para conocer tu dirección IPv4 (por ejemplo, `192.168.1.45`).
-3. Abre Chrome o Safari en tu celular y entra a:
-   `http://192.168.1.45:8000`
-4. En el menú del navegador, selecciona **"Agregar a la pantalla principal"** o **"Instalar aplicación"** para disfrutar de la experiencia PWA a pantalla completa sin barra de navegación.
-
----
-
-## 📋 Lista de las 43 Columnas Extraídas
-
-Cada fila insertada en Google Sheets contiene exactamente en este orden:
-
-| # | Nombre de Columna |
-|---|-------------------|
-| 1 | `NOMBRE COMPLETO DE QUIEN DILIGENCIA LA FICHA` |
-| 2 | `TERRITORIO` |
-| 3 | `Nombre completo del participante` |
-| 4 | `Tipo de documento identidad` |
-| 5 | `Numero de documento identidad` |
-| 6 | `Edad` |
-| 7 | `Grado escolar` |
-| 8 | `Teléfono de contacto` |
-| 9 | `Dirección de residencia (barrio o vereda)` |
-| 10 | `Municipio` |
-| 11 | `Zona` |
-| 12 | `EPS (si tienes)` |
-| 13 | `Régimen` |
-| 14 | `Sexo con el que te identificas` |
-| 15 | `Identidad de género` |
-| 16 | `¿Perteneces a alguna población o grupo étnico?` |
-| 17 | `¿Tienes alguna condición de discapacidad?` |
-| 18 | `¿Cual?` |
-| 19 | `¿Tienes antecedentes de alguna enfermedad personal o familiar importante?` |
-| 20 | `¿Cual?_1` |
-| 21 | `¿Has asistido al médico en el último año?` |
-| 22 | `¿Cuándo fue la última vez?` |
-| 23 | `¿Fuiste al odontólogo el último año?` |
-| 24 | `¿Qué actividades recreativas haces en tu tiempo libre?` |
-| 25 | `¿Qué tiempo empleas en esta actividad?` |
-| 26 | `¿Consumes o has consumido cigarrillo o vapeador?` |
-| 27 | `Cada cuánto?` |
-| 28 | `¿Consumes o has consumido alcohol?` |
-| 29 | `Cada cuánto?_1` |
-| 30 | `¿Has consumido alguna sustancia psicoactiva?` |
-| 31 | `¿Cual?_2` |
-| 32 | `¿Has vivido situaciones de discriminación, rechazo o violencia?` |
-| 33 | `¿Has recibido información sobre salud sexual, ITS o métodos de prevención?` |
-| 34 | `¿Has iniciado tu vida sexual?` |
-| 35 | `Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?` |
-| 36 | `¿Conoces algún método anticonceptico?` |
-| 37 | `¿Cual?_3` |
-| 38 | `¿Has vivido o conoces algún caso cercano de embarazo adolescente?` |
-| 39 | `¿Te han entregado preservativos en la EPS o institución de salud?` |
-| 40 | `¿Cuándo fue la ultima vez?` |
-| 41 | `¿Qué tema te gustaria aprender o entender mejor?` |
-| 42 | `¿Te gustaria que en tu institución educativa se hicieran mas espacios para dialogar de estos temas?` |
-| 43 | `¿Por que?` |
-
----
-
-## 📝 Pre-Test y Post-Test: Programa de Salud Sexual y Reproductiva (Anexo 4)
-
-La aplicación cuenta con soporte dual de digitalización:
-* **Ficha de Caracterización (2 fotos):** Anverso y Reverso (43 columnas).
-* **Pre-Test y Post-Test (1 sola foto):** Formato unificado de 1 página (Anexo Nº 4 SSR ITS). Se digitalizan 30 Pre-Tests y 30 Post-Tests por cada uno de los 10 municipios priorizados.
-
-### 🌟 Características del Modo Test:
-1. **Captura Rápida de 1 Foto:** Enfoca la hoja completa del test y captura con un solo toque.
-2. **Auto-Detección y Selector de Evaluación:** La IA detecta automáticamente en el encabezado si es `PRE-TEST` o `POST-TEST`. También puedes forzar el tipo mediante el selector visual en la interfaz (`Auto (IA)`, `PRE-TEST`, `POST-TEST`).
-3. **Reconciliación y Aprendizaje Continuo de Participantes:** A medida que se digitalizan las Fichas de Caracterización, el sistema aprende y registra automáticamente en segundo plano a los participantes, permitiendo corregir de forma difusa cualquier fallo caligráfico o de OCR en el nombre, edad, municipio y EPS al procesar sus correspondientes Pre y Post Tests.
-
-### 📋 Columnas del Pre-Test y Post-Test en Google Sheets (15 Columnas)
-
-Cada fila registrada en la pestaña `Pre_Post_Test` contiene en este orden:
-
-| # | Encabezado en Google Sheets | Tipo de Dato / Valores Válidos |
-|---|-----------------------------|--------------------------------|
-| 1 | `Marca temporal` | Fecha y hora de digitalización (`DD/MM/YYYY HH:MM:SS`) |
-| 2 | `TIPO DE EVALUACIÓN` | `PRE-TEST` o `POST-TEST` |
-| 3 | `NOMBRE` | Nombre completo del participante (Mayúsculas) |
-| 4 | `EDAD` | Edad en dígitos enteros |
-| 5 | `MUNICIPIO` | Uno de los 10 municipios (`MAHATES`, `TURBANA`, `TURBACO`, `BARRANCO DE LOBA`, `SAN JACINTO DEL CAUCA`, `CALAMAR`, `MORALES`, `SANTA ROSA DEL SUR`, `ARENAL`, `SOPLAVIENTO`) |
-| 6 | `EAPB (EPS)` | Entidad de salud (`MUTUAL SER`, `COOSALUD`, `NUEVA EPS`, `SALUD TOTAL`, `SURA`, `SANITAS`, etc.) |
-| 7 | `1. EL USO CORRECTO DEL PRESERVATIVO AYUDA A PREVENIR ITS COMO VIH Y SÍFILIS.` | `VERDADERO` / `FALSO` |
-| 8 | `2. LAS ITS PUEDEN TRANSMITIRSE DE LA MADRE AL BEBÉ DURANTE EL EMBARAZO.` | `VERDADERO` / `FALSO` |
-| 9 | `3. UNA PERSONA CON VIH SIEMPRE SE VE ENFERMA.` | `VERDADERO` / `FALSO` |
-| 10 | `4. LOS ANTICONCEPTIVOS ORALES PREVIENEN LAS ITS.` | `VERDADERO` / `FALSO` |
-| 11 | `5. ¿CUÁL DE LAS SIGUIENTES ACCIONES AYUDA A PREVENIR EL VIH?` | `TODAS LAS ANTERIORES` / `USAR PRESERVATIVO` / `TENER INFORMACIÓN CLARA SOBRE SALUD SEXUAL` / `EVITAR COMPARTIR AGUJAS O ELEMENTOS CORTOPUNZANTES` |
-| 12 | `6. LA PREP ES UN MEDICAMENTO QUE AYUDA A PREVENIR EL VIH EN PERSONAS CON MAYOR RIESGO DE EXPOSICIÓN.` | `VERDADERO` / `FALSO` |
-| 13 | `7. EXISTE VACUNA PARA PREVENIR LA HEPATITIS B.` | `VERDADERO` / `FALSO` |
-| 14 | `8. LA SÍFILIS TIENE TRATAMIENTO Y PUEDE PREVENIRSE.` | `VERDADERO` / `FALSO` |
-| 15 | `9. RESPETAR LAS DIFERENCIAS Y EVITAR LA DISCRIMINACIÓN AYUDA A CONSTRUIR RELACIONES SALUDABLES.` | `VERDADERO` / `FALSO` |
-
+Todas las pruebas (orientación vertical, modelo Ollama, esquema Pydantic, reconciliación Jaro-Winkler y concurrencia) están verificadas en verde.

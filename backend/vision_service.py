@@ -1,7 +1,11 @@
 """
-Servicio de Visión Artificial Multimodal (OCR Especializado).
-Procesa las dos fotografías (Anverso y Reverso) de la Ficha de Caracterización
-utilizando Google Gemini (Google GenAI), OpenAI GPT-4o o OpenRouter.
+Servicio de Visión Artificial Multimodal (OCR Especializado y Forense).
+Autor: Owen Badel Hooker — Ingeniero de Sistemas / Software Architect.
+
+Procesa las fotografías físicas de Fichas de Caracterización y Evaluaciones Pre/Post Test
+utilizando modelos de visión multimodal en local mediante Ollama (Qwen3-VL / MiniCPM-V)
+acelerados por hardware NVIDIA GPU, con fallback opcional a OpenAI si está configurado.
+Garantiza cero dependencias de servicios externos sujetos a cuotas o bloqueos concurrentes.
 """
 
 from __future__ import annotations
@@ -11,7 +15,6 @@ import re
 import base64
 import logging
 import time
-import threading
 from typing import Tuple, Dict, Any, Optional
 from dotenv import load_dotenv
 
@@ -28,6 +31,10 @@ except (ImportError, ValueError):
 
 load_dotenv()
 
+# ======================================================================
+# PROMPTS CANÓNICOS DE FORENSE OCR (FICHA DE CARACTERIZACIÓN)
+# ======================================================================
+
 SYSTEM_PROMPT = """Eres un sistema experto en transcripción OCR y digitalización forense de fichas físicas oficiales de caracterización ciudadana y juvenil.
 Tu única misión es transcribir con EXACTITUD Y FIDELIDAD VISUAL ABSOLUTA la información de las 2 imágenes adjuntas (Página 1: Anverso y Página 2: Reverso).
 
@@ -39,7 +46,7 @@ Tu única misión es transcribir con EXACTITUD Y FIDELIDAD VISUAL ABSOLUTA la in
    🚨 ESPECIAL ATENCIÓN EN ZONA Y RÉGIMEN: Si el participante dejó en blanco la Zona (ni Rural ni Urbana) o el Régimen (ni Contributivo, ni Subsidiado, ni Ninguno), DEVUELVE OBLIGATORIAMENTE string vacío "". PROHIBIDO inventar o asumir "URBANA" o "CONTRIBUTIVO" si los recuadros están vacíos en el papel.
 3. TODO EN MAYÚSCULAS: Todo el texto debe devolverse en MAYÚSCULAS sin excepción.
 4. DEPENDENCIAS CONDICIONALES ESTRICTAS (PADRE - HIJO):
-   Si la pregunta principal está en "NO" o vacía, la pregunta secundaria dependiente ("¿Cuál?", "Cada cuánto?", "Cuándo fue la última vez") DEBE SER OBLIGATORIAMENTE string vacío "".
+   Si la pregunta principal está en "NO" o vacía, la pregunta secundaria dependiente ("¿Cuál?", "¿Cada cuánto?", "¿Cuándo fue la última vez?") DEBE SER OBLIGATORIAMENTE string vacío "".
 
 ======================================================================
 📍 ORIENTACIÓN ESPACIAL CRÍTICA DE LAS CASILLAS (GEOMETRÍA DEL PAPEL) 📍
@@ -50,169 +57,105 @@ Tu única misión es transcribir con EXACTITUD Y FIDELIDAD VISUAL ABSOLUTA la in
    
         Si [ ]   No [ ]
 
-   ⚠️ REGLA DE LECTURA VISUAL (EXTREMA ATENCIÓN):
-   * PARA MARCAR "SI": El participante coloca la marca (X, visto bueno, punto o raya) en el recuadro que está a la DERECHA de la palabra "Si":
+   ⚠️ REGLA DE LECTURA VISUAL:
+   * PARA MARCAR "SI": El participante coloca la marca en el recuadro que está a la DERECHA de "Si":
         Si [X]   No [ ]   ===> RESPUESTA MARCADA ES "SI"
-     (¡CUIDADO! Este recuadro queda en el medio entre "Si" y "No". NO lo confundas como si fuera casilla de "No"; PERTENECE AL "SI").
+     (¡CUIDADO! Este recuadro queda en el medio entre "Si" y "No". NO lo confundas como si fuera de "No"; PERTENECE AL "SI").
 
-   * PARA MARCAR "NO": El participante coloca la marca en el recuadro que está a la DERECHA de la palabra "No":
+   * PARA MARCAR "NO": El participante coloca la marca en el recuadro que está a la DERECHA de "No":
         Si [ ]   No [X]   ===> RESPUESTA MARCADA ES "NO"
 
-   * Aplica esta regla de recuadro a la DERECHA en todas las preguntas dicotómicas:
-     - ¿Tienes alguna condición de discapacidad? (Si [ ] No [ ])
-     - ¿Tienes antecedentes de alguna enfermedad personal o familiar importante? (Si [ ] No [ ])
-     - ¿Has asistido al médico en el último año? (Si [ ] No [ ])
-     - ¿Fuiste al odontólogo el último año? (Si [ ] No [ ])
-     - ¿Consumes o has consumido cigarrillo o vapeador? (Si [ ] No [ ])
-     - ¿Consumes o has consumido alcohol? (Si [ ] No [ ])
-     - ¿Has consumido alguna sustancia psicoactiva? (Si [ ] No [ ])
-     - ¿Has vivido situaciones de discriminación, rechazo o violencia? (Si [ ] No [ ])
-     - ¿Has recibido información sobre salud sexual, ITS o métodos de prevención? (Si [ ] No [ ])
-     - ¿Has iniciado tu vida sexual? (Si [ ] No [ ])
-     - ¿Conoces algún método anticonceptico? (Si [ ] No [ ])
-     - ¿Has vivido o conoces algún caso cercano de embarazo adolescente? (Si [ ] No [ ])
-     - ¿Te han entregado preservativos en la EPS o institución de salud? (Si [ ] No [ ])
-     - ¿Te gustaria que en tu institución educativa se hicieran mas espacios para dialogar de estos temas? (Si [ ] No [ ])
-
-2. EN LA PREGUNTA 41 DE TEMAS DE INTERÉS ("¿Qué tema te gustaria aprender o entender mejor?"):
+2. EN LA PREGUNTA 41 DE TEMAS DE INTERÉS:
    AQUÍ EL DISEÑO IMPRESO ES INVERSO: El recuadro [ ] está A LA IZQUIERDA del texto:
-   
         [X] VIH   [ ] SIFILIS   [ ] HEPATITIS B Y C   [ ] METODOS ANTICONCEPTIVOS ...
 
-   * La marca [X] corresponde a la opción que tiene a su DERECHA.
-   * Ejemplo: si ves marcado el recuadro que precede a "VIH" ([X] VIH), el participante seleccionó "VIH".
-
 ======================================================================
-📋 MAPA ESTRUCTURAL DE LAS 43 PREGUNTAS POR HOJA FÍSICA
+📋 MAPA ESTRUCTURAL DE LAS 43 PREGUNTAS
 ======================================================================
-
 --- PÁGINA 1: ANVERSO (Preguntas 1 a 23) ---
-1. "NOMBRE COMPLETO DE QUIEN DILIGENCIA LA FICHA": Encuestador oficial responsable. Catálogo cerrado (selecciona exactamente uno):
-   * PAMELA VERGARA
-   * KAREN TORRES
-   * MAURICIO FORTICH
-   * WENDY TAPIAS
-   * GISEL MORENO
-2. "TERRITORIO": Municipio oficial cabecera. Catálogo cerrado (selecciona exactamente uno):
-   * MAHATES
-   * TURBANA
-   * TURBACO
-   * BARRANCO DE LOBA
-   * SAN JACINTO DEL CAUCA
-   * CALAMAR
-   * MORALES
-   * SANTA ROSA DEL SUR
-   * ARENAL
-   * SOPLAVIENTO
+1. "NOMBRE COMPLETO DE QUIEN DILIGENCIA LA FICHA": Encuestador oficial responsable.
+2. "TERRITORIO": Municipio oficial cabecera.
 3. "Nombre completo del participante": Nombre manuscrito legible en la hoja.
-4. "Tipo de documento identidad": Catálogo cerrado: RC, TI, CC, PASAPORTE, PERMISO. (REGLA INVIOLABLE: Si la Edad es menor a 18 años, es SIEMPRE "TI").
-5. "Numero de documento identidad": Dígitos continuos sin puntos, sin espacios ni guiones.
-6. "Edad": Número entero manuscrito (ej: 14, 15, 16).
+4. "Tipo de documento identidad": RC, TI, CC, PASAPORTE, PERMISO.
+5. "Numero de documento identidad": Dígitos continuos sin puntos, ni espacios.
+6. "Edad": Número entero manuscrito.
 7. "Grado escolar": Número con símbolo de grado (ej: 8°, 9°, 10°, 11°).
-8. "Teléfono de contacto": Dígitos continuos sin espacios ni guiones (ej: 3001234567). Si está en blanco, "".
-9. "Dirección de residencia (barrio o vereda)": Dirección, barrio o vereda manuscrito tal como fue escrito por el encuestado (incluyendo palabras como BARRIO, VEREDA, SECTOR, CORREGIMIENTO, CALLE o abreviaturas como B/, VDA.). Ejemplos: "BARRIO EL CARMEN", "VEREDA LA FLORIDA", "SECTOR CENTRO", "CALLE PRINCIPAL". Si está en blanco, "".
-10. "Municipio": Exactamente el mismo valor que "TERRITORIO".
-11. "Zona": Catálogo cerrado: RURAL o URBANA. 🚨 Si ninguna casilla está marcada o está en blanco en el papel, devuelve OBLIGATORIAMENTE "". NUNCA infieras ni asumas URBANA o RURAL por defecto.
-12. "EPS (si tienes)": Catálogo: NUEVA EPS, COOSALUD, MUTUAL SER, SALUD TOTAL, SURA, SANITAS, CONFAORIENTE, PROTEGER, FAMISANAR  u otra escrita en Otros. Si no tiene o está en blanco, "".
-13. "Régimen": Catálogo cerrado: CONTRIBUTIVO, SUBSIDIADO o NINGUNO. 🚨 Si el participante no marcó ninguna opción o está en blanco, devuelve OBLIGATORIAMENTE "". NUNCA supongas ni inventes CONTRIBUTIVO o SUBSIDIADO.
-14. "Sexo con el que te identificas": Catálogo cerrado: FEMENINO o MASCULINO.
-15. "Identidad de género": Catálogo cerrado: HETEROSEXUAL, HOMOSEXUAL, BISEXUAL, TRANSGENERO, LESBIANA.
-16. "¿Perteneces a alguna población o grupo étnico?": Catálogo cerrado: AFROCOLOMBIANO, INDÍGENA, PALENQUERO, VÍCTIMA DEL CONFLICTO, NO.
-17. "¿Tienes alguna condición de discapacidad?": Marca en SI o NO.
-18. "¿Cual?": Tipo de discapacidad manuscrita. Si en la 17 marcó NO o no hay discapacidad escrita, DEBE ser "".
-19. "¿Tienes antecedentes de alguna enfermedad personal o familiar importante?": Marca en SI o NO.
-20. "¿Cual?_1": Tipo de enfermedad manuscrita. Si en la 19 marcó NO o no hay enfermedad escrita, DEBE ser "".
-21. "¿Has asistido al médico en el último año?": Marca en SI o NO.
-22. "¿Cuándo fue la última vez?": Fecha o período de visita al médico. Si en la 21 marcó NO o no hay fecha escrita, DEBE ser "". NUNCA asumas una fecha si está en blanco.
-23. "¿Fuiste al odontólogo el último año?": Marca en SI o NO.
+8. "Teléfono de contacto": Dígitos continuos (ej: 3001234567). Si está en blanco, "".
+9. "Dirección de residencia (barrio o vereda)": Dirección o barrio tal como fue escrito.
+10. "Municipio": Mismo valor que "TERRITORIO".
+11. "Zona": RURAL o URBANA. Si está en blanco, "".
+12. "EPS (si tienes)": Entidad de salud. Si está en blanco, "".
+13. "Régimen": CONTRIBUTIVO, SUBSIDIADO o NINGUNO. Si está en blanco, "".
+14. "Sexo con el que te identificas": FEMENINO o MASCULINO.
+15. "Identidad de género": HETEROSEXUAL, HOMOSEXUAL, BISEXUAL, TRANSGENERO, LESBIANA.
+16. "¿Perteneces a alguna población o grupo étnico?": AFROCOLOMBIANO, INDÍGENA, PALENQUERO, VÍCTIMA DEL CONFLICTO, NO.
+17. "¿Tienes alguna condición de discapacidad?": SI o NO.
+18. "¿Cual?": Tipo de discapacidad si la 17 es SI.
+19. "¿Tienes antecedentes de alguna enfermedad personal o familiar importante?": SI o NO.
+20. "¿Cual?_1": Tipo de enfermedad si la 19 es SI.
+21. "¿Has asistido al médico en el último año?": SI o NO.
+22. "¿Cuándo fue la última vez?": Fecha si la 21 es SI.
+23. "¿Fuiste al odontólogo el último año?": SI o NO.
 
 --- PÁGINA 2: REVERSO (Preguntas 24 a 43) ---
-24. "¿Qué actividades recreativas haces en tu tiempo libre?": Actividades manuscritas descritas por el participante. Si está en blanco, "".
-25. "¿Qué tiempo empleas en esta actividad?": Número seguido de HORAS (ej: "2 HORAS"). Si está en blanco, "".
-26. "¿Consumes o has consumido cigarrillo o vapeador?": Marca en SI o NO.
-27. "Cada cuánto?": Frecuencia de consumo de cigarrillo. Si en la 26 marcó NO o está en blanco, DEBE ser "".
-28. "¿Consumes o has consumido alcohol?": Marca en SI o NO.
-29. "Cada cuánto?_1": Frecuencia de consumo de alcohol. Si en la 28 marcó NO o está en blanco, DEBE ser "".
-30. "¿Has consumido alguna sustancia psicoactiva?": Marca en SI o NO.
-31. "¿Cual?_2": Sustancia manuscrita. Si en la 30 marcó NO o está en blanco, DEBE ser "".
-32. "¿Has vivido situaciones de discriminación, rechazo o violencia?": Marca en SI o NO.
-33. "¿Has recibido información sobre salud sexual, ITS o métodos de prevención?": Marca en SI o NO.
-34. "¿Has iniciado tu vida sexual?": Marca en SI o NO según la casilla física. Solo extrae "SI" si la casilla de SI está marcada o si en la pregunta 35 indicó uso de condón (SIEMPRE o CASI SIEMPRE). NUNCA infieras "SI" si la persona solo nombró o conoce métodos anticonceptivos en las preguntas 36 o 37.
-35. "Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?": Catálogo cerrado: SIEMPRE, CASI SIEMPRE o NUNCA. SOLO si en la 34 marcó SI. Si en la 34 marcó NO, DEBE ser "".
-36. "¿Conoces algún método anticonceptico?": Marca en SI o NO. Si en la 37 escribió un método anticonceptivo, extrae "SI".
-37. "¿Cual?_3": Método anticonceptivo manuscrito. Si el participante nombró el implante subdérmico Jadelle (o escribió YADEL, JADELLE, YADUL, barritas), extrae "YADEL". Si en la 36 marcó NO y no escribió nada, DEBE ser "".
-38. "¿Has vivido o conoces algún caso cercano de embarazo adolescente?": Marca en SI o NO.
-    ⚠️ REGLA CRÍTICA DE LECTURA VISUAL: El diseño impreso es: Si [ ] No [ ].
-    * El recuadro para "SI" está en la mitad, a la derecha de "Si": Si [X] No [ ].
-    * Si ves una marca manuscrita (X, visto bueno ✔, punto o raya) en el recuadro ENTRE "Si" y "No", la respuesta ES OBLIGATORIAMENTE "SI".
-    * NO confundas el recuadro del medio como si perteneciera a "No". Solo extrae "NO" si la marca está en el recuadro final a la derecha de "No": Si [ ] No [X].
-    * No te confundas con la opción de tema de interés de la pregunta 41.
-39. "¿Te han entregado preservativos en la EPS o institución de salud?": Marca en SI o NO.
-    ⚠️ REGLA CRÍTICA DE LECTURA VISUAL: El diseño impreso es: Si [ ] No [ ].
-    * Si hay una marca en el recuadro intermedio (a la derecha de "Si": Si [X] No [ ]), extrae OBLIGATORIAMENTE "SI".
-    * 🚨 ATENCIÓN A FECHA VACÍA: Si el encuestado marcó "SI" en la 39 pero dejó en blanco la pregunta 40 ("¿Cuándo fue la ultima vez?"), MANTÉN "SI" en la 39. En campo la gran mayoría no recuerda la fecha exacta. NUNCA asumas "NO" en la 39 solo porque la 40 esté vacía.
-40. "¿Cuándo fue la ultima vez?": Fecha o período de entrega de preservativos en EPS. Si en la 39 marcó NO o está en blanco, DEBE ser "". NUNCA inventes fechas si no están escritas.
-41. "¿Qué tema te gustaria aprender o entender mejor?": Extrae todas las opciones marcadas en el formulario, separadas OBLIGATORIAMENTE por coma y espacio (", "). Si no marcó ninguna, "".
-    (Opciones posibles: VIH, SIFILIS, HEPATITIS B Y C, METODOS ANTICONCEPTIVOS, USO CORRECTO DEL PRESERVATIVO, PROYECTO DE VIDA, RESPETO POR LAS DIFERENCIAS, PREVENCION DEL EMBARAZO ADOLESCENTE, SALUD MENTAL Y RELACIONES, u Otros escritos).
-42. "¿Te gustaria que en tu institución educativa se hicieran mas espacios para dialogar de estos temas?": Marca en SI o NO.
-    ⚠️ REGLA CRÍTICA DE LECTURA VISUAL: El diseño impreso es: Si [ ] No [ ].
-    * El recuadro para "SI" está en la mitad, a la derecha de "Si": Si [X] No [ ].
-    * Si ves una marca manuscrita (X, visto bueno ✔, punto o raya) en el recuadro ENTRE "Si" y "No", O si el participante escribió una razón, motivo o texto en la pregunta 43 ("¿Por que?"), la respuesta ES OBLIGATORIAMENTE "SI".
-    * NO confundas el recuadro del medio como si perteneciera a "No".
-    * Solo extrae "NO" si la marca está claramente en el recuadro final a la derecha de "No" (Si [ ] No [X]) Y la pregunta 43 está completamente vacía.
-43. "¿Por que?": Motivo manuscrito por el cual le gustaría o no tener espacios de diálogo. Si está en blanco, "".
-
-======================================================================
-FORMATO DE SALIDA:
-Devuelve ÚNICAMENTE un objeto JSON válido con exactamente las 43 claves canónicas sin texto explicativo adicional.
+24. "¿Qué actividades recreativas haces en tu tiempo libre?": Actividades manuscritas.
+25. "¿Qué tiempo empleas en esta actividad?": Horas (ej: "2 HORAS").
+26. "¿Consumes o has consumido cigarrillo o vapeador?": SI o NO.
+27. "Cada cuánto?": Frecuencia si la 26 es SI.
+28. "¿Consumes o has consumido alcohol?": SI o NO.
+29. "Cada cuánto?_1": Frecuencia si la 28 es SI.
+30. "¿Has consumido alguna sustancia psicoactiva?": SI o NO.
+31. "¿Cual?_2": Sustancia si la 30 es SI.
+32. "¿Has vivido situaciones de discriminación, rechazo o violencia?": SI o NO.
+33. "¿Has recibido información sobre salud sexual, ITS o métodos de prevención?": SI o NO.
+34. "¿Has iniciado tu vida sexual?": SI o NO.
+35. "Si respondiste Si ¿Usas condón o preservativo en tus relaciones sexuales?": SIEMPRE, CASI SIEMPRE o NUNCA si la 34 es SI.
+36. "¿Conoces algún método anticonceptico?": SI o NO.
+37. "¿Cual?_3": Método si la 36 es SI (si es implante/jadelle extraer "YADEL").
+38. "¿Has vivido o conoces algún caso cercano de embarazo adolescente?": SI o NO (Si [X] No [ ] = SI).
+39. "¿Te han entregado preservativos en la EPS o institución de salud?": SI o NO (Si [X] No [ ] = SI).
+40. "¿Cuándo fue la ultima vez?": Fecha si la 39 es SI.
+41. "¿Qué tema te gustaria aprender o entender mejor?": Opciones marcadas separadas por coma y espacio.
+42. "¿Te gustaria que en tu institución educativa se hicieran mas espacios para dialogar de estos temas?": SI o NO (Si [X] No [ ] = SI, o si la 43 tiene texto escrito = SI).
+43. "¿Por que?": Motivo manuscrito.
 """
 
 PROMPT_JSON_TEMPLATE = json.dumps({col: "" for col in COLUMNAS_FICHA}, indent=2, ensure_ascii=False)
 
 USER_PROMPT = f"""Analiza minuciosamente el anverso (Página 1) y reverso (Página 2) adjuntos.
 Aplica fidelidad visual estricta y dependencias condicionales (si una casilla está vacía o su pregunta principal es NO, devuelve "").
-⚠️ RECUERDA:
-1. Si 'Zona' o 'Régimen' no tienen ninguna casilla marcada en el papel, déjalos OBLIGATORIAMENTE vacíos (""). Prohibido inventar o asumir "URBANA" o "CONTRIBUTIVO".
-2. En preguntas dicotómicas (38 embarazo adolescente, 39 preservativos EPS, 42 espacios de diálogo), el 'SI' está entre 'Si' y 'No' (Si [X] No [ ] = SI).
-3. Si en la 43 ('¿Por que?') hay justificación escrita, la 42 es categóricamente "SI".
-Devuelve ÚNICAMENTE el JSON con las siguientes 43 claves canónicas:
+Devuelve ÚNICAMENTE un objeto JSON válido con las siguientes 43 claves canónicas:
 {PROMPT_JSON_TEMPLATE}
 """
 
-SYSTEM_PROMPT_TEST = """Eres un sistema experto en transcripción OCR y digitalización forense de evaluaciones físicas oficiales de conocimiento (Pre-Test y Post-Test de Salud Sexual y Reproductiva / ITS - Anexo 4).
+# ======================================================================
+# PROMPTS CANÓNICOS DE EVALUACIONES PRE-TEST Y POST-TEST
+# ======================================================================
+
+SYSTEM_PROMPT_TEST = """Eres un sistema experto en transcripción OCR y digitalización forense de evaluaciones físicas de conocimiento (Pre-Test y Post-Test de Salud Sexual y Reproductiva / ITS - Anexo 4).
 Tu misión es transcribir con EXACTITUD Y FIDELIDAD VISUAL ABSOLUTA la información de la imagen adjunta (1 sola página: formato de evaluación).
 
-======================================================================
-🚨 REGLAS INVIOLABLES DE EXTRACCIÓN Y FIDELIDAD VISUAL 🚨
-======================================================================
-1. CERO ALUCINACIONES: Extrae ÚNICAMENTE lo que esté físicamente marcado con una marca manuscrita (X, visto bueno ✔, raya, sombreado, cruz) o escrito a mano con tinta.
-2. CASILLAS VACÍAS: Si una pregunta no fue marcada o un campo está en blanco, devuelve cadena vacía "". NUNCA adivines ni inventes respuestas.
+1. CERO ALUCINACIONES: Extrae ÚNICAMENTE lo que esté físicamente marcado con una marca manuscrita (X, visto bueno ✔, raya, cruz) o escrito a mano con tinta.
+2. CASILLAS VACÍAS: Si una pregunta no fue marcada o un campo está en blanco, devuelve cadena vacía "".
 3. TODO EN MAYÚSCULAS: Todo el texto debe devolverse en MAYÚSCULAS sin excepción.
 4. TIPO DE EVALUACIÓN:
-   - Examina el título superior del documento:
-     * Si dice "PRE-TEST PARTICIPANTES- ANEXO Nº 4" -> "PRE-TEST"
-     * Si dice "POST TEST PARTICIPANTES- ANEXO Nº 4" o "POST-TEST" -> "POST-TEST"
+   - "PRE-TEST" si el encabezado dice "PRE-TEST".
+   - "POST-TEST" si el encabezado dice "POST-TEST".
 5. DATOS DEL PARTICIPANTE:
-   - NOMBRE: Nombre completo manuscrito tal como se lee.
-   - EDAD: Edad en número entero (ej. 14, 15, 16).
-   - MUNICIPIO: Municipio cabecera (MAHATES, TURBANA, TURBACO, BARRANCO DE LOBA, SAN JACINTO DEL CAUCA, CALAMAR, MORALES, SANTA ROSA DEL SUR, ARENAL, SOPLAVIENTO).
-   - EAPB: Entidad de salud (EPS) escrita (MUTUAL SER, COOSALUD, NUEVA EPS, SALUD TOTAL, SURA, SANITAS, etc.).
+   - NOMBRE: Nombre completo manuscrito.
+   - EDAD: Edad en número entero.
+   - MUNICIPIO: Municipio cabecera.
+   - EAPB: EPS o Entidad prestadora de salud.
 6. PREGUNTAS DICOTÓMICAS (1, 2, 3, 4, 6, 7, 8, 9):
-   El diseño físico tiene casillas: "Verdadero (  )    Falso (  )"
-   - Si la marca manuscrita está dentro o sobre el paréntesis de Verdadero -> "VERDADERO"
-   - Si la marca manuscrita está dentro o sobre el paréntesis de Falso -> "FALSO"
-   - Si ninguna está marcada -> ""
+   - "VERDADERO" si la marca está en Verdadero (  ).
+   - "FALSO" si la marca está en Falso (  ).
+   - Cadena vacía "" si ninguna está marcada.
 7. PREGUNTA 5 ("¿Cuál de las siguientes acciones ayuda a prevenir el VIH?"):
-   El diseño presenta 4 opciones con paréntesis:
-   (  ) Tener información clara sobre salud sexual.
-   (  ) Usar preservativo.
-   (  ) Evitar compartir agujas o elementos cortopunzantes.
-   (  ) Todas las anteriores.
-   - Identifica cuál paréntesis contiene la marca manuscrita:
-     * Si marcó "Todas las anteriores" -> "TODAS LAS ANTERIORES"
-     * Si marcó "Usar preservativo" -> "USAR PRESERVATIVO"
-     * Si marcó "Tener información clara sobre salud sexual" -> "TENER INFORMACIÓN CLARA SOBRE SALUD SEXUAL"
-     * Si marcó "Evitar compartir agujas o elementos cortopunzantes" -> "EVITAR COMPARTIR AGUJAS O ELEMENTOS CORTOPUNZANTES"
+   - "TODAS LAS ANTERIORES"
+   - "USAR PRESERVATIVO"
+   - "TENER INFORMACIÓN CLARA SOBRE SALUD SEXUAL"
+   - "EVITAR COMPARTIR AGUJAS O ELEMENTOS CORTOPUNZANTES"
+   - Cadena vacía "" si ninguna está marcada.
 """
 
 USER_PROMPT_TEST = """Analiza la fotografía adjunta correspondiente al formato físico de evaluación (Pre-Test o Post-Test Anexo 4) y genera un objeto JSON válido con las siguientes claves exactas:
@@ -247,153 +190,94 @@ def _limpiar_bloque_json(texto: str) -> str:
     start = texto.find("{")
     end = texto.rfind("}")
     if start != -1 and end != -1 and end > start:
-        return texto[start:end+1]
+        return texto[start:end + 1]
     return texto
 
 
-def optimizar_imagen_bytes(img_bytes: bytes, max_dim: int = 3200, calidad: int = 95) -> tuple[bytes, str]:
+def optimizar_imagen_bytes(img_bytes: bytes, max_dim: int = 2560, calidad: int = 92) -> tuple[bytes, str]:
     """
-    Preserva MÁXIMA FIDELIDAD VISUAL Y RESOLUCIÓN (Ultra High Quality hasta 3200px, 95% calidad y subsampling 4:4:4).
-    Garantiza que el payload a la IA mantenga nitidez fotográfica absoluta para que los modelos
-    (Gemini 3.1 Flash-Lite, Gemini 2.5 Flash) puedan leer con precisión forense números continuos (teléfonos, cédulas),
-    trazos tenues de bolígrafo y casillas de verificación sin artefactos de compresión.
-    Garantiza orientación vertical: si la foto fue tomada en horizontal, se rota automáticamente 90° a vertical.
+    Optimiza la imagen manteniendo alta resolución y nitidez para el modelo de visión.
+    Garantiza orientación vertical si fue capturada rotada.
     """
     try:
-        import io
         from PIL import Image, ImageOps
+        import io
+
         img = Image.open(io.BytesIO(img_bytes))
+        img = ImageOps.exif_transpose(img)
 
-        # 1. Aplicar orientación EXIF embebida si existe
-        try:
-            img = ImageOps.exif_transpose(img)
-        except Exception:
-            pass
-
-        # 2. Si la foto es horizontal (ancho > alto), rotar 90° en sentido horario para ponerla en vertical
-        fue_rotada = False
+        # Rotar a vertical si el ancho supera el alto
         if img.width > img.height:
-            logger.info(f"Foto horizontal detectada ({img.width}x{img.height}). Orientando automáticamente a vertical...")
-            img = img.transpose(Image.Transpose.ROTATE_270)
-            fue_rotada = True
+            img = img.rotate(270, expand=True)
 
-        w, h = img.size
+        # Redimensionar suavemente si excede max_dim
+        if max(img.width, img.height) > max_dim:
+            img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
 
-        # Si no fue rotada y ya es JPEG de alta calidad (<= 3200px) y peso manejable (<= 10MB), conservar
-        if not fue_rotada and max(w, h) <= max_dim and len(img_bytes) <= 10 * 1024 * 1024 and getattr(img, 'format', '') == 'JPEG':
-            return img_bytes, "image/jpeg"
-
-        if img.mode in ("RGBA", "P", "LA"):
-            img = img.convert("RGB")
-        elif img.mode != "RGB":
+        if img.mode != "RGB":
             img = img.convert("RGB")
 
-        if max(w, h) > max_dim:
-            scale = max_dim / max(w, h)
-            new_w, new_h = max(1, int(w * scale)), max(1, int(h * scale))
-            img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-        out_buf = io.BytesIO()
-        # subsampling=0 (4:4:4) previene el difuminado cromático en trazos finos de bolígrafo
-        img.save(out_buf, format="JPEG", quality=calidad, subsampling=0, optimize=True)
-        return out_buf.getvalue(), "image/jpeg"
+        buffer = io.BytesIO()
+        img.save(buffer, format="JPEG", quality=calidad, optimize=True)
+        return buffer.getvalue(), "image/jpeg"
     except Exception as e:
         logger.warning(f"No se pudo procesar imagen con PIL ({e}), utilizando bytes originales.")
         return img_bytes, "image/jpeg"
 
 
-class PipelineRateLimiter:
-    """
-    Controlador de tasa y espaciado de peticiones para la canalización de visión artificial.
-    Garantiza un límite artificial de envío de al menos cuatro segundos (o GEMINI_MIN_INTERVAL_SECONDS)
-    entre llamadas consecutivas a la API para evitar bloqueos temporales por tasa de peticiones concurrentes (HTTP 429).
-    Es completamente thread-safe mediante un threading.Lock para coordinar hilos concurrentes o ráfagas.
-    """
-
-    def __init__(self, min_interval_seconds: float = 4.0):
-        self.min_interval = float(min_interval_seconds)
-        self._last_call_timestamp: float = 0.0
-        self._lock = threading.Lock()
-
-    def esperar_turno(self) -> float:
-        """
-        Bloquea el hilo hasta asegurar que hayan transcurrido al menos `min_interval` segundos
-        desde la última llamada a la API. Retorna el tiempo esperado en segundos.
-        """
-        with self._lock:
-            ahora = time.time()
-            transcurrido = ahora - self._last_call_timestamp
-            tiempo_espera = self.min_interval - transcurrido
-
-            if tiempo_espera > 0:
-                logger.info(
-                    f"Rate Limiter: Espaciando llamada consecutiva a la API de Visión "
-                    f"(pausa artificial de {tiempo_espera:.2f}s para respetar límite de {self.min_interval:.1f}s)..."
-                )
-                time.sleep(tiempo_espera)
-                esperado = tiempo_espera
-            else:
-                esperado = 0.0
-
-            # Registrar timestamp de inicio de la llamada efectiva
-            self._last_call_timestamp = time.time()
-            return esperado
-
-    def reset(self):
-        """Reinicia la marca temporal (utilidad para tests unitarios)."""
-        with self._lock:
-            self._last_call_timestamp = 0.0
-
-
-# Instancia singleton del limitador para la canalización global de visión
-pipeline_rate_limiter = PipelineRateLimiter(
-    min_interval_seconds=float(os.getenv("GEMINI_MIN_INTERVAL_SECONDS", "4.0"))
-)
-
+# ======================================================================
+# CLASE PRINCIPAL: VISION SERVICE (OLLAMA GPU SOBERANO)
+# ======================================================================
 
 class VisionService:
-    """Controlador de extracción multimodal para fichas físicas."""
+    """Controlador de extracción multimodal forense para fichas físicas y tests."""
 
-    def __init__(self, rate_limiter: Optional[PipelineRateLimiter] = None):
-        self.gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    def __init__(self):
+        self.provider = os.getenv("VISION_PROVIDER", "ollama").lower().strip()
+        self.ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+        self.ollama_model = os.getenv("OLLAMA_MODEL", "qwen3-vl").strip()
         self.openai_api_key = os.getenv("OPENAI_API_KEY", "").strip()
-        provider_env = os.getenv("VISION_PROVIDER", "gemini").lower().strip()
-        # Si el entorno en Render aún tiene 'openrouter' pero no hay clave válida o se configuró Gemini, conmutar a Gemini
-        if provider_env == "openrouter" and self.gemini_api_key and not self.openrouter_api_key:
-            logger.info("Detectado VISION_PROVIDER=openrouter sin API Key; conmutando automáticamente a Gemini.")
-            self.provider = "gemini"
-        else:
-            self.provider = provider_env
-        self.rate_limiter = rate_limiter or pipeline_rate_limiter
+
+        logger.info(
+            f"VisionService inicializado -> Proveedor: '{self.provider}', "
+            f"Modelo Ollama: '{self.ollama_model}', Endpoint: '{self.ollama_base_url}'"
+        )
 
     def _optimizar_imagen(self, img_bytes: bytes, mime_type: str = "image/jpeg") -> tuple[bytes, str]:
-        """Helper para compatibilidad con optimización de imágenes."""
         return optimizar_imagen_bytes(img_bytes)
 
-    def extraer_datos_ficha(self, img_anverso_bytes: bytes, img_reverso_bytes: bytes,
-                            mime_type_1: str = "image/jpeg",
-                            mime_type_2: str = "image/jpeg") -> Dict[str, str]:
+    # -----------------------------------------------------------------
+    # EXTRACCIÓN DE FICHAS DE CARACTERIZACIÓN (2 IMÁGENES)
+    # -----------------------------------------------------------------
+
+    def extraer_datos_ficha(
+        self,
+        img_anverso_bytes: bytes,
+        img_reverso_bytes: bytes,
+        mime_type_1: str = "image/jpeg",
+        mime_type_2: str = "image/jpeg"
+    ) -> Dict[str, str]:
         """
-        Extrae los 43 campos canónicos a partir de los bytes de las dos imágenes.
+        Extrae los 43 campos canónicos a partir de las fotografías del Anverso y Reverso.
+        Aprende automáticamente los datos del participante en el caché local.
         """
         img1_opt, mime1_opt = optimizar_imagen_bytes(img_anverso_bytes)
         img2_opt, mime2_opt = optimizar_imagen_bytes(img_reverso_bytes)
-        logger.info(f"Imágenes optimizadas para IA: Anverso={len(img1_opt)/1024:.1f}KB, Reverso={len(img2_opt)/1024:.1f}KB")
+        logger.info(
+            f"Imágenes de Ficha optimizadas: Anverso={len(img1_opt)/1024:.1f}KB, "
+            f"Reverso={len(img2_opt)/1024:.1f}KB"
+        )
 
         raw_json = None
-        if self.provider == "openai" or (not self.gemini_api_key and self.openai_api_key):
+        if self.provider == "openai" or (self.provider != "ollama" and self.openai_api_key):
             raw_json = self._procesar_con_openai(img1_opt, img2_opt, mime1_opt, mime2_opt)
-        elif self.provider == "openrouter" or (not self.gemini_api_key and self.openrouter_api_key):
-            raw_json = self._procesar_con_openrouter(img1_opt, img2_opt, mime1_opt, mime2_opt)
         else:
             try:
-                raw_json = self._procesar_con_gemini(img1_opt, img2_opt, mime1_opt, mime2_opt)
+                raw_json = self._procesar_con_ollama(img1_opt, img2_opt, mime1_opt, mime2_opt)
             except Exception as e:
                 if self.openai_api_key:
-                    logger.warning(f"Gemini reportó error ({e}). Activando fallback a OpenAI...")
+                    logger.warning(f"Ollama reportó error ({e}). Activando fallback a OpenAI...")
                     raw_json = self._procesar_con_openai(img1_opt, img2_opt, mime1_opt, mime2_opt)
-                elif self.openrouter_api_key:
-                    logger.warning(f"Gemini reportó error ({e}). Activando fallback a OpenRouter...")
-                    raw_json = self._procesar_con_openrouter(img1_opt, img2_opt, mime1_opt, mime2_opt)
                 else:
                     raise
 
@@ -404,182 +288,76 @@ class VisionService:
             raise ValueError(f"La respuesta de la IA no fue un JSON válido: {e}\nRespuesta recibida: {raw_json[:300]}")
 
         ficha = FichaCaracterizacion.model_validate(parsed)
-        return ficha.to_canonical_dict()
+        datos_canonicos = ficha.to_canonical_dict()
 
-    def _procesar_con_gemini(self, img1: bytes, img2: bytes, mime1: str, mime2: str) -> str:
-        """Invoca Google Gemini con temperatura 0.0 determinista para evitar alucinaciones."""
-        if not self.gemini_api_key:
-            raise ValueError("GEMINI_API_KEY no está configurada en las variables de entorno.")
-
-        try:
-            from google import genai
-            from google.genai import types
-
-            client = genai.Client(api_key=self.gemini_api_key)
-            part_1 = types.Part.from_bytes(data=img1, mime_type=mime1)
-            part_2 = types.Part.from_bytes(data=img2, mime_type=mime2)
-
-            primary_model = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
-            candidate_models = [
-                primary_model,
-                "gemini-3.1-flash-lite",
-                "gemini-2.5-flash",
-                "gemini-2.0-flash",
-                "gemini-1.5-flash",
-                "gemini-flash-latest"
-            ]
-            models_to_try = list(dict.fromkeys(candidate_models))
-            prompt_completo = f"{SYSTEM_PROMPT}\n\n{USER_PROMPT}"
-
-            last_err = None
-            for m_name in models_to_try:
-                try:
-                    self.rate_limiter.esperar_turno()
-                    logger.info(f"Enviando fotos a Gemini con modelo '{m_name}' (temperature=0.0)...")
-                    response = client.models.generate_content(
-                        model=m_name,
-                        contents=[prompt_completo, part_1, part_2],
-                        config=types.GenerateContentConfig(
-                            temperature=0.0,
-                            response_mime_type="application/json"
-                        )
-                    )
-                    if response and response.text:
-                        return response.text
-                except Exception as e:
-                    last_err = e
-                    logger.warning(f"Modelo '{m_name}' reportó fallo: {e}. Probando siguiente modelo...")
-                    continue
-
-            if last_err:
-                raise last_err
-        except ImportError:
-            import google.generativeai as legacy_genai
-            legacy_genai.configure(api_key=self.gemini_api_key)
-            model_name = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
-            model = legacy_genai.GenerativeModel(
-                model_name=model_name,
-                generation_config={"temperature": 0.0, "response_mime_type": "application/json"}
+        # Auto-aprendizaje en el caché de participantes (memoria viva de la fábrica)
+        nom = datos_canonicos.get("Nombre completo del participante", "")
+        if nom and len(nom) >= 4:
+            participant_cache.aprender_participante(
+                nombre=nom,
+                edad=datos_canonicos.get("Edad", ""),
+                municipio=datos_canonicos.get("Municipio", "") or datos_canonicos.get("TERRITORIO", ""),
+                eapb=datos_canonicos.get("EPS (si tienes)", ""),
+                documento=datos_canonicos.get("Numero de documento identidad", "")
             )
-            prompt_completo = f"{SYSTEM_PROMPT}\n\n{USER_PROMPT}"
-            contents = [
-                prompt_completo,
-                {"mime_type": mime1, "data": img1},
-                {"mime_type": mime2, "data": img2}
-            ]
-            self.rate_limiter.esperar_turno()
-            response = model.generate_content(contents)
-            return response.text
 
-    def _procesar_con_openai(self, img1: bytes, img2: bytes, mime1: str, mime2: str) -> str:
-        """Invoca OpenAI GPT-4o con temperatura 0.0 determinista."""
-        if not self.openai_api_key:
-            raise ValueError("OPENAI_API_KEY no está configurada en las variables de entorno.")
+        return datos_canonicos
 
-        from openai import OpenAI
-        client = OpenAI(api_key=self.openai_api_key)
+    def _procesar_con_ollama(self, img1: bytes, img2: bytes, mime1: str, mime2: str) -> str:
+        """Invoca la API local de Ollama con formato JSON estricto y temperatura 0.0."""
+        import httpx
         b64_1 = base64.b64encode(img1).decode("utf-8")
         b64_2 = base64.b64encode(img2).decode("utf-8")
 
-        self.rate_limiter.esperar_turno()
-        response = client.chat.completions.create(
-            model=os.getenv("OPENAI_MODEL", "gpt-4o"),
-            temperature=0.0,
-            response_format={"type": "json_object"},
-            messages=[
-                {
-                    "role": "system",
-                    "content": SYSTEM_PROMPT
-                },
+        prompt_completo = f"{SYSTEM_PROMPT}\n\n{USER_PROMPT}"
+        payload = {
+            "model": self.ollama_model,
+            "messages": [
                 {
                     "role": "user",
-                    "content": [
-                        {"type": "text", "text": USER_PROMPT},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:{mime1};base64,{b64_1}"}
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:{mime2};base64,{b64_2}"}
-                        }
-                    ]
+                    "content": prompt_completo,
+                    "images": [b64_1, b64_2]
                 }
-            ]
-        )
-        return response.choices[0].message.content or "{}"
+            ],
+            "format": "json",
+            "options": {
+                "temperature": 0.0,
+                "num_predict": 4096
+            },
+            "stream": False
+        }
 
-    def _procesar_con_openrouter(self, img1: bytes, img2: bytes, mime1: str, mime2: str) -> str:
-        """Invoca OpenRouter API con temperatura 0.0 determinista y cascada de modelos."""
-        if not self.openrouter_api_key:
-            raise ValueError("OPENROUTER_API_KEY no está configurada en las variables de entorno.")
+        endpoint = f"{self.ollama_base_url}/api/chat"
+        logger.info(f"Enviando fotos de Ficha a Ollama ({self.ollama_model}) en {endpoint}...")
 
-        import httpx
-        from openai import OpenAI
-        http_client = httpx.Client(verify=True, timeout=120.0)
-        client = OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=self.openrouter_api_key,
-            http_client=http_client
-        )
-        b64_1 = base64.b64encode(img1).decode("utf-8")
-        b64_2 = base64.b64encode(img2).decode("utf-8")
+        # Intentar con modelo primario y fallback si es necesario
+        modelos_a_probar = [self.ollama_model, "qwen3-vl", "minicpm-v"]
+        modelos_unicos = list(dict.fromkeys(modelos_a_probar))
+        ultimo_error = None
 
-        raw_model = os.getenv("OPENROUTER_MODEL", "google/gemini-2.5-flash").strip()
-        # Lista blanca estricta: solo se admiten modelos oficiales autorizados
-        modelos_autorizados = ("google/gemini-2.5-flash", "openai/gpt-4o-mini", "openai/gpt-4o")
-        primary_model = raw_model if raw_model in modelos_autorizados else "google/gemini-2.5-flash"
-        candidate_models = [
-            primary_model,
-            "google/gemini-2.5-flash",
-            "openai/gpt-4o-mini"
-        ]
-        models_to_try = [m for m in list(dict.fromkeys(candidate_models)) if m in modelos_autorizados]
+        with httpx.Client(timeout=180.0) as client:
+            for mod in modelos_unicos:
+                try:
+                    payload["model"] = mod
+                    resp = client.post(endpoint, json=payload)
+                    if resp.status_code == 200:
+                        contenido = resp.json().get("message", {}).get("content", "{}")
+                        if contenido and contenido.strip():
+                            return contenido
+                    else:
+                        logger.warning(f"Ollama con modelo '{mod}' retornó HTTP {resp.status_code}: {resp.text}")
+                except Exception as ex:
+                    ultimo_error = ex
+                    logger.warning(f"Error invocando modelo '{mod}' en Ollama: {ex}. Probando siguiente...")
 
-        last_err = None
-        for model_name in models_to_try:
-            try:
-                self.rate_limiter.esperar_turno()
-                logger.info(f"Enviando fotos a OpenRouter con modelo '{model_name}' (temperature=0.0)...")
-                response = client.chat.completions.create(
-                    model=model_name,
-                    temperature=0.0,
-                    response_format={"type": "json_object"},
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": SYSTEM_PROMPT
-                        },
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": USER_PROMPT},
-                                {
-                                    "type": "image_url",
-                                    "image_url": {"url": f"data:{mime1};base64,{b64_1}"}
-                                },
-                                {
-                                    "type": "image_url",
-                                    "image_url": {"url": f"data:{mime2};base64,{b64_2}"}
-                                }
-                            ]
-                        }
-                    ]
-                )
-                if response and response.choices and response.choices[0].message.content:
-                    return response.choices[0].message.content
-            except Exception as e:
-                last_err = e
-                logger.warning(f"Fallo en OpenRouter con modelo '{model_name}': {e}. Probando siguiente modelo...")
-                continue
+        if ultimo_error:
+            raise ultimo_error
+        raise RuntimeError("Ollama no pudo generar una respuesta válida para la ficha.")
 
-        if last_err:
-            raise last_err
-        return "{}"
+    # -----------------------------------------------------------------
+    # EXTRACCIÓN DE PRE-TEST Y POST-TEST (1 SOLA FOTOGRAFÍA)
+    # -----------------------------------------------------------------
 
-    # -------------------------------------------------------------
-    # MÉTODOS ESPECIALIZADOS PARA PRE-TEST Y POST-TEST (1 SOLA FOTO)
-    # -------------------------------------------------------------
     def extraer_datos_test(
         self,
         img_bytes: bytes,
@@ -587,44 +365,24 @@ class VisionService:
         tipo_evaluacion_override: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Extrae datos de 1 sola fotografía correspondiente al Pre-Test o Post-Test.
-        Reconcilia automáticamente con participant_cache si existe coincidencia previa.
+        Extrae datos de 1 fotografía correspondiente a Pre-Test o Post-Test.
+        Reconcilia automáticamente con el PATRÓN MAESTRO y el caché de participantes
+        mediante Jaro-Winkler tokenizado para garantizar coincidencia del 100% en:
+        NOMBRE, EDAD, MUNICIPIO y EPS (EAPB).
         """
         img_opt, mime_opt = optimizar_imagen_bytes(img_bytes)
-        logger.info(f"Imagen del test optimizada para IA: {len(img_opt)/1024:.1f}KB ({mime_opt})")
-        raw_json = "{}"
+        logger.info(f"Imagen de Test optimizada: {len(img_opt)/1024:.1f}KB ({mime_opt})")
 
-        if self.provider == "openrouter":
-            try:
-                raw_json = self._procesar_test_con_openrouter(img_opt, mime_opt)
-            except Exception as e:
-                logger.warning(f"OpenRouter reportó error en test ({e}). Activando fallback a Gemini...")
-                if self.gemini_api_key:
-                    raw_json = self._procesar_test_con_gemini(img_opt, mime_opt)
-                elif self.openai_api_key:
-                    raw_json = self._procesar_test_con_openai(img_opt, mime_opt)
-                else:
-                    raise
-        elif self.provider == "openai":
-            try:
-                raw_json = self._procesar_test_con_openai(img_opt, mime_opt)
-            except Exception as e:
-                logger.warning(f"OpenAI reportó error en test ({e}). Activando fallback...")
-                if self.gemini_api_key:
-                    raw_json = self._procesar_test_con_gemini(img_opt, mime_opt)
-                elif self.openrouter_api_key:
-                    raw_json = self._procesar_test_con_openrouter(img_opt, mime_opt)
-                else:
-                    raise
+        raw_json = None
+        if self.provider == "openai" or (self.provider != "ollama" and self.openai_api_key):
+            raw_json = self._procesar_test_con_openai(img_opt, mime_opt)
         else:
             try:
-                raw_json = self._procesar_test_con_gemini(img_opt, mime_opt)
+                raw_json = self._procesar_test_con_ollama(img_opt, mime_opt)
             except Exception as e:
-                logger.warning(f"Gemini reportó error en test ({e}). Activando fallback...")
                 if self.openai_api_key:
+                    logger.warning(f"Ollama reportó error en test ({e}). Activando fallback a OpenAI...")
                     raw_json = self._procesar_test_con_openai(img_opt, mime_opt)
-                elif self.openrouter_api_key:
-                    raw_json = self._procesar_test_con_openrouter(img_opt, mime_opt)
                 else:
                     raise
 
@@ -634,181 +392,138 @@ class VisionService:
         except Exception as e:
             raise ValueError(f"La respuesta de la IA para el test no fue un JSON válido: {e}\nRespuesta: {raw_json[:300]}")
 
-        # Aplicar override manual de tipo de evaluación si fue seleccionado en UI
+        # Aplicar override manual si fue seleccionado explícitamente en el frontend
         if tipo_evaluacion_override and tipo_evaluacion_override.upper() in ["PRE-TEST", "POST-TEST"]:
             parsed["TIPO DE EVALUACIÓN"] = tipo_evaluacion_override.upper()
 
         test_obj = PrePostTest.model_validate(parsed)
         datos = test_obj.to_canonical_dict()
 
-        # Reconciliar con base de datos de participantes si está cargada
+        # ==============================================================
+        # RECONCILIACIÓN ESTRICTA CON PATRÓN MAESTRO (JARO-WINKLER)
+        # ==============================================================
         nombre_extraido = datos.get("NOMBRE", "")
         municipio_extraido = datos.get("MUNICIPIO", "")
         coincidencia = participant_cache.buscar_coincidencia(nombre_extraido, municipio_extraido)
+
         if coincidencia:
-            logger.info(f"Reconciliando test de '{nombre_extraido}' con participante registrado: '{coincidencia['nombre']}'")
+            score = coincidencia.get("score", 1.0)
+            logger.info(
+                f"Reconciliando test: '{nombre_extraido}' -> '{coincidencia['nombre']}' "
+                f"(Score Jaro-Winkler: {score:.3f}). Estandarizando Nombre, Edad, EPS y Municipio."
+            )
+            # Sobrescribir exactamente las columnas compartidas con el Patrón Maestro
             datos["NOMBRE"] = coincidencia["nombre"]
-            if not datos.get("EDAD") and coincidencia.get("edad"):
+            if coincidencia.get("edad"):
                 datos["EDAD"] = coincidencia["edad"]
-            if not datos.get("MUNICIPIO") and coincidencia.get("municipio"):
+            if coincidencia.get("municipio"):
                 datos["MUNICIPIO"] = coincidencia["municipio"]
-            if not datos.get("EAPB (EPS)") and coincidencia.get("eapb"):
+            if coincidencia.get("eapb"):
                 datos["EAPB (EPS)"] = coincidencia["eapb"]
 
         return datos
 
-    def _procesar_test_con_openrouter(self, img: bytes, mime: str) -> str:
-        """Invoca OpenRouter API para procesar la hoja de evaluación del test."""
-        if not self.openrouter_api_key:
-            raise ValueError("OPENROUTER_API_KEY no está configurada.")
-
+    def _procesar_test_con_ollama(self, img: bytes, mime: str) -> str:
+        """Invoca Ollama local para procesar la evaluación física del test."""
         import httpx
-        from openai import OpenAI
-        http_client = httpx.Client(verify=True, timeout=90.0)
-        client = OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=self.openrouter_api_key,
-            http_client=http_client
-        )
         b64 = base64.b64encode(img).decode("utf-8")
-        raw_model = os.getenv("OPENROUTER_MODEL", "google/gemini-2.5-flash").strip()
-        # Lista blanca estricta: solo se admiten modelos oficiales autorizados
-        modelos_autorizados = ("google/gemini-2.5-flash", "openai/gpt-4o-mini", "openai/gpt-4o")
-        primary_model = raw_model if raw_model in modelos_autorizados else "google/gemini-2.5-flash"
-        candidate_models = [
-            primary_model,
-            "google/gemini-2.5-flash",
-            "openai/gpt-4o-mini"
-        ]
-        models_to_try = [m for m in list(dict.fromkeys(candidate_models)) if m in modelos_autorizados]
 
-        last_err = None
-        for model_name in models_to_try:
-            try:
-                self.rate_limiter.esperar_turno()
-                logger.info(f"Enviando test a OpenRouter con modelo '{model_name}'...")
-                response = client.chat.completions.create(
-                    model=model_name,
-                    temperature=0.0,
-                    response_format={"type": "json_object"},
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": SYSTEM_PROMPT_TEST
-                        },
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": USER_PROMPT_TEST},
-                                {
-                                    "type": "image_url",
-                                    "image_url": {"url": f"data:{mime};base64,{b64}"}
-                                }
-                            ]
-                        }
-                    ]
-                )
-                if response and response.choices and response.choices[0].message.content:
-                    return response.choices[0].message.content
-            except Exception as e:
-                last_err = e
-                logger.warning(f"Fallo en OpenRouter (test) con '{model_name}': {e}. Probando siguiente...")
-                continue
+        prompt_completo = f"{SYSTEM_PROMPT_TEST}\n\n{USER_PROMPT_TEST}"
+        payload = {
+            "model": self.ollama_model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt_completo,
+                    "images": [b64]
+                }
+            ],
+            "format": "json",
+            "options": {
+                "temperature": 0.0,
+                "num_predict": 2048
+            },
+            "stream": False
+        }
 
-        if last_err:
-            raise last_err
-        return "{}"
+        endpoint = f"{self.ollama_base_url}/api/chat"
+        logger.info(f"Enviando test a Ollama ({self.ollama_model}) en {endpoint}...")
 
-    def _procesar_test_con_gemini(self, img: bytes, mime: str) -> str:
-        """Invoca Google Gemini para procesar la hoja de evaluación del test."""
-        if not self.gemini_api_key:
-            raise ValueError("GEMINI_API_KEY no está configurada.")
+        modelos_a_probar = [self.ollama_model, "qwen3-vl", "minicpm-v"]
+        modelos_unicos = list(dict.fromkeys(modelos_a_probar))
+        ultimo_error = None
 
-        try:
-            from google import genai
-            from google.genai import types
-
-            client = genai.Client(api_key=self.gemini_api_key)
-            part = types.Part.from_bytes(data=img, mime_type=mime)
-
-            primary_model = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
-            candidate_models = [
-                primary_model,
-                "gemini-3.1-flash-lite",
-                "gemini-2.5-flash",
-                "gemini-2.0-flash",
-                "gemini-1.5-flash"
-            ]
-            models_to_try = list(dict.fromkeys(candidate_models))
-            prompt_completo = f"{SYSTEM_PROMPT_TEST}\n\n{USER_PROMPT_TEST}"
-
-            last_err = None
-            for m_name in models_to_try:
+        with httpx.Client(timeout=180.0) as client:
+            for mod in modelos_unicos:
                 try:
-                    self.rate_limiter.esperar_turno()
-                    logger.info(f"Enviando test a Gemini con modelo '{m_name}'...")
-                    response = client.models.generate_content(
-                        model=m_name,
-                        contents=[prompt_completo, part],
-                        config=types.GenerateContentConfig(
-                            temperature=0.0,
-                            response_mime_type="application/json"
-                        )
-                    )
-                    if response and response.text:
-                        return response.text
-                except Exception as e:
-                    last_err = e
-                    logger.warning(f"Modelo '{m_name}' reportó fallo en test: {e}. Probando siguiente...")
-                    continue
+                    payload["model"] = mod
+                    resp = client.post(endpoint, json=payload)
+                    if resp.status_code == 200:
+                        contenido = resp.json().get("message", {}).get("content", "{}")
+                        if contenido and contenido.strip():
+                            return contenido
+                    else:
+                        logger.warning(f"Ollama test con modelo '{mod}' retornó HTTP {resp.status_code}: {resp.text}")
+                except Exception as ex:
+                    ultimo_error = ex
+                    logger.warning(f"Error en Ollama test con modelo '{mod}': {ex}. Probando siguiente...")
 
-            if last_err:
-                raise last_err
-        except ImportError:
-            import google.generativeai as legacy_genai
-            legacy_genai.configure(api_key=self.gemini_api_key)
-            model_name = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
-            model = legacy_genai.GenerativeModel(
-                model_name=model_name,
-                generation_config={"temperature": 0.0, "response_mime_type": "application/json"}
-            )
-            prompt_completo = f"{SYSTEM_PROMPT_TEST}\n\n{USER_PROMPT_TEST}"
-            contents = [
-                prompt_completo,
-                {"mime_type": mime, "data": img}
+        if ultimo_error:
+            raise ultimo_error
+        raise RuntimeError("Ollama no pudo generar una respuesta válida para el test.")
+
+    # -----------------------------------------------------------------
+    # MÉTODOS DE FALLBACK SECUNDARIO (OPENAI SI TIENE API KEY)
+    # -----------------------------------------------------------------
+
+    def _procesar_con_openai(self, img1: bytes, img2: bytes, mime1: str, mime2: str) -> str:
+        """Fallback opcional con OpenAI si está configurado en el entorno."""
+        if not self.openai_api_key:
+            raise ValueError("OPENAI_API_KEY no está configurada para fallback.")
+
+        from openai import OpenAI
+        client = OpenAI(api_key=self.openai_api_key)
+        b64_1 = base64.b64encode(img1).decode("utf-8")
+        b64_2 = base64.b64encode(img2).decode("utf-8")
+
+        response = client.chat.completions.create(
+            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            temperature=0.0,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": USER_PROMPT},
+                        {"type": "image_url", "image_url": {"url": f"data:{mime1};base64,{b64_1}"}},
+                        {"type": "image_url", "image_url": {"url": f"data:{mime2};base64,{b64_2}"}}
+                    ]
+                }
             ]
-            self.rate_limiter.esperar_turno()
-            response = model.generate_content(contents)
-            return response.text
-        return "{}"
+        )
+        return response.choices[0].message.content or "{}"
 
     def _procesar_test_con_openai(self, img: bytes, mime: str) -> str:
-        """Invoca OpenAI GPT-4o para procesar la hoja de evaluación del test."""
+        """Fallback opcional de OpenAI para test."""
         if not self.openai_api_key:
-            raise ValueError("OPENAI_API_KEY no está configurada.")
+            raise ValueError("OPENAI_API_KEY no está configurada para fallback.")
 
         from openai import OpenAI
         client = OpenAI(api_key=self.openai_api_key)
         b64 = base64.b64encode(img).decode("utf-8")
 
-        self.rate_limiter.esperar_turno()
         response = client.chat.completions.create(
-            model=os.getenv("OPENAI_MODEL", "gpt-4o"),
+            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
             temperature=0.0,
             response_format={"type": "json_object"},
             messages=[
-                {
-                    "role": "system",
-                    "content": SYSTEM_PROMPT_TEST
-                },
+                {"role": "system", "content": SYSTEM_PROMPT_TEST},
                 {
                     "role": "user",
                     "content": [
                         {"type": "text", "text": USER_PROMPT_TEST},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:{mime};base64,{b64}"}
-                        }
+                        {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}}
                     ]
                 }
             ]

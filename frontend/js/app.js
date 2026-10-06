@@ -1024,20 +1024,32 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // -------------------------------------------------------------
-  // CONSULTA DE RESUMEN DE PARTICIPANTES EN CACHÉ
+  // CONSULTA DE RESUMEN DE PARTICIPANTES EN CACHÉ Y ESTADO OLLAMA
   // -------------------------------------------------------------
   async function cargarResumenParticipantes() {
     try {
       if (!navigator.onLine) return;
-      const res = await fetch('/api/participants');
+      const res = await fetch('/api/health');
       if (res.ok) {
-        const data = await res.json();
-        console.log(`[Participantes] Caché sincronizado: ${data.total || 0} registros disponibles.`);
+        const h = await res.json();
+        const maestroCount = h.patron_maestro_participantes || 0;
+        const modelo = h.ollama_model || 'qwen3-vl';
+        if (netStatusText && h.ollama_online) {
+          netStatusText.textContent = `Ollama GPU (${maestroCount})`;
+          netStatusText.title = `Motor: Ollama ${modelo} | Patrón Maestro: ${maestroCount} registros`;
+        }
+        if (brandSubtitle) {
+          brandSubtitle.textContent = `Ollama ${modelo} • ${maestroCount} Maestros`;
+        }
       }
     } catch (err) {
       console.warn('No se pudo consultar el catálogo de participantes:', err);
     }
   }
+
+  // Llamar al inicio
+  cargarResumenParticipantes();
+
 
   // -------------------------------------------------------------
   // MODAL DE PROCESAMIENTO

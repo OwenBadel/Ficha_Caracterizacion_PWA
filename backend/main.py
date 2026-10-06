@@ -66,27 +66,167 @@ vision_service = VisionService()
 sheets_service = GoogleSheetsService()
 
 
+@app.on_event("startup")
+async def startup_event():
+    """Inicialización desatendida y sincronización del Patrón Maestro."""
+    sheet_id = os.getenv("GOOGLE_SHEET_ID", "").strip()
+    if sheet_id:
+        try:
+            logger.info(f"Auto-sincronizando PATRON MAESTRO desde Google Sheet ID: {sheet_id}...")
+            total = participant_cache.sincronizar_desde_google_sheets(sheet_id)
+            logger.info(f"PATRON MAESTRO cargado en arranque: {total} registros.")
+        except Exception as e:
+            logger.warning(f"No se pudo sincronizar automáticamente con Google Sheets al arrancar: {e}")
+
+    # Verificar si existe archivo local patron_maestro en el proyecto
+    for candidata in [
+        PROJECT_DIR / "patron_maestro.xlsx",
+        PROJECT_DIR / "patron_maestro.csv",
+        PROJECT_DIR / "backend" / "patron_maestro.xlsx",
+        PROJECT_DIR / "backend" / "patron_maestro.csv",
+    ]:
+        if candidata.exists() and participant_cache.contar() == 0:
+            try:
+                cargados = participant_cache.sincronizar_desde_archivo_local(candidata)
+                logger.info(f"PATRON MAESTRO cargado desde archivo local '{candidata.name}': {cargados} registros.")
+                break
+            except Exception as e:
+                logger.warning(f"Error cargando archivo local '{candidata.name}': {e}")
+
+
 @app.api_route("/api/health", methods=["GET", "HEAD"])
 def health_check() -> Dict[str, Any]:
-    """Verifica el estado del sistema, proveedores de IA y conexión a Google Sheets."""
-    gemini_ok = bool(vision_service.gemini_api_key)
+    """Verifica el estado del sistema, motor Ollama GPU, y conexión a Google Sheets."""
     openai_ok = bool(vision_service.openai_api_key)
-    openrouter_ok = bool(vision_service.openrouter_api_key)
     sheets_ok = bool(sheets_service._gspread_client or sheets_service.webhook_url or sheets_service.webhook_url_tests)
+
+    # Comprobar si Ollama responde localmente
+    ollama_ok = False
+    try:
+        import urllib.request
+        req = urllib.request.Request(f"{vision_service.ollama_base_url}/api/tags", headers={"User-Agent": "HealthCheck"})
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            ollama_ok = (resp.status == 200)
+    except Exception:
+        ollama_ok = False
 
     return {
         "status": "online",
-        "service": "Ficha Caracterización & Pre/Post Test OCR",
+        "service": "Ficha Caracterización & Pre/Post Test OCR (Soberano)",
         "vision_provider": vision_service.provider,
-        "gemini_configured": gemini_ok,
+        "ollama_model": vision_service.ollama_model,
+        "ollama_online": ollama_ok,
         "openai_configured": openai_ok,
-        "openrouter_configured": openrouter_ok,
         "sheets_configured": sheets_ok,
         "sheets_method": "gspread_api" if sheets_service._gspread_client else ("webhook" if sheets_service.webhook_url else "none"),
         "columnas_ficha_count": len(COLUMNAS_FICHA),
         "columnas_test_count": len(COLUMNAS_TEST),
-        "participantes_en_cache": participant_cache.contar()
+        "patron_maestro_participantes": participant_cache.contar()
     }
+
+
+# =====================================================================
+# ENDPOINTS PARA PATRÓN MAESTRO Y COINCIDENCIA JARO-WINKLER
+# =====================================================================
+
+@app.get("/api/participants")
+@app.get("/api/participants/summary")
+def get_participants_summary() -> Dict[str, Any]:
+    """Retorna el conteo y resumen territorial del Patrón Maestro."""
+    return {
+        "status": "online",
+        "total": participant_cache.contar(),
+        "data": participant_cache.obtener_resumen(limit=50)
+    }
+
+
+@app.post("/api/participants/sync-master")
+async def sync_master_pattern(
+    sheet_id: Optional[str] = Form(None),
+    tab_name: Optional[str] = Form("PATRON MAESTRO"),
+    file: Optional[UploadFile] = File(None)
+) -> Dict[str, Any]:
+    """
+    Sincroniza la base canónica del PATRÓN MAESTRO.
+    Permite subir un archivo Excel/CSV o proporcionar un Google Sheet ID.
+    """
+    try:
+        total_cargados = 0
+
+        # Caso 1: Archivo subido directamente
+        if file and file.filename:
+            contenido = await file.read()
+            sufijo = Path(file.filename).suffix.lower()
+            if sufijo == ".csv":
+                total_cargados = participant_cache.sincronizar_desde_csv_texto(contenido.decode("utf-8", errors="replace"))
+            elif sufijo in [".xlsx", ".xls"]:
+                # Guardar temporalmente para parsear con pandas
+                import tempfile
+                with tempfile.NamedTemporaryFile(suffix=sufijo, delete=False) as tmp:
+                    tmp.write(contenido)
+                    tmp_path = Path(tmp.name)
+                try:
+                    total_cargados = participant_cache.sincronizar_desde_archivo_local(tmp_path)
+                finally:
+                    if tmp_path.exists():
+                        tmp_path.unlink()
+            else:
+                raise HTTPException(status_code=400, detail="Formato de archivo no soportado. Debe ser .csv o .xlsx")
+
+        # Caso 2: Google Sheet ID
+        else:
+            id_hoja = (sheet_id or os.getenv("GOOGLE_SHEET_ID", "")).strip()
+            if not id_hoja:
+                # Intentar buscar archivo local por defecto
+                encontrado = False
+                for c in [PROJECT_DIR / "patron_maestro.xlsx", PROJECT_DIR / "patron_maestro.csv"]:
+                    if c.exists():
+                        total_cargados = participant_cache.sincronizar_desde_archivo_local(c)
+                        encontrado = True
+                        break
+                if not encontrado:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Debe proporcionar un 'sheet_id' de Google Sheets o subir un archivo Excel/CSV."
+                    )
+            else:
+                total_cargados = await run_in_threadpool(
+                    participant_cache.sincronizar_desde_google_sheets,
+                    sheet_id=id_hoja,
+                    tab_name=tab_name or "PATRON MAESTRO"
+                )
+
+        return {
+            "success": True,
+            "message": f"PATRÓN MAESTRO sincronizado exitosamente con {total_cargados} registros.",
+            "total_participantes": participant_cache.contar()
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error sincronizando PATRON MAESTRO: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error sincronizando PATRON MAESTRO: {str(e)}")
+
+
+@app.post("/api/participants/test-match")
+def test_participant_match(payload: Dict[str, str]) -> Dict[str, Any]:
+    """Prueba la reconciliación Jaro-Winkler tokenizada para un nombre y municipio dado."""
+    nombre = payload.get("nombre", "")
+    municipio = payload.get("municipio", "")
+    coincidencia = participant_cache.buscar_coincidencia(nombre, municipio)
+    if coincidencia:
+        return {
+            "match_found": True,
+            "query": {"nombre": nombre, "municipio": municipio},
+            "reconciliado": coincidencia
+        }
+    return {
+        "match_found": False,
+        "query": {"nombre": nombre, "municipio": municipio},
+        "message": "No se encontró coincidencia que supere el umbral Jaro-Winkler."
+    }
+
 
 
 @app.get("/api/columns")

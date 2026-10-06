@@ -3,6 +3,10 @@
 credentials.json
 *.key
 *.pem
+patron_maestro.xlsx
+patron_maestro.csv
+*.tmp
+
 
 # Python y caché
 __pycache__/
