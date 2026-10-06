@@ -132,6 +132,8 @@ class GoogleSheetsService:
                 payload = {
                     "tipo": tipo_registro,
                     "tab": tab_name,
+                    "sheet_name": tab_name,
+                    "hoja": tab_name,
                     "headers": headers,
                     "row": fila,
                     "data": dict(zip(headers, fila))
@@ -165,32 +167,52 @@ class GoogleSheetsService:
     def insertar_encuesta(self, valores_ordenados: List[str]) -> Dict[str, Any]:
         """
         Inserta una fila con los valores ordenados de la encuesta.
-        Retorna dict con status y detalles.
+        Pestaña por defecto: 'Respuestas de formulario 1' o la configurada en GOOGLE_SHEET_TAB.
         """
         valores_upper = [str(v or "").strip().upper() for v in valores_ordenados]
         fila_final = ([""] + valores_upper) if self.skip_first_col else valores_upper
         headers_final = (["Marca temporal"] + COLUMNAS_FICHA) if self.skip_first_col else COLUMNAS_FICHA
+        tab_destino = self.sheet_tab if self.sheet_tab and self.sheet_tab != "Respuestas" else "Respuestas de formulario 1"
+
         return self._ejecutar_insercion(
-            tab_name=self.sheet_tab,
+            tab_name=tab_destino,
             headers=headers_final,
             fila=fila_final,
             webhook_url=self.webhook_url,
             tipo_registro="ficha"
         )
 
-    def insertar_test(self, valores_ordenados: List[str]) -> Dict[str, Any]:
+    def insertar_test(
+        self,
+        valores_ordenados: List[str],
+        tipo_evaluacion: Optional[str] = None
+    ) -> Dict[str, Any]:
         """
         Inserta una fila con los 14 valores ordenados de Pre/Post Test (+ Marca temporal).
-        Retorna dict con status y detalles.
+        Enruta automáticamente a la pestaña 'PRE-TEST' o 'POST-TEST' según la selección en interfaz
+        o la lectura forense de la IA.
         """
         valores_upper = [str(v or "").strip().upper() for v in valores_ordenados]
         timestamp_str = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         fila_final = [timestamp_str] + valores_upper
+
+        # Determinar pestaña exacta: PRE-TEST o POST-TEST
+        tipo_candidato = (tipo_evaluacion or (valores_upper[0] if valores_upper else "")).strip().upper()
+        if "POST" in tipo_candidato:
+            tab_destino = "POST-TEST"
+            tipo_reg = "post_test"
+        else:
+            tab_destino = "PRE-TEST"
+            tipo_reg = "pre_test"
+
         url_destino = self.webhook_url_tests or self.webhook_url
+        logger.info(f"Enrutando test hacia Google Sheets -> Pestaña: '{tab_destino}' (Tipo: {tipo_reg})")
+
         return self._ejecutar_insercion(
-            tab_name=self.sheet_tab_tests,
+            tab_name=tab_destino,
             headers=ENCABEZADOS_TEST_SHEETS,
             fila=fila_final,
             webhook_url=url_destino,
-            tipo_registro="pre_post_test"
+            tipo_registro=tipo_reg
         )
+

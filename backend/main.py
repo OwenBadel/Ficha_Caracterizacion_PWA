@@ -416,8 +416,12 @@ async def process_test(
         )
 
         # 2. Inserción en Google Sheets (Offloaded a threadpool)
-        logger.info("Enviando fila de test estructurada a Google Sheets...")
-        sheets_result = await run_in_threadpool(sheets_service.insertar_test, fila_ordenada)
+        logger.info(f"Enviando fila de test estructurada a Google Sheets (Pestaña: '{test_obj.tipo_evaluacion}')...")
+        sheets_result = await run_in_threadpool(
+            sheets_service.insertar_test,
+            valores_ordenados=fila_ordenada,
+            tipo_evaluacion=test_obj.tipo_evaluacion
+        )
 
         return {
             "success": True,

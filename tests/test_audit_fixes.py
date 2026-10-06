@@ -135,6 +135,34 @@ def test_sheets_service_tab_cache():
     assert isinstance(service._tabs_inicializados, set)
 
 
+def test_sheets_service_pre_and_post_test_tab_routing():
+    """Verifica que insertar_test dirija a 'PRE-TEST' y 'POST-TEST' respectivamente."""
+    service = GoogleSheetsService()
+    llamadas = []
+    service._ejecutar_insercion = lambda tab_name, headers, fila, webhook_url, tipo_registro: llamadas.append((tab_name, tipo_registro))
+
+    # Prueba 1: Pre-Test explícito
+    fila_pre = ["PRE-TEST", "MICHAEL PEREZ", "15", "MAHATES", "MUTUAL SER"] + ["VERDADERO"] * 9
+    service.insertar_test(fila_pre, tipo_evaluacion="PRE-TEST")
+    assert llamadas[-1] == ("PRE-TEST", "pre_test")
+
+    # Prueba 2: Post-Test explícito
+    fila_post = ["POST-TEST", "MICHAEL PEREZ", "15", "MAHATES", "MUTUAL SER"] + ["VERDADERO"] * 9
+    service.insertar_test(fila_post, tipo_evaluacion="POST-TEST")
+    assert llamadas[-1] == ("POST-TEST", "post_test")
+
+    # Prueba 3: Post-Test deducido por valor en fila sin override
+    llamadas.clear()
+    service.insertar_test(fila_post, tipo_evaluacion=None)
+    assert llamadas[-1] == ("POST-TEST", "post_test")
+
+    # Prueba 4: Ficha de Caracterización -> Respuestas de formulario 1
+    fila_ficha = ["VALOR"] * 43
+    service.insertar_encuesta(fila_ficha)
+    assert llamadas[-1][0] == "Respuestas de formulario 1"
+
+
+
 def test_vision_service_ssl_security():
     """Verifica que ningún cliente HTTP en vision_service desactive la verificación SSL."""
     vision_file = Path(__file__).resolve().parent.parent / "backend" / "vision_service.py"
