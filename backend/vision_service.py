@@ -15,6 +15,7 @@ import re
 import base64
 import logging
 import time
+import threading
 from typing import Tuple, Dict, Any, Optional
 from dotenv import load_dotenv
 
@@ -278,21 +279,62 @@ def optimizar_imagen_bytes(img_bytes: bytes, max_dim: int = 1280, calidad: int =
 
 
 # ======================================================================
-# CLASE PRINCIPAL: VISION SERVICE (OLLAMA GPU SOBERANO)
+# CONTROLADOR DE RANGO DE VELOCIDAD THREAD-SAFE (RATE LIMITER)
+# ======================================================================
+
+class PipelineRateLimiter:
+    """Controlador thread-safe de intervalo mínimo entre llamadas a Gemini API."""
+    def __init__(self, min_interval_seconds: float = 2.0):
+        self.min_interval = min_interval_seconds
+        self._last_call_timestamp = 0.0
+        self._lock = threading.Lock()
+
+    def esperar_turno(self) -> float:
+        with self._lock:
+            ahora = time.time()
+            transcurrido = ahora - self._last_call_timestamp
+            if transcurrido < self.min_interval:
+                tiempo_espera = self.min_interval - transcurrido
+                logger.info(
+                    f"PipelineRateLimiter: espaciando llamada a Gemini API "
+                    f"({tiempo_espera:.2f}s para respetar límite de {self.min_interval:.1f}s)..."
+                )
+                time.sleep(tiempo_espera)
+                esperado = tiempo_espera
+            else:
+                esperado = 0.0
+
+            self._last_call_timestamp = time.time()
+            return esperado
+
+    def reset(self):
+        with self._lock:
+            self._last_call_timestamp = 0.0
+
+pipeline_rate_limiter = PipelineRateLimiter(
+    min_interval_seconds=float(os.getenv("GEMINI_MIN_INTERVAL_SECONDS", "2.0"))
+)
+
+
+# ======================================================================
+# CLASE PRINCIPAL: VISION SERVICE (GEMINI DE ALTA PRECISIÓN + OLLAMA)
 # ======================================================================
 
 class VisionService:
     """Controlador de extracción multimodal forense para fichas físicas y tests."""
 
-    def __init__(self):
-        self.provider = os.getenv("VISION_PROVIDER", "ollama").lower().strip()
+    def __init__(self, rate_limiter: Optional[PipelineRateLimiter] = None):
+        self.provider = os.getenv("VISION_PROVIDER", "gemini").lower().strip()
+        self.gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
         self.ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
         self.ollama_model = os.getenv("OLLAMA_MODEL", "qwen3-vl").strip()
         self.openai_api_key = os.getenv("OPENAI_API_KEY", "").strip()
+        self.rate_limiter = rate_limiter or pipeline_rate_limiter
 
         logger.info(
             f"VisionService inicializado -> Proveedor: '{self.provider}', "
-            f"Modelo Ollama: '{self.ollama_model}', Endpoint: '{self.ollama_base_url}'"
+            f"Gemini configurado: {bool(self.gemini_api_key)}, "
+            f"Modelo Ollama: '{self.ollama_model}'"
         )
 
     def _optimizar_imagen(self, img_bytes: bytes, mime_type: str = "image/jpeg") -> tuple[bytes, str]:
@@ -321,15 +363,21 @@ class VisionService:
         )
 
         raw_json = None
-        if self.provider == "openai" or (self.provider != "ollama" and self.openai_api_key):
+        if self.provider == "gemini" or (self.provider != "openai" and self.provider != "ollama" and self.gemini_api_key):
+            try:
+                raw_json = self._procesar_con_gemini(img1_opt, img2_opt, mime1_opt, mime2_opt)
+            except Exception as e:
+                logger.warning(f"Gemini reportó error ({e}). Activando fallback a Ollama local...")
+                raw_json = self._procesar_con_ollama(img1_opt, img2_opt, mime1_opt, mime2_opt)
+        elif self.provider == "openai" or (self.provider != "ollama" and self.openai_api_key):
             raw_json = self._procesar_con_openai(img1_opt, img2_opt, mime1_opt, mime2_opt)
         else:
             try:
                 raw_json = self._procesar_con_ollama(img1_opt, img2_opt, mime1_opt, mime2_opt)
             except Exception as e:
-                if self.openai_api_key:
-                    logger.warning(f"Ollama reportó error ({e}). Activando fallback a OpenAI...")
-                    raw_json = self._procesar_con_openai(img1_opt, img2_opt, mime1_opt, mime2_opt)
+                if self.gemini_api_key:
+                    logger.warning(f"Ollama reportó error ({e}). Activando fallback a Gemini...")
+                    raw_json = self._procesar_con_gemini(img1_opt, img2_opt, mime1_opt, mime2_opt)
                 else:
                     raise
 
@@ -425,15 +473,21 @@ class VisionService:
         logger.info(f"Imagen de Test optimizada: {len(img_opt)/1024:.1f}KB ({mime_opt})")
 
         raw_json = None
-        if self.provider == "openai" or (self.provider != "ollama" and self.openai_api_key):
+        if self.provider == "gemini" or (self.provider != "openai" and self.provider != "ollama" and self.gemini_api_key):
+            try:
+                raw_json = self._procesar_test_con_gemini(img_opt, mime_opt)
+            except Exception as e:
+                logger.warning(f"Gemini reportó error en test ({e}). Activando fallback a Ollama local...")
+                raw_json = self._procesar_test_con_ollama(img_opt, mime_opt)
+        elif self.provider == "openai" or (self.provider != "ollama" and self.openai_api_key):
             raw_json = self._procesar_test_con_openai(img_opt, mime_opt)
         else:
             try:
                 raw_json = self._procesar_test_con_ollama(img_opt, mime_opt)
             except Exception as e:
-                if self.openai_api_key:
-                    logger.warning(f"Ollama reportó error en test ({e}). Activando fallback a OpenAI...")
-                    raw_json = self._procesar_test_con_openai(img_opt, mime_opt)
+                if self.gemini_api_key:
+                    logger.warning(f"Ollama reportó error en test ({e}). Activando fallback a Gemini...")
+                    raw_json = self._procesar_test_con_gemini(img_opt, mime_opt)
                 else:
                     raise
 
@@ -529,6 +583,140 @@ class VisionService:
         if ultimo_error:
             raise ultimo_error
         raise RuntimeError("Ollama no pudo generar una respuesta válida para el test.")
+
+    # -----------------------------------------------------------------
+    # MÉTODOS DE EXTRACCIÓN CON GOOGLE GEMINI (ALTA PRECISIÓN VISUAL)
+    # -----------------------------------------------------------------
+
+    def _procesar_con_gemini(self, img1: bytes, img2: bytes, mime1: str, mime2: str) -> str:
+        """Invoca Google Gemini con temperatura 0.0 determinista para digitalizar la ficha."""
+        if not self.gemini_api_key:
+            raise ValueError("GEMINI_API_KEY no está configurada en las variables de entorno.")
+
+        try:
+            from google import genai
+            from google.genai import types
+
+            client = genai.Client(api_key=self.gemini_api_key)
+            part_1 = types.Part.from_bytes(data=img1, mime_type=mime1)
+            part_2 = types.Part.from_bytes(data=img2, mime_type=mime2)
+
+            primary_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
+            candidate_models = [
+                primary_model,
+                "gemini-3.5-flash-lite",
+                "gemini-3.1-flash-lite",
+                "gemini-3.8-flash",
+                "gemini-2.5-flash"
+            ]
+            models_to_try = list(dict.fromkeys(candidate_models))
+            prompt_completo = f"{SYSTEM_PROMPT}\n\n{USER_PROMPT}"
+
+            last_err = None
+            for m_name in models_to_try:
+                try:
+                    self.rate_limiter.esperar_turno()
+                    logger.info(f"Enviando fotos de Ficha a Gemini con modelo '{m_name}' (temperature=0.0)...")
+                    response = client.models.generate_content(
+                        model=m_name,
+                        contents=[prompt_completo, part_1, part_2],
+                        config=types.GenerateContentConfig(
+                            temperature=0.0,
+                            response_mime_type="application/json"
+                        )
+                    )
+                    if response and response.text:
+                        return response.text
+                except Exception as e:
+                    last_err = e
+                    logger.warning(f"Modelo Gemini '{m_name}' reportó fallo: {e}. Probando siguiente modelo...")
+                    continue
+
+            if last_err:
+                raise last_err
+        except ImportError:
+            import google.generativeai as legacy_genai
+            legacy_genai.configure(api_key=self.gemini_api_key)
+            model_name = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
+            model = legacy_genai.GenerativeModel(
+                model_name=model_name,
+                generation_config={"temperature": 0.0, "response_mime_type": "application/json"}
+            )
+            prompt_completo = f"{SYSTEM_PROMPT}\n\n{USER_PROMPT}"
+            contents = [
+                prompt_completo,
+                {"mime_type": mime1, "data": img1},
+                {"mime_type": mime2, "data": img2}
+            ]
+            self.rate_limiter.esperar_turno()
+            response = model.generate_content(contents)
+            return response.text
+
+        return "{}"
+
+    def _procesar_test_con_gemini(self, img: bytes, mime: str) -> str:
+        """Invoca Google Gemini para procesar la evaluación física del test con 100% fidelidad visual."""
+        if not self.gemini_api_key:
+            raise ValueError("GEMINI_API_KEY no está configurada.")
+
+        try:
+            from google import genai
+            from google.genai import types
+
+            client = genai.Client(api_key=self.gemini_api_key)
+            part = types.Part.from_bytes(data=img, mime_type=mime)
+
+            primary_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
+            candidate_models = [
+                primary_model,
+                "gemini-3.5-flash-lite",
+                "gemini-3.1-flash-lite",
+                "gemini-3.8-flash",
+                "gemini-2.5-flash"
+            ]
+            models_to_try = list(dict.fromkeys(candidate_models))
+            prompt_completo = f"{SYSTEM_PROMPT_TEST}\n\n{USER_PROMPT_TEST}"
+
+            last_err = None
+            for m_name in models_to_try:
+                try:
+                    self.rate_limiter.esperar_turno()
+                    logger.info(f"Enviando test a Gemini con modelo '{m_name}'...")
+                    response = client.models.generate_content(
+                        model=m_name,
+                        contents=[prompt_completo, part],
+                        config=types.GenerateContentConfig(
+                            temperature=0.0,
+                            response_mime_type="application/json"
+                        )
+                    )
+                    if response and response.text:
+                        return response.text
+                except Exception as e:
+                    last_err = e
+                    logger.warning(f"Modelo Gemini '{m_name}' reportó fallo en test: {e}. Probando siguiente...")
+                    continue
+
+            if last_err:
+                raise last_err
+        except ImportError:
+            import google.generativeai as legacy_genai
+            legacy_genai.configure(api_key=self.gemini_api_key)
+            model_name = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
+            model = legacy_genai.GenerativeModel(
+                model_name=model_name,
+                generation_config={"temperature": 0.0, "response_mime_type": "application/json"}
+            )
+            prompt_completo = f"{SYSTEM_PROMPT_TEST}\n\n{USER_PROMPT_TEST}"
+            contents = [
+                prompt_completo,
+                {"mime_type": mime, "data": img}
+            ]
+            self.rate_limiter.esperar_turno()
+            response = model.generate_content(contents)
+            return response.text
+
+        return "{}"
 
     # -----------------------------------------------------------------
     # MÉTODOS DE FALLBACK SECUNDARIO (OPENAI SI TIENE API KEY)

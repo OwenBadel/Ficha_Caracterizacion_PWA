@@ -187,14 +187,13 @@ def test_frontend_scripts_integrity():
     assert "function cargarResumenParticipantes" in app_text
 
 
-def test_gemini_and_external_apis_removed():
-    """Verifica que los modelos de Gemini y llamadas obsoletas fueron completamente removidos de vision_service."""
+def test_openrouter_removed_and_gemini_rate_limited():
+    """Verifica que OpenRouter permanezca purgado y Gemini cuente con rate limiter de seguridad."""
     vision_file = Path(__file__).resolve().parent.parent / "backend" / "vision_service.py"
     contenido = vision_file.read_text(encoding="utf-8")
 
-    assert "google.genai" not in contenido, "google.genai aún presente en vision_service.py"
-    assert "_procesar_con_gemini" not in contenido, "_procesar_con_gemini aún presente en vision_service.py"
     assert "openrouter" not in contenido.lower(), "OpenRouter aún presente en vision_service.py"
+    assert "PipelineRateLimiter" in contenido, "PipelineRateLimiter no está configurado en vision_service.py"
 
 
 if __name__ == "__main__":
