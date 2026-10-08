@@ -1024,7 +1024,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // -------------------------------------------------------------
-  // CONSULTA DE RESUMEN DE PARTICIPANTES EN CACHÉ Y ESTADO OLLAMA
+  // CONSULTA DE RESUMEN DE PARTICIPANTES EN CACHÉ Y ESTADO MOTOR
   // -------------------------------------------------------------
   async function cargarResumenParticipantes() {
     try {
@@ -1033,13 +1033,12 @@ document.addEventListener('DOMContentLoaded', () => {
       if (res.ok) {
         const h = await res.json();
         const maestroCount = h.patron_maestro_participantes || 0;
-        const modelo = h.ollama_model || 'qwen3-vl';
-        if (netStatusText && h.ollama_online) {
-          netStatusText.textContent = `Ollama GPU`;
-          netStatusText.title = `Motor: Ollama ${modelo} | Patrón Maestro: ${maestroCount} registros`;
+        if (netStatusText) {
+          netStatusText.textContent = `Gemini Online`;
+          netStatusText.title = `Motor: Google Gemini | Patrón Maestro: ${maestroCount} registros`;
         }
         if (brandSubtitle) {
-          brandSubtitle.textContent = `Ollama ${modelo} • ${maestroCount} Maestros`;
+          brandSubtitle.textContent = `Google Gemini • ${maestroCount} Maestros`;
         }
         if (masterCacheCount) {
           masterCacheCount.textContent = maestroCount;

@@ -120,26 +120,16 @@ async def startup_event():
 
 @app.api_route("/api/health", methods=["GET", "HEAD"])
 def health_check() -> Dict[str, Any]:
-    """Verifica el estado del sistema, motor Ollama GPU, y conexión a Google Sheets."""
+    """Verifica el estado del sistema, motor Google Gemini y conexión a Google Sheets."""
+    gemini_ok = bool(vision_service.gemini_api_key)
     openai_ok = bool(vision_service.openai_api_key)
     sheets_ok = bool(sheets_service._gspread_client or sheets_service.webhook_url or sheets_service.webhook_url_tests)
 
-    # Comprobar si Ollama responde localmente
-    ollama_ok = False
-    try:
-        import urllib.request
-        req = urllib.request.Request(f"{vision_service.ollama_base_url}/api/tags", headers={"User-Agent": "HealthCheck"})
-        with urllib.request.urlopen(req, timeout=2) as resp:
-            ollama_ok = (resp.status == 200)
-    except Exception:
-        ollama_ok = False
-
     return {
         "status": "online",
-        "service": "Ficha Caracterización & Pre/Post Test OCR (Soberano)",
+        "service": "Ficha Caracterización & Pre/Post Test OCR",
         "vision_provider": vision_service.provider,
-        "ollama_model": vision_service.ollama_model,
-        "ollama_online": ollama_ok,
+        "gemini_configured": gemini_ok,
         "openai_configured": openai_ok,
         "sheets_configured": sheets_ok,
         "sheets_method": "gspread_api" if sheets_service._gspread_client else ("webhook" if sheets_service.webhook_url else "none"),

@@ -5,17 +5,9 @@ color 0A
 
 echo =======================================================
 echo   DIGITALIZADOR DE FICHAS PWA - OWEN BADEL HOOKER
-echo   Arquitectura Soberana: Ollama Qwen3-VL con GPU NVIDIA
+echo   Vision: Google Gemini ^| Reconciliacion: Jaro-Winkler
 echo =======================================================
 echo.
-
-:: Verificar si Ollama esta corriendo; si no, iniciarlo en segundo plano
-curl -s http://localhost:11434/ > nul 2>&1
-if %errorlevel% neq 0 (
-    echo [INFO] Iniciando motor local de Ollama en segundo plano...
-    start /b "" "%LOCALAPPDATA%\Programs\Ollama\ollama.exe" serve > nul 2>&1
-    timeout /t 3 /nobreak > nul
-)
 
 set PYTHON_CMD=
 python --version > nul 2>&1

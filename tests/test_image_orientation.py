@@ -50,16 +50,16 @@ def test_imagen_vertical_se_mantiene_vertical():
     print("[PASS] test_imagen_vertical_se_mantiene_vertical")
 
 
-def test_prioridad_ollama_qwen_en_modelos():
-    """Valida que Ollama con Qwen3-VL esté configurado como modelo primario soberano."""
+def test_configuracion_gemini_vision():
+    """Valida que Google Gemini esté configurado como motor primario de visión."""
     service = VisionService()
-    assert service.provider in ["gemini", "ollama"]
-    assert "qwen" in service.ollama_model.lower()
-    print("[PASS] test_prioridad_ollama_qwen_en_modelos")
+    assert service.provider == "gemini"
+    assert bool(service.gemini_api_key)
+    print("[PASS] test_configuracion_gemini_vision")
 
 
 if __name__ == "__main__":
     test_rotacion_automatica_horizontal_a_vertical()
     test_imagen_vertical_se_mantiene_vertical()
-    test_prioridad_ollama_qwen_en_modelos()
+    test_configuracion_gemini_vision()
     print("\nTODAS LAS PRUEBAS DE ORIENTACIÓN Y MODELO PASARON CON ÉXITO.")

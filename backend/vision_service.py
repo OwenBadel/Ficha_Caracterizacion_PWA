@@ -3,9 +3,9 @@ Servicio de Visión Artificial Multimodal (OCR Especializado y Forense).
 Autor: Owen Badel Hooker — Ingeniero de Sistemas / Software Architect.
 
 Procesa las fotografías físicas de Fichas de Caracterización y Evaluaciones Pre/Post Test
-utilizando modelos de visión multimodal en local mediante Ollama (Qwen3-VL / MiniCPM-V)
-acelerados por hardware NVIDIA GPU, con fallback opcional a OpenAI si está configurado.
-Garantiza cero dependencias de servicios externos sujetos a cuotas o bloqueos concurrentes.
+utilizando modelos de visión multimodal de alta precisión mediante Google Gemini (gemini-3.5-flash-lite),
+con control de tasa inteligente (Rate Limiter), reconciliación Jaro-Winkler contra el Patrón Maestro,
+y fallback opcional a OpenAI si está configurado.
 """
 
 from __future__ import annotations
@@ -317,7 +317,7 @@ pipeline_rate_limiter = PipelineRateLimiter(
 
 
 # ======================================================================
-# CLASE PRINCIPAL: VISION SERVICE (GEMINI DE ALTA PRECISIÓN + OLLAMA)
+# CLASE PRINCIPAL: VISION SERVICE (GOOGLE GEMINI DE ALTA PRECISIÓN)
 # ======================================================================
 
 class VisionService:
@@ -326,15 +326,13 @@ class VisionService:
     def __init__(self, rate_limiter: Optional[PipelineRateLimiter] = None):
         self.provider = os.getenv("VISION_PROVIDER", "gemini").lower().strip()
         self.gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
-        self.ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
-        self.ollama_model = os.getenv("OLLAMA_MODEL", "qwen3-vl").strip()
         self.openai_api_key = os.getenv("OPENAI_API_KEY", "").strip()
         self.rate_limiter = rate_limiter or pipeline_rate_limiter
 
         logger.info(
             f"VisionService inicializado -> Proveedor: '{self.provider}', "
             f"Gemini configurado: {bool(self.gemini_api_key)}, "
-            f"Modelo Ollama: '{self.ollama_model}'"
+            f"OpenAI configurado: {bool(self.openai_api_key)}"
         )
 
     def _optimizar_imagen(self, img_bytes: bytes, mime_type: str = "image/jpeg") -> tuple[bytes, str]:
@@ -363,23 +361,21 @@ class VisionService:
         )
 
         raw_json = None
-        if self.provider == "gemini" or (self.provider != "openai" and self.provider != "ollama" and self.gemini_api_key):
+        if self.provider == "gemini" or (self.provider != "openai" and self.gemini_api_key):
             try:
                 raw_json = self._procesar_con_gemini(img1_opt, img2_opt, mime1_opt, mime2_opt)
             except Exception as e:
-                logger.warning(f"Gemini reportó error ({e}). Activando fallback a Ollama local...")
-                raw_json = self._procesar_con_ollama(img1_opt, img2_opt, mime1_opt, mime2_opt)
-        elif self.provider == "openai" or (self.provider != "ollama" and self.openai_api_key):
-            raw_json = self._procesar_con_openai(img1_opt, img2_opt, mime1_opt, mime2_opt)
-        else:
-            try:
-                raw_json = self._procesar_con_ollama(img1_opt, img2_opt, mime1_opt, mime2_opt)
-            except Exception as e:
-                if self.gemini_api_key:
-                    logger.warning(f"Ollama reportó error ({e}). Activando fallback a Gemini...")
-                    raw_json = self._procesar_con_gemini(img1_opt, img2_opt, mime1_opt, mime2_opt)
+                if self.openai_api_key:
+                    logger.warning(f"Gemini reportó error ({e}). Activando fallback a OpenAI...")
+                    raw_json = self._procesar_con_openai(img1_opt, img2_opt, mime1_opt, mime2_opt)
                 else:
                     raise
+        elif self.provider == "openai" or self.openai_api_key:
+            raw_json = self._procesar_con_openai(img1_opt, img2_opt, mime1_opt, mime2_opt)
+        else:
+            raise ValueError(
+                "No hay proveedor de visión configurado. Configure GEMINI_API_KEY en su archivo .env."
+            )
 
         limpio = _limpiar_bloque_json(raw_json)
         try:
@@ -403,56 +399,6 @@ class VisionService:
 
         return datos_canonicos
 
-    def _procesar_con_ollama(self, img1: bytes, img2: bytes, mime1: str, mime2: str) -> str:
-        """Invoca la API local de Ollama con formato JSON estricto y temperatura 0.0."""
-        import httpx
-        b64_1 = base64.b64encode(img1).decode("utf-8")
-        b64_2 = base64.b64encode(img2).decode("utf-8")
-
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": USER_PROMPT, "images": [b64_1, b64_2]},
-            {"role": "assistant", "content": "<think>\n</think>\n"}
-        ]
-        payload = {
-            "model": self.ollama_model,
-            "messages": messages,
-            "format": "json",
-            "options": {
-                "temperature": 0.0,
-                "num_ctx": 8192,
-                "num_predict": 1200
-            },
-            "stream": False
-        }
-
-        endpoint = f"{self.ollama_base_url}/api/chat"
-        logger.info(f"Enviando fotos de Ficha a Ollama ({self.ollama_model}) en {endpoint}...")
-
-        # Ejecución directa con el modelo soberano configurado (sin fallbacks destructivos a modelos inferiores)
-        modelos_a_probar = [self.ollama_model]
-        modelos_unicos = list(dict.fromkeys(modelos_a_probar))
-        ultimo_error = None
-
-        with httpx.Client(timeout=180.0) as client:
-            for mod in modelos_unicos:
-                try:
-                    payload["model"] = mod
-                    resp = client.post(endpoint, json=payload)
-                    if resp.status_code == 200:
-                        contenido = resp.json().get("message", {}).get("content", "{}")
-                        if contenido and contenido.strip():
-                            return contenido
-                    else:
-                        logger.warning(f"Ollama con modelo '{mod}' retornó HTTP {resp.status_code}: {resp.text}")
-                except Exception as ex:
-                    ultimo_error = ex
-                    logger.warning(f"Error invocando modelo '{mod}' en Ollama: {ex}.")
-
-        if ultimo_error:
-            raise ultimo_error
-        raise RuntimeError("Ollama no pudo generar una respuesta válida para la ficha.")
-
     # -----------------------------------------------------------------
     # EXTRACCIÓN DE PRE-TEST Y POST-TEST (1 SOLA FOTOGRAFÍA)
     # -----------------------------------------------------------------
@@ -473,23 +419,21 @@ class VisionService:
         logger.info(f"Imagen de Test optimizada: {len(img_opt)/1024:.1f}KB ({mime_opt})")
 
         raw_json = None
-        if self.provider == "gemini" or (self.provider != "openai" and self.provider != "ollama" and self.gemini_api_key):
+        if self.provider == "gemini" or (self.provider != "openai" and self.gemini_api_key):
             try:
                 raw_json = self._procesar_test_con_gemini(img_opt, mime_opt)
             except Exception as e:
-                logger.warning(f"Gemini reportó error en test ({e}). Activando fallback a Ollama local...")
-                raw_json = self._procesar_test_con_ollama(img_opt, mime_opt)
-        elif self.provider == "openai" or (self.provider != "ollama" and self.openai_api_key):
-            raw_json = self._procesar_test_con_openai(img_opt, mime_opt)
-        else:
-            try:
-                raw_json = self._procesar_test_con_ollama(img_opt, mime_opt)
-            except Exception as e:
-                if self.gemini_api_key:
-                    logger.warning(f"Ollama reportó error en test ({e}). Activando fallback a Gemini...")
-                    raw_json = self._procesar_test_con_gemini(img_opt, mime_opt)
+                if self.openai_api_key:
+                    logger.warning(f"Gemini reportó error en test ({e}). Activando fallback a OpenAI...")
+                    raw_json = self._procesar_test_con_openai(img_opt, mime_opt)
                 else:
                     raise
+        elif self.provider == "openai" or self.openai_api_key:
+            raw_json = self._procesar_test_con_openai(img_opt, mime_opt)
+        else:
+            raise ValueError(
+                "No hay proveedor de visión configurado. Configure GEMINI_API_KEY en su archivo .env."
+            )
 
         limpio = _limpiar_bloque_json(raw_json)
         try:
@@ -527,62 +471,6 @@ class VisionService:
                 datos["EAPB (EPS)"] = coincidencia["eapb"]
 
         return datos
-
-    def _procesar_test_con_ollama(self, img: bytes, mime: str) -> str:
-        """Invoca Ollama local para procesar la evaluación física del test."""
-        import httpx
-        b64 = base64.b64encode(img).decode("utf-8")
-
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT_TEST},
-            {"role": "user", "content": USER_PROMPT_TEST, "images": [b64]},
-            {"role": "assistant", "content": "<think>\n</think>\n"}
-        ]
-        payload = {
-            "model": self.ollama_model,
-            "messages": messages,
-            "format": "json",
-            "options": {
-                "temperature": 0.0,
-                "num_ctx": 4096,
-                "num_predict": 800
-            },
-            "stream": False
-        }
-
-        endpoint = f"{self.ollama_base_url}/api/chat"
-        logger.info(f"Enviando test a Ollama ({self.ollama_model}) en {endpoint}...")
-
-        modelos_a_probar = [self.ollama_model]
-        modelos_unicos = list(dict.fromkeys(modelos_a_probar))
-        ultimo_error = None
-
-        with httpx.Client(timeout=180.0) as client:
-            for mod in modelos_unicos:
-                try:
-                    payload["model"] = mod
-                    resp = client.post(endpoint, json=payload)
-                    if resp.status_code == 200:
-                        msg = resp.json().get("message", {})
-                        contenido = msg.get("content", "")
-                        # Si content viene vacío porque el modelo razonador puso el JSON en thinking
-                        if not contenido or not contenido.strip():
-                            thinking = msg.get("thinking", "")
-                            if thinking and "{" in thinking and "}" in thinking:
-                                match = re.search(r"(\{.*\})", thinking, re.DOTALL)
-                                if match:
-                                    contenido = match.group(1)
-                        if contenido and contenido.strip():
-                            return contenido
-                    else:
-                        logger.warning(f"Ollama test con modelo '{mod}' retornó HTTP {resp.status_code}: {resp.text}")
-                except Exception as ex:
-                    ultimo_error = ex
-                    logger.warning(f"Error en Ollama test con modelo '{mod}': {ex}.")
-
-        if ultimo_error:
-            raise ultimo_error
-        raise RuntimeError("Ollama no pudo generar una respuesta válida para el test.")
 
     # -----------------------------------------------------------------
     # MÉTODOS DE EXTRACCIÓN CON GOOGLE GEMINI (ALTA PRECISIÓN VISUAL)

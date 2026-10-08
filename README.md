@@ -1,21 +1,21 @@
-# 📱 PROJ-006: Digitalizador Móvil de Fichas de Caracterización (PWA + IA Visión Local GPU + Google Sheets)
+# 📱 PROJ-006: Digitalizador Móvil de Fichas de Caracterización (PWA + Google Gemini + Google Sheets)
 **Autoría y Diseño:** Owen Badel Hooker — Ingeniero de Sistemas / Software Architect.
 
-Aplicación Web Progresiva (**PWA Mobile-First**) diseñada para digitalizar en campo "Fichas de Caracterización" físicas y evaluaciones "Pre/Post Test (Anexo 4)" mediante fotografías asistidas, extraer variables con IA de Visión Soberana (**Ollama Qwen3-VL** acelerado por hardware NVIDIA GPU en local) con normalización estricta a **MAYÚSCULAS**, auto-orientación vertical inteligente de capturas, reconciliación fonética/caligráfica con **Jaro-Winkler** contra el **PATRÓN MAESTRO**, e inserción automática de cada registro como fila ordenada en **Google Sheets**.
+Aplicación Web Progresiva (**PWA Mobile-First**) diseñada para digitalizar en campo "Fichas de Caracterización" físicas y evaluaciones "Pre/Post Test (Anexo 4)" mediante fotografías asistidas, extraer variables con IA de Visión de Alta Fidelidad (**Google Gemini `gemini-3.5-flash-lite`** con Rate Limiter de seguridad) con normalización estricta a **MAYÚSCULAS**, auto-orientación vertical inteligente de capturas, reconciliación fonética/caligráfica con **Jaro-Winkler** contra el **PATRÓN MAESTRO**, e inserción automática de cada registro como fila ordenada en **Google Sheets**.
 
 ---
 
 ## 🌟 Características Principales
 
 * 📱 **Mobile-First & PWA:** Diseñada para navegador de celular y configurable como app nativa ("Añadir a pantalla de inicio"). Carga ultrarrápida y soporte offline mediante Service Worker.
-* 🧠 **IA de Visión Local Soberana (Ollama Qwen3-VL en GPU):** Extracción OCR multimodal directa en el hardware local (NVIDIA RTX 4060) a cero costo por token, sin latencias remotas, sin bloqueos concurrentes (HTTP 429) y con privacidad total de datos.
+* 🧠 **IA de Visión de Alta Precisión (Google Gemini):** Extracción OCR multimodal de máxima fidelidad con `gemini-3.5-flash-lite` y limitador de tasa (`PipelineRateLimiter`) para evitar cuellos de botella y saturación HTTP 429.
 * 🎯 **Algoritmo Jaro-Winkler con Bonificación Territorial:** Reconcilia nombres escritos a mano con variaciones ortográficas ("MAIKOL PEREZ" -> "MICHAEL STEVEN PEREZ", inversión de apellidos, etc.) comparándolos con el **PATRÓN MAESTRO** de los 10 municipios. Estandariza de forma automática e instantánea: **Nombre del participante, Edad, Municipio y EPS**.
 * 📋 **Ingesta del PATRÓN MAESTRO:** Sincronización automática directa desde la pestaña `PATRON MAESTRO` de Google Sheets o mediante archivo local (`.xlsx` o `.csv`).
 * 📸 **Captura Guiada y Auto-Orientación Vertical:** Disparador ergonómico con corrección inteligente de orientación: si una foto es tomada en horizontal, se transforma automáticamente a vertical con nitidez fotográfica y botones de rotación manual.
 * 📝 **Modo Dual (Fichas y Tests):** Soporte tanto para Fichas de Caracterización (2 fotos: Anverso y Reverso) como para hojas de Pre-Test y Post-Test (1 foto vertical).
 * ⚡ **Modo Inmediato:** Envía automáticamente las fotos al motor de visión y sube los datos a Google Sheets al instante.
 * 📦 **Modo Cola (Offline-First / Batch):** Almacena las fotos y encuestas localmente en el dispositivo (**IndexedDB**), permitiendo continuar capturando y sincronizar todo en lote al recuperar conexión.
-* 📊 **Google Sheets API v4 Automatizado:** Inserta directamente en la hoja de cálculo usando Webhook oficial de Google Apps Script.
+* 📊 **Google Sheets API v4 Automatizado:** Inserta directamente en la hoja de cálculo usando Webhook oficial de Google Apps Script con tiempo de espera extendido (65s) y cola de contingencia local.
 
 ---
 
@@ -26,7 +26,7 @@ PROJ_006_Ficha_Caracterizacion_PWA/
 ├── AGENTS.md                   # Directiva maestra del proyecto
 ├── README.md                   # Esta documentación completa
 ├── requirements.txt            # Dependencias Python
-├── INICIAR_APP.bat             # Lanzador interactivo con auto-inicio de Ollama
+├── INICIAR_APP.bat             # Lanzador interactivo directo con detección de Python
 ├── .env.example                # Plantilla de variables de entorno
 ├── .env                        # Variables locales configuradas
 ├── backend/
@@ -34,7 +34,7 @@ PROJ_006_Ficha_Caracterizacion_PWA/
 │   ├── schema.py               # Modelo Pydantic y 43 columnas canónicas de la Ficha
 │   ├── schema_test.py          # Modelo Pydantic para Pre-Test / Post-Test
 │   ├── participant_cache.py    # Memoria viva, Jaro-Winkler tokenizado y Patrón Maestro
-│   ├── vision_service.py       # Extracción multimodal con Ollama Qwen3-VL en GPU local
+│   ├── vision_service.py       # Extracción multimodal con Google Gemini y Rate Limiter
 │   ├── sheets_service.py       # Inserción en Google Sheets vía Webhook Apps Script
 │   └── main.py                 # Servidor FastAPI y entrega de la PWA estática
 ├── frontend/
@@ -46,7 +46,7 @@ PROJ_006_Ficha_Caracterizacion_PWA/
 │   └── js/
 │       ├── db.js               # Persistencia local con IndexedDB (cola offline)
 │       └── app.js              # Lógica de interfaz, cámara, auto-orientación y sincronización
-└── tests/                      # Suite de pruebas unitarias automatizadas (23 tests)
+└── tests/                      # Suite de pruebas unitarias automatizadas (24 tests)
 ```
 
 ---
@@ -57,10 +57,11 @@ PROJ_006_Ficha_Caracterizacion_PWA/
 
 En el archivo `.env` en la raíz del proyecto:
 ```env
-# Proveedor Soberano Local en GPU
-VISION_PROVIDER=ollama
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=qwen3-vl
+# Proveedor de Visión OCR de Alta Precisión (Google Gemini)
+VISION_PROVIDER=gemini
+GEMINI_API_KEY=tu_gemini_api_key_aqui
+GEMINI_MODEL=gemini-3.5-flash-lite
+GEMINI_MIN_INTERVAL_SECONDS=2.0
 
 # Patrón Maestro (Google Sheets)
 # Pega aquí el ID de tu hoja de cálculo (lo que está entre /d/ y /edit en la URL)
@@ -95,7 +96,7 @@ El sistema lee las columnas de la pestaña `PATRON MAESTRO` automáticamente:
 
 Simplemente haz doble clic en `INICIAR_APP.bat`.
 El script:
-1. Verifica si Ollama está en ejecución; si no, lo inicia en segundo plano automáticamente.
+1. Detecta automáticamente la instalación de Python en el sistema.
 2. Inicia el servidor FastAPI en el puerto `8000`.
 3. Muestra la URL para abrir en tu PC (`http://localhost:8000`) y en tu Celular en la misma red Wi-Fi (`http://192.168.x.x:8000`).
 
@@ -107,4 +108,4 @@ Para ejecutar toda la suite de pruebas automatizadas:
 ```bash
 python tests/run_all_tests.py
 ```
-Todas las pruebas (orientación vertical, modelo Ollama, esquema Pydantic, reconciliación Jaro-Winkler y concurrencia) están verificadas en verde.
+Todas las 24 pruebas (orientación vertical, modelo Google Gemini, esquema Pydantic, reconciliación Jaro-Winkler, ruteo de pestañas y concurrencia) están verificadas en verde.
