@@ -196,6 +196,61 @@ def test_openrouter_removed_and_gemini_rate_limited():
     assert "PipelineRateLimiter" in contenido, "PipelineRateLimiter no está configurado en vision_service.py"
 
 
+def test_gemini_models_and_exponential_backoff():
+    """Verifica que gemini-2.5-flash esté removido y que el Exponential Backoff con Jitter funcione ante 503."""
+    vision_file = Path(__file__).resolve().parent.parent / "backend" / "vision_service.py"
+    contenido = vision_file.read_text(encoding="utf-8")
+
+    # 1. Validación de modelos
+    assert "gemini-2.5-flash" not in contenido, "gemini-2.5-flash no debe estar en la lista de modelos de reserva"
+    assert "gemini-3.8-flash" in contenido, "gemini-3.8-flash debe estar presente como modelo recomendado"
+    assert "gemini-3.5-flash-lite" in contenido, "gemini-3.5-flash-lite debe estar presente"
+
+    # 2. Validación de detección de errores transitorios
+    from vision_service import _es_error_transitorio, VisionService
+
+    assert _es_error_transitorio(Exception("503 Service Unavailable")), "503 debe ser transitorio"
+    assert _es_error_transitorio(Exception("429 ResourceExhausted")), "429 debe ser transitorio"
+    assert _es_error_transitorio(Exception("The service is overloaded")), "overloaded debe ser transitorio"
+    assert _es_error_transitorio(Exception("Read timed out")), "timeout debe ser transitorio"
+    assert not _es_error_transitorio(Exception("404 Model Not Found")), "404 no debe ser transitorio"
+
+    # 3. Validación de Backoff con Mock
+    service = VisionService()
+
+    class MockModelResponse:
+        text = '{"status": "ok"}'
+
+    class MockModels:
+        def __init__(self):
+            self.intentos = 0
+
+        def generate_content(self, model, contents, config):
+            self.intentos += 1
+            if self.intentos == 1:
+                # Simular error 503 en primer intento
+                raise RuntimeError("503 Service Unavailable: High server load")
+            return MockModelResponse()
+
+    class MockClient:
+        models = MockModels()
+
+    # Ejecutar con base_delay mínimo (0.01s) para que el test sea instantáneo
+    mock_client = MockClient()
+    resultado = service._invocar_gemini_con_backoff(
+        client=mock_client,
+        contents=["test"],
+        models_to_try=["gemini-3.5-flash-lite"],
+        config=None,
+        descripcion="Test Mock",
+        max_reintentos_por_modelo=2,
+        base_delay=0.01
+    )
+
+    assert resultado == '{"status": "ok"}'
+    assert mock_client.models.intentos == 2, f"Se esperaban 2 intentos tras 503, se ejecutaron {mock_client.models.intentos}"
+
+
 if __name__ == "__main__":
     test_participant_cache_thread_safety_and_batch_io()
     print("[PASS] test_participant_cache_thread_safety_and_batch_io")
@@ -209,6 +264,8 @@ if __name__ == "__main__":
     print("[PASS] test_vision_service_ssl_security")
     test_frontend_scripts_integrity()
     print("[PASS] test_frontend_scripts_integrity")
-    test_gemini_and_external_apis_removed()
-    print("[PASS] test_gemini_and_external_apis_removed")
+    test_openrouter_removed_and_gemini_rate_limited()
+    print("[PASS] test_openrouter_removed_and_gemini_rate_limited")
+    test_gemini_models_and_exponential_backoff()
+    print("[PASS] test_gemini_models_and_exponential_backoff")
     print("Todas las pruebas de auditoría pasaron exitosamente.")

@@ -15,6 +15,7 @@ import re
 import base64
 import logging
 import time
+import random
 import threading
 from typing import Tuple, Dict, Any, Optional
 from dotenv import load_dotenv
@@ -316,6 +317,23 @@ pipeline_rate_limiter = PipelineRateLimiter(
 )
 
 
+def _es_error_transitorio(error: Exception) -> bool:
+    """
+    Identifica si el error de la API es transitorio (503 Service Unavailable,
+    429 Rate Limit / ResourceExhausted, 500/502/504 o timeouts) para aplicar Exponential Backoff.
+    """
+    code = getattr(error, "code", None) or getattr(error, "status_code", None)
+    if code in (503, 429, 500, 502, 504):
+        return True
+    err_str = str(error).lower()
+    return any(term in err_str for term in [
+        "503", "unavailable", "overloaded",
+        "429", "resource_exhausted", "quota", "rate limit",
+        "500", "internal error", "502", "504", "gateway",
+        "timeout", "timed out", "connection", "disconnected", "reset by peer"
+    ])
+
+
 # ======================================================================
 # CLASE PRINCIPAL: VISION SERVICE (GOOGLE GEMINI DE ALTA PRECISIÓN)
 # ======================================================================
@@ -476,10 +494,118 @@ class VisionService:
     # MÉTODOS DE EXTRACCIÓN CON GOOGLE GEMINI (ALTA PRECISIÓN VISUAL)
     # -----------------------------------------------------------------
 
+    def _invocar_gemini_con_backoff(
+        self,
+        client: Any,
+        contents: list,
+        models_to_try: list[str],
+        config: Any,
+        descripcion: str = "Documento",
+        max_reintentos_por_modelo: int = 2,
+        base_delay: float = 2.0
+    ) -> str:
+        """
+        Ejecuta la inferencia en Google Gemini aplicando Exponential Backoff con Jitter
+        ante errores transitorios (503 Service Unavailable, 429 Rate Limit, timeouts).
+        Previene colapsos en cadena y sobrecarga evitando cambiar de modelo precipitadamente.
+        """
+        last_err = None
+        for m_name in models_to_try:
+            for intento in range(max_reintentos_por_modelo + 1):
+                try:
+                    self.rate_limiter.esperar_turno()
+                    intento_str = f" (intento {intento + 1}/{max_reintentos_por_modelo + 1})" if intento > 0 else ""
+                    logger.info(f"Enviando {descripcion} a Gemini con modelo '{m_name}'{intento_str}...")
+
+                    response = client.models.generate_content(
+                        model=m_name,
+                        contents=contents,
+                        config=config
+                    )
+                    if response and response.text:
+                        return response.text
+                except Exception as e:
+                    last_err = e
+                    es_transitorio = _es_error_transitorio(e)
+
+                    if es_transitorio and intento < max_reintentos_por_modelo:
+                        # Exponential Backoff con Jitter aleatorio (0.5s a 1.5s)
+                        jitter = random.uniform(0.5, 1.5)
+                        espera = (base_delay * (2 ** intento)) + jitter
+                        logger.warning(
+                            f"Gemini [{m_name}] reportó error transitorio ({e}). "
+                            f"Aplicando Exponential Backoff con Jitter: esperando {espera:.2f}s antes de reintentar..."
+                        )
+                        time.sleep(espera)
+                        continue
+                    else:
+                        logger.warning(
+                            f"Gemini [{m_name}] falló tras intento {intento + 1}: {e}. "
+                            f"{'Conmutando al siguiente modelo candidato...' if m_name != models_to_try[-1] else 'Agotados modelos candidatos.'}"
+                        )
+                        break
+
+        if last_err:
+            raise last_err
+        return "{}"
+
+    def _invocar_legacy_gemini_con_backoff(
+        self,
+        legacy_genai: Any,
+        contents: list,
+        models_to_try: list[str],
+        descripcion: str = "Documento",
+        max_reintentos_por_modelo: int = 2,
+        base_delay: float = 2.0
+    ) -> str:
+        """Fallback con Exponential Backoff y Jitter para la librería legacy google.generativeai."""
+        last_err = None
+        for m_name in models_to_try:
+            for intento in range(max_reintentos_por_modelo + 1):
+                try:
+                    self.rate_limiter.esperar_turno()
+                    model = legacy_genai.GenerativeModel(
+                        model_name=m_name,
+                        generation_config={"temperature": 0.0, "response_mime_type": "application/json"}
+                    )
+                    intento_str = f" (intento {intento + 1}/{max_reintentos_por_modelo + 1})" if intento > 0 else ""
+                    logger.info(f"Enviando {descripcion} a Legacy Gemini con modelo '{m_name}'{intento_str}...")
+                    response = model.generate_content(contents)
+                    if response and response.text:
+                        return response.text
+                except Exception as e:
+                    last_err = e
+                    es_transitorio = _es_error_transitorio(e)
+                    if es_transitorio and intento < max_reintentos_por_modelo:
+                        jitter = random.uniform(0.5, 1.5)
+                        espera = (base_delay * (2 ** intento)) + jitter
+                        logger.warning(
+                            f"Legacy Gemini [{m_name}] error transitorio ({e}). "
+                            f"Reintentando en {espera:.2f}s..."
+                        )
+                        time.sleep(espera)
+                        continue
+                    else:
+                        logger.warning(f"Legacy Gemini [{m_name}] falló: {e}. Conmutando...")
+                        break
+
+        if last_err:
+            raise last_err
+        return "{}"
+
     def _procesar_con_gemini(self, img1: bytes, img2: bytes, mime1: str, mime2: str) -> str:
         """Invoca Google Gemini con temperatura 0.0 determinista para digitalizar la ficha."""
         if not self.gemini_api_key:
             raise ValueError("GEMINI_API_KEY no está configurada en las variables de entorno.")
+
+        primary_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite").strip()
+        candidate_models = [
+            primary_model,
+            "gemini-3.5-flash-lite",
+            "gemini-3.8-flash",
+            "gemini-3.1-flash-lite"
+        ]
+        models_to_try = list(dict.fromkeys(candidate_models))
 
         try:
             from google import genai
@@ -488,64 +614,50 @@ class VisionService:
             client = genai.Client(api_key=self.gemini_api_key)
             part_1 = types.Part.from_bytes(data=img1, mime_type=mime1)
             part_2 = types.Part.from_bytes(data=img2, mime_type=mime2)
-
-            primary_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
-            candidate_models = [
-                primary_model,
-                "gemini-3.5-flash-lite",
-                "gemini-3.1-flash-lite",
-                "gemini-3.8-flash",
-                "gemini-2.5-flash"
-            ]
-            models_to_try = list(dict.fromkeys(candidate_models))
             prompt_completo = f"{SYSTEM_PROMPT}\n\n{USER_PROMPT}"
+            contents = [prompt_completo, part_1, part_2]
+            config = types.GenerateContentConfig(
+                temperature=0.0,
+                response_mime_type="application/json"
+            )
 
-            last_err = None
-            for m_name in models_to_try:
-                try:
-                    self.rate_limiter.esperar_turno()
-                    logger.info(f"Enviando fotos de Ficha a Gemini con modelo '{m_name}' (temperature=0.0)...")
-                    response = client.models.generate_content(
-                        model=m_name,
-                        contents=[prompt_completo, part_1, part_2],
-                        config=types.GenerateContentConfig(
-                            temperature=0.0,
-                            response_mime_type="application/json"
-                        )
-                    )
-                    if response and response.text:
-                        return response.text
-                except Exception as e:
-                    last_err = e
-                    logger.warning(f"Modelo Gemini '{m_name}' reportó fallo: {e}. Probando siguiente modelo...")
-                    continue
+            return self._invocar_gemini_con_backoff(
+                client=client,
+                contents=contents,
+                models_to_try=models_to_try,
+                config=config,
+                descripcion="Ficha de Caracterización"
+            )
 
-            if last_err:
-                raise last_err
         except ImportError:
             import google.generativeai as legacy_genai
             legacy_genai.configure(api_key=self.gemini_api_key)
-            model_name = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
-            model = legacy_genai.GenerativeModel(
-                model_name=model_name,
-                generation_config={"temperature": 0.0, "response_mime_type": "application/json"}
-            )
             prompt_completo = f"{SYSTEM_PROMPT}\n\n{USER_PROMPT}"
             contents = [
                 prompt_completo,
                 {"mime_type": mime1, "data": img1},
                 {"mime_type": mime2, "data": img2}
             ]
-            self.rate_limiter.esperar_turno()
-            response = model.generate_content(contents)
-            return response.text
-
-        return "{}"
+            return self._invocar_legacy_gemini_con_backoff(
+                legacy_genai=legacy_genai,
+                contents=contents,
+                models_to_try=models_to_try,
+                descripcion="Ficha de Caracterización"
+            )
 
     def _procesar_test_con_gemini(self, img: bytes, mime: str) -> str:
         """Invoca Google Gemini para procesar la evaluación física del test con 100% fidelidad visual."""
         if not self.gemini_api_key:
             raise ValueError("GEMINI_API_KEY no está configurada.")
+
+        primary_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite").strip()
+        candidate_models = [
+            primary_model,
+            "gemini-3.5-flash-lite",
+            "gemini-3.8-flash",
+            "gemini-3.1-flash-lite"
+        ]
+        models_to_try = list(dict.fromkeys(candidate_models))
 
         try:
             from google import genai
@@ -553,58 +665,35 @@ class VisionService:
 
             client = genai.Client(api_key=self.gemini_api_key)
             part = types.Part.from_bytes(data=img, mime_type=mime)
-
-            primary_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
-            candidate_models = [
-                primary_model,
-                "gemini-3.5-flash-lite",
-                "gemini-3.1-flash-lite",
-                "gemini-3.8-flash",
-                "gemini-2.5-flash"
-            ]
-            models_to_try = list(dict.fromkeys(candidate_models))
             prompt_completo = f"{SYSTEM_PROMPT_TEST}\n\n{USER_PROMPT_TEST}"
+            contents = [prompt_completo, part]
+            config = types.GenerateContentConfig(
+                temperature=0.0,
+                response_mime_type="application/json"
+            )
 
-            last_err = None
-            for m_name in models_to_try:
-                try:
-                    self.rate_limiter.esperar_turno()
-                    logger.info(f"Enviando test a Gemini con modelo '{m_name}'...")
-                    response = client.models.generate_content(
-                        model=m_name,
-                        contents=[prompt_completo, part],
-                        config=types.GenerateContentConfig(
-                            temperature=0.0,
-                            response_mime_type="application/json"
-                        )
-                    )
-                    if response and response.text:
-                        return response.text
-                except Exception as e:
-                    last_err = e
-                    logger.warning(f"Modelo Gemini '{m_name}' reportó fallo en test: {e}. Probando siguiente...")
-                    continue
+            return self._invocar_gemini_con_backoff(
+                client=client,
+                contents=contents,
+                models_to_try=models_to_try,
+                config=config,
+                descripcion="Pre/Post Test"
+            )
 
-            if last_err:
-                raise last_err
         except ImportError:
             import google.generativeai as legacy_genai
             legacy_genai.configure(api_key=self.gemini_api_key)
-            model_name = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
-            model = legacy_genai.GenerativeModel(
-                model_name=model_name,
-                generation_config={"temperature": 0.0, "response_mime_type": "application/json"}
-            )
             prompt_completo = f"{SYSTEM_PROMPT_TEST}\n\n{USER_PROMPT_TEST}"
             contents = [
                 prompt_completo,
                 {"mime_type": mime, "data": img}
             ]
-            self.rate_limiter.esperar_turno()
-            response = model.generate_content(contents)
-            return response.text
-
-        return "{}"
+            return self._invocar_legacy_gemini_con_backoff(
+                legacy_genai=legacy_genai,
+                contents=contents,
+                models_to_try=models_to_try,
+                descripcion="Pre/Post Test"
+            )
 
     # -----------------------------------------------------------------
     # MÉTODOS DE FALLBACK SECUNDARIO (OPENAI SI TIENE API KEY)
