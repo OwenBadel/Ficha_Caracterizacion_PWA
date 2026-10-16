@@ -25,10 +25,12 @@ logger = logging.getLogger("vision_service")
 try:
     from .schema import FichaCaracterizacion, COLUMNAS_FICHA
     from .schema_test import PrePostTest, COLUMNAS_TEST
+    from .schema_anexo17 import PrePostTestAnexo17, COLUMNAS_ANEXO17
     from .participant_cache import participant_cache
 except (ImportError, ValueError):
     from schema import FichaCaracterizacion, COLUMNAS_FICHA
     from schema_test import PrePostTest, COLUMNAS_TEST
+    from schema_anexo17 import PrePostTestAnexo17, COLUMNAS_ANEXO17
     from participant_cache import participant_cache
 
 load_dotenv()
@@ -201,6 +203,76 @@ USER_PROMPT_TEST = """Analiza la fotografía adjunta correspondiente al formato 
   "7. EXISTE VACUNA PARA PREVENIR LA HEPATITIS B.": "VERDADERO o FALSO o vacío",
   "8. LA SÍFILIS TIENE TRATAMIENTO Y PUEDE PREVENIRSE.": "VERDADERO o FALSO (observa estrictamente la casilla marcada con X, CERO sesgo médico)",
   "9. RESPETAR LAS DIFERENCIAS Y EVITAR LA DISCRIMINACIÓN AYUDA A CONSTRUIR RELACIONES SALUDABLES.": "VERDADERO o FALSO o vacío"
+}
+Devuelve EXCLUSIVAMENTE el JSON sin bloques markdown ni comentarios.
+"""
+
+# ======================================================================
+# PROMPTS CANÓNICOS DE FORENSE OCR (ANEXO 17 PELLÍZCATE CON GENERACIÓN B+)
+# ======================================================================
+
+SYSTEM_PROMPT_ANEXO17 = """Eres un sistema experto en transcripción OCR y digitalización forense de evaluaciones físicas de conocimiento (Pre-Test y Post-Test del Anexo 17: "Pellízcate con Generación B+").
+Tu única misión es transcribir con EXACTITUD Y FIDELIDAD VISUAL ABSOLUTA la información de la imagen adjunta correspondiente a la hoja física de la evaluación.
+
+======================================================================
+🚨 REGLA DE ORO DE FIDELIDAD VISUAL (ESTRICTAMENTE PROHIBIDO ALUCINAR) 🚨
+======================================================================
+1. CERO ALUCINACIONES: Extrae EXCLUSIVAMENTE lo que esté físicamente marcado con una marca manuscrita (X, visto bueno, sombreado, cruz) o escrito a mano con tinta en el documento.
+2. CASILLAS VACÍAS: Si una pregunta NO fue marcada o está en blanco, devuelve OBLIGATORIAMENTE un string vacío "". NUNCA adivines ni supongas una respuesta si el participante la dejó sin contestar.
+3. TODO EN MAYÚSCULAS: Todo el texto debe devolverse en MAYÚSCULAS sin excepción.
+4. TIPO DE EVALUACIÓN:
+   - Inspecciona el encabezado superior del documento:
+     * Si contiene "PRE-TEST" o "PRE TEST" -> "PRE-TEST"
+     * Si contiene "POS-TEST", "POS TEST" o "POST-TEST" -> "POST-TEST"
+5. DATOS DEL PARTICIPANTE:
+   - Nombre: Lee el texto manuscrito en "Nombre: __________________________".
+   - Municipio: Lee el municipio manuscrito en "Municipio: ________________________".
+   - Fecha: Lee la fecha manuscrita en "Fecha: ___________________________".
+   - Edad: Lee los dígitos manuscritos en "Edad: _______".
+6. PREGUNTAS DE OPCIÓN MÚLTIPLE (1 A 10):
+   Cada una de las 10 preguntas ofrece 3 opciones (a, b, c).
+   Identifica cuál de las opciones tiene la marca con una 'X', cruz o visto bueno:
+   - Pregunta 1: "¿Qué es un proyecto de vida?"
+     Opciones: a (Un plan sobre lo que quiero lograr en el futuro), b (Una tarea del colegio), c (Un juego entre amigos).
+   - Pregunta 2: "Si alguien quiere tocar tu cuerpo y tú no deseas, ¿qué puedes hacer?"
+     Opciones: a (Quedarte callado), b (Decir “no”, alejarte y buscar ayuda), c (Aceptar para evitar problemas).
+   - Pregunta 3: "¿Cuál ayuda a prevenir un embarazo y las infecciones de transmisión sexual?"
+     Opciones: a (El uso correcto del condón), b (Compartir información personal), c (Tomar cualquier medicamento).
+   - Pregunta 4: "¿Qué debes hacer si sufres bullying o ciberacoso?"
+     Opciones: a (Responder con violencia), b (Guardarlo en secreto), c (Contárselo a un adulto de confianza y pedir ayuda).
+   - Pregunta 5: "¿Cuál es una forma saludable de manejar una emoción difícil?"
+     Opciones: a (Hablar con alguien de confianza), b (Lastimarse o lastimar a otra persona), c (Ignorar siempre lo que se siente).
+   - Pregunta 6: "Si un amigo dice que no quiere seguir viviendo, ¿qué debes hacer?"
+     Opciones: a (Pensar que está bromeando), b (Escucharlo y buscar inmediatamente la ayuda de un adulto), c (Dejarlo solo para que se calme).
+   - Pregunta 7: "¿Qué significa comunicarse de manera asertiva?"
+     Opciones: a (Expresar lo que pienso y siento con respeto), b (Gritar para que me escuchen), c (Quedarme callado, aunque algo me moleste).
+   - Pregunta 8: "¿Qué es una red de apoyo?"
+     Opciones: a (Personas e instituciones que pueden orientarnos y ayudarnos), b (Un grupo de redes sociales), c (Personas que deciden todo por nosotros).
+   - Pregunta 9: "¿Cuál de estas situaciones puede afectar los derechos de un adolescente?"
+     Opciones: a (Estudiar y participar en actividades culturales), b (Ser obligado a trabajar o vincularse a un grupo armado), c (Recibir orientación de su familia).
+   - Pregunta 10: "Antes de tomar una decisión importante, lo mejor es:"
+     Opciones: a (Pensar en las consecuencias y pedir orientación), b (Hacer lo que digan los demás), c (Actuar sin pensar).
+
+   Para cada pregunta, devuelve la letra y texto canónico (ej: "A. UN PLAN SOBRE LO QUE QUIERO LOGRAR EN EL FUTURO", "B. DECIR “NO”, ALEJARTE Y BUSCAR AYUDA", etc.) o simplemente la letra marcada ("A", "B", "C"). Si ninguna opción está marcada, devuelve "".
+"""
+
+USER_PROMPT_ANEXO17 = """Analiza la fotografía adjunta correspondiente al formato físico de evaluación (Pre-Test o Post-Test Anexo 17 Pellízcate con Generación B+) y genera un objeto JSON válido con las siguientes claves exactas:
+{
+  "TIPO DE EVALUACIÓN": "PRE-TEST o POST-TEST según el título/encabezado",
+  "NOMBRE": "NOMBRE COMPLETO MANUSCRITO",
+  "MUNICIPIO": "MUNICIPIO MANUSCRITO",
+  "FECHA": "FECHA MANUSCRITA (DD/MM/AAAA) o vacía",
+  "EDAD": "EDAD EN DÍGITOS o vacía",
+  "1. ¿QUÉ ES UN PROYECTO DE VIDA?": "Opción seleccionada (A, B, C o texto) o vacía",
+  "2. SI ALGUIEN QUIERE TOCAR TU CUERPO Y TÚ NO DESEAS, ¿QUÉ PUEDES HACER?": "Opción seleccionada (A, B, C o texto) o vacía",
+  "3. ¿CUÁL AYUDA A PREVENIR UN EMBARAZO Y LAS INFECCIONES DE TRANSMISIÓN SEXUAL?": "Opción seleccionada (A, B, C o texto) o vacía",
+  "4. ¿QUÉ DEBES HACER SI SUFRES BULLYING O CIBERACOSO?": "Opción seleccionada (A, B, C o texto) o vacía",
+  "5. ¿CUÁL ES UNA FORMA SALUDABLE DE MANEJAR UNA EMOCIÓN DIFÍCIL?": "Opción seleccionada (A, B, C o texto) o vacía",
+  "6. SI UN AMIGO DICE QUE NO QUIERE SEGUIR VIVIENDO, ¿QUÉ DEBES HACER?": "Opción seleccionada (A, B, C o texto) o vacía",
+  "7. ¿QUÉ SIGNIFICA COMUNICARSE DE MANERA ASERTIVA?": "Opción seleccionada (A, B, C o texto) o vacía",
+  "8. ¿QUÉ ES UNA RED DE APOYO?": "Opción seleccionada (A, B, C o texto) o vacía",
+  "9. ¿CUÁL DE ESTAS SITUACIONES PUEDE AFECTAR LOS DERECHOS DE UN ADOLESCENTE?": "Opción seleccionada (A, B, C o texto) o vacía",
+  "10. ANTES DE TOMAR UNA DECISIÓN IMPORTANTE, LO MEJOR ES:": "Opción seleccionada (A, B, C o texto) o vacía"
 }
 Devuelve EXCLUSIVAMENTE el JSON sin bloques markdown ni comentarios.
 """
@@ -491,6 +563,76 @@ class VisionService:
         return datos
 
     # -----------------------------------------------------------------
+    # EXTRACCIÓN DE PRE-TEST Y POST-TEST (ANEXO 17 PELLÍZCATE)
+    # -----------------------------------------------------------------
+
+    def extraer_datos_anexo17(
+        self,
+        img_bytes: bytes,
+        mime_type: str = "image/jpeg",
+        tipo_evaluacion_override: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Extrae datos de 1 fotografía correspondiente a Pre-Test o Post-Test (Anexo 17 Pellízcate con Generación B+).
+        Reconcilia automáticamente con el PATRÓN MAESTRO y el caché de participantes
+        mediante Jaro-Winkler tokenizado para garantizar coincidencia del 100% en:
+        NOMBRE, EDAD y MUNICIPIO.
+        """
+        img_opt, mime_opt = optimizar_imagen_bytes(img_bytes)
+        logger.info(f"Imagen de Anexo 17 optimizada: {len(img_opt)/1024:.1f}KB ({mime_opt})")
+
+        raw_json = None
+        if self.provider == "gemini" or (self.provider != "openai" and self.gemini_api_key):
+            try:
+                raw_json = self._procesar_anexo17_con_gemini(img_opt, mime_opt)
+            except Exception as e:
+                if self.openai_api_key:
+                    logger.warning(f"Gemini reportó error en Anexo 17 ({e}). Activando fallback a OpenAI...")
+                    raw_json = self._procesar_anexo17_con_openai(img_opt, mime_opt)
+                else:
+                    raise
+        elif self.provider == "openai" or self.openai_api_key:
+            raw_json = self._procesar_anexo17_con_openai(img_opt, mime_opt)
+        else:
+            raise ValueError(
+                "No hay proveedor de visión configurado. Configure GEMINI_API_KEY en su archivo .env."
+            )
+
+        limpio = _limpiar_bloque_json(raw_json)
+        try:
+            parsed = json.loads(limpio)
+        except Exception as e:
+            raise ValueError(f"La respuesta de la IA para Anexo 17 no fue un JSON válido: {e}\nRespuesta: {raw_json[:300]}")
+
+        # Aplicar override manual si fue seleccionado explícitamente en el frontend
+        if tipo_evaluacion_override and tipo_evaluacion_override.upper() in ["PRE-TEST", "POST-TEST"]:
+            parsed["TIPO DE EVALUACIÓN"] = tipo_evaluacion_override.upper()
+
+        test_obj = PrePostTestAnexo17.model_validate(parsed)
+        datos = test_obj.to_canonical_dict()
+
+        # ==============================================================
+        # RECONCILIACIÓN ESTRICTA CON PATRÓN MAESTRO (JARO-WINKLER)
+        # ==============================================================
+        nombre_extraido = datos.get("NOMBRE", "")
+        municipio_extraido = datos.get("MUNICIPIO", "")
+        coincidencia = participant_cache.buscar_coincidencia(nombre_extraido, municipio_extraido)
+
+        if coincidencia:
+            score = coincidencia.get("score", 1.0)
+            logger.info(
+                f"Reconciliando Anexo 17: '{nombre_extraido}' -> '{coincidencia['nombre']}' "
+                f"(Score Jaro-Winkler: {score:.3f}). Estandarizando Nombre, Edad y Municipio."
+            )
+            datos["NOMBRE"] = coincidencia["nombre"]
+            if coincidencia.get("edad"):
+                datos["EDAD"] = coincidencia["edad"]
+            if coincidencia.get("municipio"):
+                datos["MUNICIPIO"] = coincidencia["municipio"]
+
+        return datos
+
+    # -----------------------------------------------------------------
     # MÉTODOS DE EXTRACCIÓN CON GOOGLE GEMINI (ALTA PRECISIÓN VISUAL)
     # -----------------------------------------------------------------
 
@@ -695,6 +837,56 @@ class VisionService:
                 descripcion="Pre/Post Test"
             )
 
+    def _procesar_anexo17_con_gemini(self, img: bytes, mime: str) -> str:
+        """Invoca Google Gemini para procesar la evaluación física de Anexo 17 con 100% fidelidad visual."""
+        if not self.gemini_api_key:
+            raise ValueError("GEMINI_API_KEY no está configurada.")
+
+        primary_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite").strip()
+        candidate_models = [
+            primary_model,
+            "gemini-3.5-flash-lite",
+            "gemini-3.8-flash",
+            "gemini-3.1-flash-lite"
+        ]
+        models_to_try = list(dict.fromkeys(candidate_models))
+
+        try:
+            from google import genai
+            from google.genai import types
+
+            client = genai.Client(api_key=self.gemini_api_key)
+            part = types.Part.from_bytes(data=img, mime_type=mime)
+            prompt_completo = f"{SYSTEM_PROMPT_ANEXO17}\n\n{USER_PROMPT_ANEXO17}"
+            contents = [prompt_completo, part]
+            config = types.GenerateContentConfig(
+                temperature=0.0,
+                response_mime_type="application/json"
+            )
+
+            return self._invocar_gemini_con_backoff(
+                client=client,
+                contents=contents,
+                models_to_try=models_to_try,
+                config=config,
+                descripcion="Pre/Post Test Anexo 17"
+            )
+
+        except ImportError:
+            import google.generativeai as legacy_genai
+            legacy_genai.configure(api_key=self.gemini_api_key)
+            prompt_completo = f"{SYSTEM_PROMPT_ANEXO17}\n\n{USER_PROMPT_ANEXO17}"
+            contents = [
+                prompt_completo,
+                {"mime_type": mime, "data": img}
+            ]
+            return self._invocar_legacy_gemini_con_backoff(
+                legacy_genai=legacy_genai,
+                contents=contents,
+                models_to_try=models_to_try,
+                descripcion="Pre/Post Test Anexo 17"
+            )
+
     # -----------------------------------------------------------------
     # MÉTODOS DE FALLBACK SECUNDARIO (OPENAI SI TIENE API KEY)
     # -----------------------------------------------------------------
@@ -752,3 +944,30 @@ class VisionService:
             ]
         )
         return response.choices[0].message.content or "{}"
+
+    def _procesar_anexo17_con_openai(self, img: bytes, mime: str) -> str:
+        """Fallback opcional de OpenAI para Anexo 17."""
+        if not self.openai_api_key:
+            raise ValueError("OPENAI_API_KEY no está configurada para fallback.")
+
+        from openai import OpenAI
+        client = OpenAI(api_key=self.openai_api_key)
+        b64 = base64.b64encode(img).decode("utf-8")
+
+        response = client.chat.completions.create(
+            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            temperature=0.0,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT_ANEXO17},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": USER_PROMPT_ANEXO17},
+                        {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}}
+                    ]
+                }
+            ]
+        )
+        return response.choices[0].message.content or "{}"
+

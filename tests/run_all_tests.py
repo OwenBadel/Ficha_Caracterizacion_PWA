@@ -11,6 +11,7 @@ if str(backend_dir) not in sys.path:
 
 import test_schema
 import test_test_schema
+import test_anexo17_schema
 import test_image_orientation
 import test_audit_fixes
 
@@ -52,6 +53,13 @@ def run():
             if callable(func):
                 func()
                 print(f"  [PASS] {attr}")
+
+    print("\n--- 5. Ejecutando pruebas de test_anexo17_schema.py ---")
+    import unittest
+    suite = unittest.defaultTestLoader.loadTestsFromModule(test_anexo17_schema)
+    runner = unittest.TextTestRunner(verbosity=2)
+    result = runner.run(suite)
+    assert result.wasSuccessful(), "Las pruebas de test_anexo17_schema fallaron"
 
     print("\n=========================================")
     print("TODAS LAS PRUEBAS COMPLETADAS CON ÉXITO (VERDE)")

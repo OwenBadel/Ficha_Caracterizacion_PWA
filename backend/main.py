@@ -22,6 +22,7 @@ from dotenv import load_dotenv
 try:
     from .schema import FichaCaracterizacion, COLUMNAS_FICHA
     from .schema_test import PrePostTest, COLUMNAS_TEST, ENCABEZADOS_TEST_SHEETS
+    from .schema_anexo17 import PrePostTestAnexo17, COLUMNAS_ANEXO17, ENCABEZADOS_ANEXO17_SHEETS
     from .vision_service import VisionService
     from .sheets_service import GoogleSheetsService
     from .vocabulary_learner import vocabulary_learner
@@ -32,6 +33,7 @@ except (ImportError, ValueError):
         sys.path.insert(0, str(backend_dir))
     from schema import FichaCaracterizacion, COLUMNAS_FICHA
     from schema_test import PrePostTest, COLUMNAS_TEST, ENCABEZADOS_TEST_SHEETS
+    from schema_anexo17 import PrePostTestAnexo17, COLUMNAS_ANEXO17, ENCABEZADOS_ANEXO17_SHEETS
     from vision_service import VisionService
     from sheets_service import GoogleSheetsService
     from vocabulary_learner import vocabulary_learner
@@ -127,7 +129,7 @@ def health_check() -> Dict[str, Any]:
 
     return {
         "status": "online",
-        "service": "Ficha Caracterización & Pre/Post Test OCR",
+        "service": "Ficha Caracterización, Pre/Post Test Anexo 4 & Anexo 17 OCR",
         "vision_provider": vision_service.provider,
         "gemini_configured": gemini_ok,
         "openai_configured": openai_ok,
@@ -135,6 +137,7 @@ def health_check() -> Dict[str, Any]:
         "sheets_method": "gspread_api" if sheets_service._gspread_client else ("webhook" if sheets_service.webhook_url else "none"),
         "columnas_ficha_count": len(COLUMNAS_FICHA),
         "columnas_test_count": len(COLUMNAS_TEST),
+        "columnas_anexo17_count": len(COLUMNAS_ANEXO17),
         "patron_maestro_participantes": participant_cache.contar()
     }
 
@@ -269,6 +272,16 @@ def get_columns_test() -> Dict[str, Any]:
         "total": len(COLUMNAS_TEST),
         "columns": COLUMNAS_TEST,
         "headers_sheets": ENCABEZADOS_TEST_SHEETS
+    }
+
+
+@app.get("/api/columns-anexo17")
+def get_columns_anexo17() -> Dict[str, Any]:
+    """Retorna la lista ordenada de columnas para Pre-Test y Post-Test (Anexo 17 Pellízcate)."""
+    return {
+        "total": len(COLUMNAS_ANEXO17),
+        "columns": COLUMNAS_ANEXO17,
+        "headers_sheets": ENCABEZADOS_ANEXO17_SHEETS
     }
 
 
@@ -483,6 +496,97 @@ async def process_test(
         )
 
 
+@app.post("/api/process-anexo17")
+async def process_anexo17(
+    foto_test: UploadFile = File(..., description="Fotografía Hoja Única del Test Anexo 17 (Pre o Post)"),
+    tipo_evaluacion: Optional[str] = Form(None, description="Override opcional ('PRE-TEST', 'POST-TEST' o None para autodetección)"),
+    modo: Optional[str] = Form("inmediato", description="Modo de sincronización ('inmediato' o 'batch')")
+) -> Dict[str, Any]:
+    """
+    Recibe la fotografía única del Pre-Test o Post-Test (Anexo 17 Pellízcate con Generación B+),
+    realiza extracción OCR multimodal con IA (con reconciliación de participantes Jaro-Winkler)
+    y registra la fila resultante en Google Sheets o cola de contingencia.
+    """
+    logger.info(f"Procesando Anexo 17 en modo '{modo}'. Archivo: {foto_test.filename}, Override: {tipo_evaluacion}")
+
+    mime = foto_test.content_type or "image/jpeg"
+    if not mime.startswith("image/"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El archivo debe ser una imagen válida (JPEG, PNG, WebP)."
+        )
+
+    try:
+        test_bytes = await foto_test.read()
+        if len(test_bytes) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="La imagen del Anexo 17 está vacía (0 bytes)."
+            )
+
+        # 1. Extracción con IA de Visión (Offloaded a threadpool)
+        logger.info("Iniciando extracción con IA para Pre/Post Test Anexo 17...")
+        datos_dict = await run_in_threadpool(
+            vision_service.extraer_datos_anexo17,
+            img_bytes=test_bytes,
+            mime_type=mime,
+            tipo_evaluacion_override=tipo_evaluacion
+        )
+
+        test_obj = PrePostTestAnexo17.model_validate(datos_dict)
+        fila_ordenada = [str(x or "").strip().upper() for x in test_obj.to_ordered_row()]
+
+        logger.info(
+            f"Anexo 17 extraído con IA -> Tipo='{test_obj.tipo_evaluacion}', "
+            f"Participante='{test_obj.nombre}', "
+            f"Municipio='{test_obj.municipio}', "
+            f"Fecha='{test_obj.fecha}'"
+        )
+
+        # 2. Inserción en Google Sheets (Offloaded a threadpool con contingencia)
+        logger.info(f"Enviando fila de Anexo 17 estructurada a Google Sheets (Pestaña: '{test_obj.tipo_evaluacion}')...")
+        sheets_result = None
+        try:
+            sheets_result = await run_in_threadpool(
+                sheets_service.insertar_anexo17,
+                valores_ordenados=fila_ordenada,
+                tipo_evaluacion=test_obj.tipo_evaluacion
+            )
+        except Exception as sheet_err:
+            logger.error(f"Error escribiendo Anexo 17 en Google Sheets: {sheet_err}")
+            guardar_pendiente_local(f"anexo17_{test_obj.tipo_evaluacion.lower()}", fila_ordenada, str(sheet_err))
+            sheets_result = {
+                "success": False,
+                "error": str(sheet_err),
+                "saved_locally": True,
+                "message": f"Anexo 17 ({test_obj.tipo_evaluacion}) procesado correctamente por la IA. Google Sheets tardó en responder o está pendiente de vincular; guardado localmente para sincronización."
+            }
+
+        return {
+            "success": True,
+            "message": f"Anexo 17 ({test_obj.tipo_evaluacion}) procesado y registrado exitosamente.",
+            "tipo_evaluacion": test_obj.tipo_evaluacion,
+            "participante": test_obj.nombre or "SIN NOMBRE",
+            "municipio": test_obj.municipio or "SIN MUNICIPIO",
+            "fecha": test_obj.fecha or "",
+            "sheets_result": sheets_result,
+            "datos_extraidos": test_obj.to_canonical_dict()
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error procesando Anexo 17: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "success": False,
+                "error": str(e),
+                "detail": "Ocurrió un error durante el procesamiento del Anexo 17 o la escritura en Google Sheets."
+            }
+        )
+
+
 # =====================================================================
 # ENDPOINTS DE PATRÓN MAESTRO Y CACHÉ DE PARTICIPANTES (JARO-WINKLER)
 # =====================================================================
@@ -634,7 +738,11 @@ async def sync_pending_records():
         tipo = item.get("tipo", "ficha")
         fila = item.get("fila", [])
         try:
-            if tipo in ["PRE-TEST", "POST-TEST", "pre_test", "post_test"]:
+            if "anexo17" in str(tipo).lower():
+                # La fila guardada para Anexo 17 contiene 16 columnas con timestamp o 15 valores
+                vals = fila[1:] if len(fila) == 16 else fila
+                await run_in_threadpool(sheets_service.insertar_anexo17, valores_ordenados=vals, tipo_evaluacion=tipo)
+            elif tipo in ["PRE-TEST", "POST-TEST", "pre_test", "post_test"]:
                 # La fila guardada para test contiene: [timestamp, tipo, nombre, ...] (15 columnas)
                 # insertar_test espera los 14 valores ordenados sin timestamp (lo agrega automáticamente)
                 vals = fila[1:] if len(fila) == 15 else fila

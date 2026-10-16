@@ -19,16 +19,18 @@ from dotenv import load_dotenv
 try:
     from .schema import COLUMNAS_FICHA
     from .schema_test import COLUMNAS_TEST, ENCABEZADOS_TEST_SHEETS
+    from .schema_anexo17 import COLUMNAS_ANEXO17, ENCABEZADOS_ANEXO17_SHEETS
 except (ImportError, ValueError):
     from schema import COLUMNAS_FICHA
     from schema_test import COLUMNAS_TEST, ENCABEZADOS_TEST_SHEETS
+    from schema_anexo17 import COLUMNAS_ANEXO17, ENCABEZADOS_ANEXO17_SHEETS
 
 load_dotenv()
 logger = logging.getLogger("sheets_service")
 
 
 class GoogleSheetsService:
-    """Gestiona la inserción atómica de encuestas y tests en Google Sheets."""
+    """Gestiona la inserción atómica de encuestas y tests (Anexo 4 y Anexo 17) en Google Sheets."""
 
     def __init__(self):
         self.sheet_id = os.getenv("GOOGLE_SHEET_ID", "").strip()
@@ -36,6 +38,13 @@ class GoogleSheetsService:
         self.webhook_url = os.getenv("GOOGLE_APPS_SCRIPT_URL", "").strip()
         self.sheet_tab_tests = os.getenv("GOOGLE_SHEET_TAB_TESTS", "Respuestas de formulario 1").strip()
         self.webhook_url_tests = os.getenv("GOOGLE_APPS_SCRIPT_URL_TESTS", "").strip() or self.webhook_url
+
+        # Configuración específica para Anexo 17 (Pellízcate con Generación B+)
+        self.sheet_id_anexo17 = os.getenv("GOOGLE_SHEET_ID_ANEXO17", "").strip() or self.sheet_id
+        self.webhook_url_anexo17 = os.getenv("GOOGLE_APPS_SCRIPT_URL_ANEXO17", "").strip() or self.webhook_url_tests or self.webhook_url
+        self.sheet_tab_anexo17_pre = os.getenv("GOOGLE_SHEET_TAB_ANEXO17_PRE", "PRE-TEST").strip()
+        self.sheet_tab_anexo17_post = os.getenv("GOOGLE_SHEET_TAB_ANEXO17_POST", "POST-TEST").strip()
+
         self.credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
         self.credentials_json_env = os.getenv("GOOGLE_CREDENTIALS_JSON", "").strip()
         # Si la primera columna es 'Marca temporal', dejar vacía la primera celda
@@ -86,39 +95,42 @@ class GoogleSheetsService:
         headers: List[str],
         fila: List[str],
         webhook_url: Optional[str],
-        tipo_registro: str = "ficha"
+        tipo_registro: str = "ficha",
+        sheet_id_override: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Ejecuta la inserción atómica en Google Sheets, intentando primero la API oficial (gspread)
         con caché de encabezados en memoria, y fallback automático al Webhook de Google Apps Script.
         """
         errores = []
+        target_sheet_id = sheet_id_override or self.sheet_id
 
         # 1. Intentar con API Oficial (gspread) si está configurado
-        if self._gspread_client and self.sheet_id:
+        if self._gspread_client and target_sheet_id:
             try:
-                sheet = self._gspread_client.open_by_key(self.sheet_id)
+                sheet = self._gspread_client.open_by_key(target_sheet_id)
+                cache_key = f"{target_sheet_id}:{tab_name}"
                 try:
                     worksheet = sheet.worksheet(tab_name)
                 except Exception:
                     # Crear la pestaña si no existe
                     worksheet = sheet.add_worksheet(title=tab_name, rows=1000, cols=len(headers))
                     worksheet.append_row(headers, value_input_option="USER_ENTERED")
-                    self._tabs_inicializados.add(tab_name)
+                    self._tabs_inicializados.add(cache_key)
 
                 # Verificar encabezados una única vez por pestaña durante el ciclo de vida del servicio
-                if tab_name not in self._tabs_inicializados:
+                if cache_key not in self._tabs_inicializados:
                     primera_fila = worksheet.row_values(1)
                     if not primera_fila:
                         worksheet.append_row(headers, value_input_option="USER_ENTERED")
-                    self._tabs_inicializados.add(tab_name)
+                    self._tabs_inicializados.add(cache_key)
 
                 # Insertar los datos
                 res = worksheet.append_row(fila, value_input_option="USER_ENTERED")
                 return {
                     "success": True,
                     "method": "google_sheets_api",
-                    "sheet_id": self.sheet_id,
+                    "sheet_id": target_sheet_id,
                     "tab": tab_name,
                     "updated_cells": getattr(res, "get", lambda k, d: d)("updates", {}).get("updatedCells", len(fila))
                 }
@@ -204,7 +216,7 @@ class GoogleSheetsService:
         tipo_evaluacion: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Inserta una fila con los 14 valores ordenados de Pre/Post Test (+ Marca temporal).
+        Inserta una fila con los 14 valores ordenados de Pre/Post Test Anexo 4 (+ Marca temporal).
         Enruta automáticamente a la pestaña 'PRE-TEST' o 'POST-TEST' según la selección en interfaz
         o la lectura forense de la IA.
         """
@@ -230,5 +242,40 @@ class GoogleSheetsService:
             fila=fila_final,
             webhook_url=url_destino,
             tipo_registro=tipo_reg
+        )
+
+    def insertar_anexo17(
+        self,
+        valores_ordenados: List[str],
+        tipo_evaluacion: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Inserta una fila con los 15 valores ordenados de Pre/Post Test Anexo 17 (+ Marca temporal).
+        Enruta automáticamente a la pestaña 'PRE-TEST' o 'POST-TEST' según la selección en interfaz
+        o la lectura forense de la IA.
+        """
+        valores_upper = [str(v or "").strip().upper() for v in valores_ordenados]
+        timestamp_str = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        fila_final = [timestamp_str] + valores_upper
+
+        tipo_candidato = (tipo_evaluacion or (valores_upper[0] if valores_upper else "")).strip().upper()
+        if "POST" in tipo_candidato or "POS" in tipo_candidato:
+            tab_destino = self.sheet_tab_anexo17_post or "POST-TEST"
+            tipo_reg = "anexo17_post_test"
+        else:
+            tab_destino = self.sheet_tab_anexo17_pre or "PRE-TEST"
+            tipo_reg = "anexo17_pre_test"
+
+        url_destino = self.webhook_url_anexo17 or self.webhook_url_tests or self.webhook_url
+        target_sheet_id = self.sheet_id_anexo17 or self.sheet_id
+        logger.info(f"Enrutando Anexo 17 hacia Google Sheets -> Pestaña: '{tab_destino}' (Tipo: {tipo_reg})")
+
+        return self._ejecutar_insercion(
+            tab_name=tab_destino,
+            headers=ENCABEZADOS_ANEXO17_SHEETS,
+            fila=fila_final,
+            webhook_url=url_destino,
+            tipo_registro=tipo_reg,
+            sheet_id_override=target_sheet_id
         )
 

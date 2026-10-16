@@ -12,7 +12,10 @@ Aplicación Web Progresiva (**PWA Mobile-First**) diseñada para digitalizar en 
 * 🎯 **Algoritmo Jaro-Winkler con Bonificación Territorial:** Reconcilia nombres escritos a mano con variaciones ortográficas ("MAIKOL PEREZ" -> "MICHAEL STEVEN PEREZ", inversión de apellidos, etc.) comparándolos con el **PATRÓN MAESTRO** de los 10 municipios. Estandariza de forma automática e instantánea: **Nombre del participante, Edad, Municipio y EPS**.
 * 📋 **Ingesta del PATRÓN MAESTRO:** Sincronización automática directa desde la pestaña `PATRON MAESTRO` de Google Sheets o mediante archivo local (`.xlsx` o `.csv`).
 * 📸 **Captura Guiada y Auto-Orientación Vertical:** Disparador ergonómico con corrección inteligente de orientación: si una foto es tomada en horizontal, se transforma automáticamente a vertical con nitidez fotográfica y botones de rotación manual.
-* 📝 **Modo Dual (Fichas y Tests):** Soporte tanto para Fichas de Caracterización (2 fotos: Anverso y Reverso) como para hojas de Pre-Test y Post-Test (1 foto vertical).
+* 📝 **Arquitectura Multimódulo Tripartita (Fichas, Anexo 4 y Anexo 17):**
+  1. **Ficha de Caracterización:** Captura dual (Anverso y Reverso), 43 variables normalizadas.
+  2. **Anexo 4 (SSR ITS):** Hoja única, 9 preguntas dicotómicas y selección de prevención, enrutamiento a `PRE-TEST` y `POST-TEST`.
+  3. **Anexo 17 (Pellízcate con Generación B+):** Hoja única, 10 preguntas de opción múltiple (a, b, c) de proyecto de vida y derechos, enrutamiento a `PRE-TEST` y `POST-TEST` con Google Sheets independiente.
 * ⚡ **Modo Inmediato:** Envía automáticamente las fotos al motor de visión y sube los datos a Google Sheets al instante.
 * 📦 **Modo Cola (Offline-First / Batch):** Almacena las fotos y encuestas localmente en el dispositivo (**IndexedDB**), permitiendo continuar capturando y sincronizar todo en lote al recuperar conexión.
 * 📊 **Google Sheets API v4 Automatizado:** Inserta directamente en la hoja de cálculo usando Webhook oficial de Google Apps Script con tiempo de espera extendido (65s) y cola de contingencia local.
@@ -32,21 +35,28 @@ PROJ_006_Ficha_Caracterizacion_PWA/
 ├── backend/
 │   ├── __init__.py
 │   ├── schema.py               # Modelo Pydantic y 43 columnas canónicas de la Ficha
-│   ├── schema_test.py          # Modelo Pydantic para Pre-Test / Post-Test
+│   ├── schema_test.py          # Modelo Pydantic para Pre-Test / Post-Test (Anexo 4 SSR ITS)
+│   ├── schema_anexo17.py       # Modelo Pydantic para Anexo 17 (Pellízcate con Generación B+)
 │   ├── participant_cache.py    # Memoria viva, Jaro-Winkler tokenizado y Patrón Maestro
 │   ├── vision_service.py       # Extracción multimodal con Google Gemini y Rate Limiter
 │   ├── sheets_service.py       # Inserción en Google Sheets vía Webhook Apps Script
 │   └── main.py                 # Servidor FastAPI y entrega de la PWA estática
 ├── frontend/
-│   ├── index.html              # Interfaz de usuario Mobile-First
+│   ├── index.html              # Interfaz de usuario Mobile-First (Selector tripartito)
 │   ├── manifest.json           # Manifiesto PWA para instalación
 │   ├── sw.js                   # Service Worker para funcionamiento offline
 │   ├── css/
-│   │   └── styles.css          # Diseño Dark Glassmorphism, micro-animaciones
+│   │   └── styles.css          # Diseño Dark Glassmorphism, ergonomía táctil (≥44px)
 │   └── js/
-│       ├── db.js               # Persistencia local con IndexedDB (cola offline)
+│       ├── db.js               # Persistencia local con IndexedDB (cola offline multimódulo)
 │       └── app.js              # Lógica de interfaz, cámara, auto-orientación y sincronización
-└── tests/                      # Suite de pruebas unitarias automatizadas (24 tests)
+└── tests/                      # Suite de pruebas automatizadas (31 tests verdes)
+    ├── run_all_tests.py        # Ejecutor maestro de pruebas
+    ├── test_schema.py          # Pruebas de validación de Ficha
+    ├── test_test_schema.py     # Pruebas de Anexo 4 y Patrón Maestro
+    ├── test_anexo17_schema.py  # Pruebas de Anexo 17 (Pellízcate)
+    ├── test_image_orientation.py # Pruebas de rotación y visión
+    └── test_audit_fixes.py     # Pruebas de robustez y concurrencia
 ```
 
 ---

@@ -31,7 +31,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // -------------------------------------------------------------
   // Header y Modos
   const tabModoFicha = document.getElementById('tabModoFicha');
-  const tabModoTest = document.getElementById('tabModoTest');
+  const tabModoAnexo4 = document.getElementById('tabModoAnexo4');
+  const tabModoAnexo17 = document.getElementById('tabModoAnexo17');
+  const testPlaceholderMain = document.getElementById('testPlaceholderMain');
+  const testPlaceholderSub = document.getElementById('testPlaceholderSub');
   const netStatusBadge = document.getElementById('netStatusBadge');
   const netStatusText = document.getElementById('netStatusText');
   const brandSubtitle = document.getElementById('brandSubtitle');
@@ -133,10 +136,11 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // -------------------------------------------------------------
-  // CAMBIO DE MODO: FICHA VS TEST
+  // CAMBIO DE MODO: FICHA VS ANEXO 4 VS ANEXO 17
   // -------------------------------------------------------------
-  tabModoFicha.addEventListener('click', () => cambiarModo('ficha'));
-  tabModoTest.addEventListener('click', () => cambiarModo('test'));
+  if (tabModoFicha) tabModoFicha.addEventListener('click', () => cambiarModo('ficha'));
+  if (tabModoAnexo4) tabModoAnexo4.addEventListener('click', () => cambiarModo('anexo4'));
+  if (tabModoAnexo17) tabModoAnexo17.addEventListener('click', () => cambiarModo('anexo17'));
 
   function cambiarModo(nuevoModo) {
     if (state.mode === nuevoModo) return;
@@ -144,20 +148,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (nuevoModo === 'ficha') {
       tabModoFicha.classList.add('active');
-      tabModoTest.classList.remove('active');
+      if (tabModoAnexo4) tabModoAnexo4.classList.remove('active');
+      if (tabModoAnexo17) tabModoAnexo17.classList.remove('active');
       testTypeBar.style.display = 'none';
       photosGridFicha.style.display = 'grid';
       photosSingleTest.style.display = 'none';
-      brandSubtitle.textContent = 'Fichas de Caracterización';
+      brandSubtitle.textContent = 'Fichas de Caracterización (2 Páginas)';
       resetFichaForm();
-    } else {
-      tabModoTest.classList.add('active');
+    } else if (nuevoModo === 'anexo4') {
+      if (tabModoAnexo4) tabModoAnexo4.classList.add('active');
       tabModoFicha.classList.remove('active');
+      if (tabModoAnexo17) tabModoAnexo17.classList.remove('active');
       testTypeBar.style.display = 'flex';
       photosGridFicha.style.display = 'none';
       photosSingleTest.style.display = 'flex';
-      brandSubtitle.textContent = 'Pre-Test y Post-Test (Anexo 4)';
+      brandSubtitle.textContent = 'Pre/Post Test — Anexo 4 (SSR ITS)';
+      if (testPlaceholderMain) testPlaceholderMain.textContent = 'Pre o Post Test';
+      if (testPlaceholderSub) testPlaceholderSub.textContent = '(Anexo 4 SSR ITS — 9 Preguntas)';
       resetTestForm();
+      actualizarEtiquetaTest();
+    } else if (nuevoModo === 'anexo17') {
+      if (tabModoAnexo17) tabModoAnexo17.classList.add('active');
+      tabModoFicha.classList.remove('active');
+      if (tabModoAnexo4) tabModoAnexo4.classList.remove('active');
+      testTypeBar.style.display = 'flex';
+      photosGridFicha.style.display = 'none';
+      photosSingleTest.style.display = 'flex';
+      brandSubtitle.textContent = 'Pre/Post Test — Anexo 17 (Pellízcate)';
+      if (testPlaceholderMain) testPlaceholderMain.textContent = 'Pre o Post Test';
+      if (testPlaceholderSub) testPlaceholderSub.textContent = '(Anexo 17 Pellízcate — 10 Preguntas)';
+      resetTestForm();
+      actualizarEtiquetaTest();
     }
   }
 
@@ -172,14 +193,17 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   function actualizarEtiquetaTest() {
-    if (state.mode !== 'test') return;
+    if (state.mode === 'ficha') return;
+    const anexoLabel = state.mode === 'anexo17' ? 'Anexo 17' : 'Anexo 4';
     const tipo = state.tipoEvaluacion;
     if (state.fotoTestBlob) {
-      stepTag.textContent = tipo === 'AUTO' ? 'Test Listo (Auto IA)' : `${tipo} Listo`;
+      stepTag.textContent = tipo === 'AUTO' ? `${anexoLabel} Listo (Auto IA)` : `${anexoLabel} ${tipo} Listo`;
       shutterLabel.textContent = 'Listo para procesar';
     } else {
-      stepTag.textContent = tipo === 'AUTO' ? 'Hoja Única (Auto IA)' : `Hoja Única (${tipo})`;
-      shutterLabel.textContent = tipo === 'AUTO' ? 'Tomar Foto del Test' : `Tomar Foto ${tipo}`;
+      stepTag.textContent = tipo === 'AUTO' ? `Hoja Única (${anexoLabel})` : `Hoja Única (${anexoLabel} ${tipo})`;
+      stepTitle.textContent = tipo === 'AUTO' ? `Tomar Foto ${anexoLabel}` : `Tomar Foto ${anexoLabel} (${tipo})`;
+      stepDesc.textContent = `Enfoca la hoja física del ${anexoLabel} asegurando buena luz.`;
+      shutterLabel.textContent = tipo === 'AUTO' ? `Tomar Foto ${anexoLabel}` : `Tomar Foto ${tipo}`;
     }
   }
 
@@ -197,11 +221,11 @@ document.addEventListener('DOMContentLoaded', () => {
           showToast('Fotos listas. Elige "Sincronizar Ahora" o "Mandar a la Cola" abajo.', 'info');
         }
       } else {
-        // Modo Test
+        // Modo Anexo 4 o Anexo 17
         if (!state.fotoTestBlob) {
           if (cameraInputTest) { cameraInputTest.value = ''; cameraInputTest.click(); }
         } else {
-          showToast('Foto del test lista. Elige "Sincronizar Ahora" o "Mandar a la Cola" abajo.', 'info');
+          showToast('Foto lista. Elige "Sincronizar Ahora" o "Mandar a la Cola" abajo.', 'info');
         }
       }
     } catch (err) {
@@ -518,14 +542,15 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   function setStepTestReady() {
-    const tipo = state.tipoEvaluacion === 'AUTO' ? 'Pre/Post Test' : state.tipoEvaluacion;
+    const anexoLabel = state.mode === 'anexo17' ? 'Anexo 17' : 'Anexo 4';
+    const tipo = state.tipoEvaluacion === 'AUTO' ? `${anexoLabel}` : `${anexoLabel} (${state.tipoEvaluacion})`;
     stepTag.textContent = '¡Foto Lista!';
     stepTitle.textContent = `${tipo} (Hoja Única)`;
     stepDesc.textContent = 'Verifica la nitidez y selecciona una acción.';
     stepBadge.textContent = '✔';
 
-    readyIcon.textContent = '📝';
-    readyTitle.textContent = 'Test Listo (1/1 Foto)';
+    readyIcon.textContent = state.mode === 'anexo17' ? '🌟' : '📝';
+    readyTitle.textContent = `${anexoLabel} Listo (1/1 Foto)`;
     readySubtitle.textContent = `Evaluación: ${state.tipoEvaluacion}. Elige la acción:`;
 
     cameraTriggerSection.style.display = 'none';
@@ -544,11 +569,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (slotActionsTest) slotActionsTest.style.display = 'none';
     slotFotoTest.className = 'photo-slot photo-slot-single active-slot';
 
+    const anexoLabel = state.mode === 'anexo17' ? 'Anexo 17' : 'Anexo 4';
     stepTag.textContent = 'Hoja Única';
-    stepTitle.textContent = 'Tomar Foto del Test';
-    stepDesc.textContent = 'Enfoca la hoja completa del Pre-Test o Post-Test con buena luz.';
+    stepTitle.textContent = `Tomar Foto ${anexoLabel}`;
+    stepDesc.textContent = `Enfoca la hoja completa del Pre-Test o Post-Test (${anexoLabel}) con buena luz.`;
     stepBadge.textContent = '1/1';
-    shutterLabel.textContent = 'Tomar Foto del Test';
+    shutterLabel.textContent = `Tomar Foto ${anexoLabel}`;
 
     cameraTriggerSection.style.display = 'flex';
     readyActionBox.style.display = 'none';
@@ -626,9 +652,41 @@ document.addEventListener('DOMContentLoaded', () => {
         await ejecutarGuardadoEnCola();
       }
 
+    } else if (state.mode === 'anexo17') {
+      // Modo Anexo 17
+      mostrarModalProcesamiento('Extrayendo Pre/Post Test Anexo 17 con IA', 'Digitalizando respuestas de Pellízcate con Generación B+, reconciliando participante y registrando...');
+      try {
+        const formData = new FormData();
+        formData.append('foto_test', state.fotoTestBlob, 'anexo17.jpg');
+        if (state.tipoEvaluacion && state.tipoEvaluacion !== 'AUTO') {
+          formData.append('tipo_evaluacion', state.tipoEvaluacion);
+        }
+        formData.append('modo', 'inmediato');
+
+        const response = await fetch('/api/process-anexo17', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.detail || data.error || 'Error en el servidor');
+        }
+
+        ocultarModalProcesamiento();
+        showToast(`¡Éxito! Anexo 17 (${data.tipo_evaluacion}) registrado: ${data.participante} (${data.municipio})`, 'success');
+        resetTestForm();
+
+      } catch (error) {
+        console.error('Error en envío inmediato de Anexo 17:', error);
+        ocultarModalProcesamiento();
+        showToast(`Error al procesar Anexo 17: ${error.message}. Se guardará en cola local.`, 'error');
+        await ejecutarGuardadoEnCola();
+      }
+
     } else {
-      // Modo Test
-      mostrarModalProcesamiento('Extrayendo Pre/Post Test con IA', 'Digitalizando respuestas, reconciliando con base de participantes y subiendo a Google Sheets...');
+      // Modo Anexo 4
+      mostrarModalProcesamiento('Extrayendo Pre/Post Test Anexo 4 con IA', 'Digitalizando respuestas SSR ITS, reconciliando con base de participantes y subiendo a Google Sheets...');
       try {
         const formData = new FormData();
         formData.append('foto_test', state.fotoTestBlob, 'test.jpg');
@@ -648,7 +706,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         ocultarModalProcesamiento();
-        showToast(`¡Éxito! ${data.tipo_evaluacion} registrado: ${data.participante} (${data.municipio})`, 'success');
+        showToast(`¡Éxito! Anexo 4 (${data.tipo_evaluacion}) registrado: ${data.participante} (${data.municipio})`, 'success');
         resetTestForm();
 
       } catch (error) {
@@ -677,9 +735,20 @@ document.addEventListener('DOMContentLoaded', () => {
           state.foto2Mime
         );
         resetFichaForm();
+      } else if (state.mode === 'anexo17') {
+        if (!state.fotoTestBlob) {
+          showToast('Debes tomar la foto del test Anexo 17.', 'error');
+          return;
+        }
+        await window.surveyDB.guardarAnexo17(
+          state.fotoTestBlob,
+          state.fotoTestMime,
+          state.tipoEvaluacion
+        );
+        resetTestForm();
       } else {
         if (!state.fotoTestBlob) {
-          showToast('Debes tomar la foto del test.', 'error');
+          showToast('Debes tomar la foto del test Anexo 4.', 'error');
           return;
         }
         await window.surveyDB.guardarTest(
@@ -795,17 +864,34 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const item = pendientes[0];
-        const esTest = item.tipo === 'test';
+        const esAnexo17 = item.tipo === 'anexo17';
+        const esAnexo4 = item.tipo === 'anexo4' || item.tipo === 'test';
         const restantes = pendientes.length;
 
-        actualizarBarraSincronizacionUI(true, `Sincronizando ${esTest ? 'Test' : 'Ficha'} (${restantes} en cola)...`);
+        let labelTipo = 'Ficha';
+        if (esAnexo17) labelTipo = 'Anexo 17';
+        else if (esAnexo4) labelTipo = 'Anexo 4';
+
+        actualizarBarraSincronizacionUI(true, `Sincronizando ${labelTipo} (${restantes} en cola)...`);
         await window.surveyDB.actualizarEstado(item.id, 'syncing');
         await actualizarContadorCola();
         if (state.drawerOpen) await renderizarListaDrawer();
 
         try {
           let resp;
-          if (esTest) {
+          if (esAnexo17) {
+            const formData = new FormData();
+            formData.append('foto_test', item.anversoBlob || item.fotoBlob, 'anexo17.jpg');
+            if (item.tipoEvaluacion && item.tipoEvaluacion !== 'AUTO') {
+              formData.append('tipo_evaluacion', item.tipoEvaluacion);
+            }
+            formData.append('modo', 'batch');
+
+            resp = await fetch('/api/process-anexo17', {
+              method: 'POST',
+              body: formData
+            });
+          } else if (esAnexo4) {
             const formData = new FormData();
             formData.append('foto_test', item.anversoBlob || item.fotoBlob, 'test.jpg');
             if (item.tipoEvaluacion && item.tipoEvaluacion !== 'AUTO') {
@@ -837,7 +923,7 @@ document.addEventListener('DOMContentLoaded', () => {
               sheetsResult: resData.sheets_result
             });
             exitosas++;
-            showToast(`✅ ${esTest ? 'Test' : 'Ficha'} sincronizada (${restantes - 1} restantes)`, 'success');
+            showToast(`✅ ${labelTipo} sincronizada (${restantes - 1} restantes)`, 'success');
           } else {
             throw new Error(resData.detail || resData.error || 'Error de servidor');
           }
@@ -846,7 +932,7 @@ document.addEventListener('DOMContentLoaded', () => {
           fallidosEnEstaSesion.add(item.id);
           await window.surveyDB.actualizarEstado(item.id, 'error', { errorMsg: err.message });
           fallidas++;
-          showToast(`❌ Error sincronizando ${esTest ? 'test' : 'ficha'}: ${err.message}`, 'error');
+          showToast(`❌ Error sincronizando ${labelTipo}: ${err.message}`, 'error');
         }
 
         await actualizarContadorCola();
@@ -929,7 +1015,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const card = document.createElement('div');
       card.className = 'queue-item-card';
 
-      const esTest = item.tipo === 'test';
+      const esAnexo17 = item.tipo === 'anexo17';
+      const esAnexo4 = item.tipo === 'anexo4' || item.tipo === 'test';
       const url1 = URL.createObjectURL(item.anversoBlob || item.fotoBlob);
       const url2 = item.reversoBlob ? URL.createObjectURL(item.reversoBlob) : null;
       const fecha = new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -940,9 +1027,14 @@ document.addEventListener('DOMContentLoaded', () => {
       else if (item.status === 'synced') statusBadge = '<span style="color: #10b981;">✅ Sincronizado</span>';
       else if (item.status === 'error') statusBadge = `<span style="color: #ef4444;" title="${item.errorMsg || ''}">❌ Error</span>`;
 
-      const typeBadge = esTest 
-        ? `<span class="badge-item-type badge-type-test">📝 Test (${item.tipoEvaluacion || 'AUTO'})</span>`
-        : `<span class="badge-item-type badge-type-ficha">📋 Ficha (2 Fotos)</span>`;
+      let typeBadge = '';
+      if (esAnexo17) {
+        typeBadge = `<span class="badge-item-type badge-type-anexo17">🌟 Anexo 17 (${item.tipoEvaluacion || 'AUTO'})</span>`;
+      } else if (esAnexo4) {
+        typeBadge = `<span class="badge-item-type badge-type-test">📝 Anexo 4 (${item.tipoEvaluacion || 'AUTO'})</span>`;
+      } else {
+        typeBadge = `<span class="badge-item-type badge-type-ficha">📋 Ficha (2 Fotos)</span>`;
+      }
 
       card.innerHTML = `
         <div class="queue-item-left">

@@ -84,7 +84,41 @@ class LocalSurveyDB {
     const id = 'test_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
     const item = {
       id,
-      tipo: 'test',
+      tipo: 'anexo4',
+      anversoBlob: fotoBlob,
+      reversoBlob: null,
+      fotoBlob,
+      fotoMime,
+      anversoMime: fotoMime,
+      tipoEvaluacion: tipoEvaluacion || 'AUTO',
+      createdAt: new Date().toISOString(),
+      status: 'pending', // 'pending', 'syncing', 'synced', 'error'
+      errorMsg: null,
+      extractedData: null
+    };
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction([STORE_NAME], 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.add(item);
+
+      req.onsuccess = () => resolve(item);
+      req.onerror = (e) => reject(e.target.error);
+    });
+  }
+
+  /**
+   * Guarda un Pre-Test o Post-Test de Anexo 17 (Pellízcate) en la cola local
+   * @param {Blob} fotoBlob
+   * @param {string} fotoMime
+   * @param {string} tipoEvaluacion 'AUTO', 'PRE-TEST', 'POST-TEST'
+   */
+  async guardarAnexo17(fotoBlob, fotoMime = 'image/jpeg', tipoEvaluacion = 'AUTO') {
+    await this.init();
+    const id = 'anexo17_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+    const item = {
+      id,
+      tipo: 'anexo17',
       anversoBlob: fotoBlob,
       reversoBlob: null,
       fotoBlob,
