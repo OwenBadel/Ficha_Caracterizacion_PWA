@@ -104,11 +104,39 @@ function doPost(e) {
       fila[0] = Utilities.formatDate(new Date(), "America/Bogota", "dd/MM/yyyy HH:mm:ss");
     }
 
-    // Insertar la fila al final de la pestaña
+    // =========================================================================
+    // DEDUPLICACIÓN MULTI-DISPOSITIVO ATÓMICA
+    // Si varios dispositivos sincronizan la misma persona o hay reintentos de red,
+    // se conserva el primer registro y se evita crear filas repetidas en la hoja.
+    // =========================================================================
+    const lastRow = sheet.getLastRow();
+    const nombreCandidato = normalizarTextoParaComparar(fila[2]);
+
+    if (lastRow > 1 && nombreCandidato !== "" && nombreCandidato !== "SIN NOMBRE") {
+      // Columna 3 (C) es el NOMBRE del participante
+      const rangoNombres = sheet.getRange(2, 3, lastRow - 1, 1).getValues();
+      for (let i = 0; i < rangoNombres.length; i++) {
+        const nombreExistente = normalizarTextoParaComparar(rangoNombres[i][0]);
+        if (nombreExistente === nombreCandidato) {
+          const filaExistenteIndex = i + 2;
+          return ContentService.createTextOutput(JSON.stringify({
+            status: "success",
+            deduplicated: true,
+            message: "Registro ya existente en Google Sheets para '" + fila[2] + "' (" + tabDestino + "). Deduplicado exitosamente.",
+            tab: tabDestino,
+            row_index: filaExistenteIndex,
+            participante: fila[2] || ""
+          })).setMimeType(ContentService.MimeType.JSON);
+        }
+      }
+    }
+
+    // Insertar la fila al final de la pestaña si no existía
     sheet.appendRow(fila);
 
     return ContentService.createTextOutput(JSON.stringify({
       status: "success",
+      deduplicated: false,
       message: "Registro insertado exitosamente en Google Sheets (" + tabDestino + ")",
       tab: tabDestino,
       row_index: sheet.getLastRow(),
@@ -128,6 +156,17 @@ function doPost(e) {
 }
 
 /**
+ * Normaliza cadenas de texto para comparaciones robustas e insensibles a tildes o puntuación.
+ */
+function normalizarTextoParaComparar(txt) {
+  if (!txt) return "";
+  var s = txt.toString().trim().toUpperCase();
+  s = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  s = s.replace(/[^A-Z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+  return s;
+}
+
+/**
  * Receptor HTTP GET: Permite validar que el webhook está en línea desde el navegador.
  */
 function doGet(e) {
@@ -136,6 +175,7 @@ function doGet(e) {
     modulo: "Anexo 17 — Pellízcate con Generación B+",
     municipio_objetivo: "SANTA CATALINA",
     pestanas_soportadas: ["PRE-TEST", "POST-TEST"],
+    deduplicacion_atomica: true,
     total_columnas: ENCABEZADOS_ANEXO17.length,
     fecha_servidor: Utilities.formatDate(new Date(), "America/Bogota", "dd/MM/yyyy HH:mm:ss")
   })).setMimeType(ContentService.MimeType.JSON);

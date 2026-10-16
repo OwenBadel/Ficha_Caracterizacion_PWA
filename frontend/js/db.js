@@ -210,6 +210,7 @@ class LocalSurveyDB {
         if (extra.errorMsg !== undefined) data.errorMsg = extra.errorMsg;
         if (extra.extractedData !== undefined) data.extractedData = extra.extractedData;
         if (extra.sheetsResult !== undefined) data.sheetsResult = extra.sheetsResult;
+        if (extra.deduplicated !== undefined) data.deduplicated = extra.deduplicated;
         data.updatedAt = new Date().toISOString();
 
         const putReq = store.put(data);

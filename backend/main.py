@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import sys
 import logging
+import asyncio
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
@@ -89,6 +90,17 @@ app.add_middleware(
 # Inicializar servicios
 vision_service = VisionService()
 sheets_service = GoogleSheetsService()
+
+# =========================================================================
+# CONTROL DE CONCURRENCIA MULTI-DISPOSITIVO & DEDUPLICACIÓN
+# Garantiza que múltiples teléfonos mandando a cola simultáneamente se encolen
+# ordenadamente sin colapsar cuotas de Gemini ni saturar Google Sheets.
+# =========================================================================
+GEMINI_CONCURRENCY_SEMAPHORE = asyncio.Semaphore(2)  # Máximo 2 llamadas de visión simultáneas
+SHEETS_WRITE_SEMAPHORE = asyncio.Semaphore(1)        # Escritura estrictamente serializada y atómica
+
+IDEMPOTENCY_CACHE: Dict[str, Dict[str, Any]] = {}
+IDEMPOTENCY_CACHE_MAX = 3000
 
 
 @app.on_event("startup")
@@ -318,13 +330,22 @@ def resolver_mime_imagen(f: Optional[UploadFile], fallback: str = "image/jpeg") 
 async def process_survey(
     foto_anverso: UploadFile = File(..., description="Fotografía Página 1 (Anverso)"),
     foto_reverso: UploadFile = File(..., description="Fotografía Página 2 (Reverso)"),
-    modo: Optional[str] = Form("inmediato", description="Modo de sincronización ('inmediato' o 'batch')")
+    modo: Optional[str] = Form("inmediato", description="Modo de sincronización ('inmediato' o 'batch')"),
+    client_item_id: Optional[str] = Form(None, description="Identificador único del registro en el cliente (idempotencia)")
 ) -> Dict[str, Any]:
     """
     Recibe las dos fotos obligatorias de la ficha, realiza extracción OCR multimodal con IA
-    y registra la fila resultante en Google Sheets.
+    y registra la fila resultante en Google Sheets con control de concurrencia y deduplicación.
     """
-    logger.info(f"Procesando encuesta en modo '{modo}'. Archivo 1: {foto_anverso.filename}, Archivo 2: {foto_reverso.filename}")
+    # 0. Verificación de Idempotencia en memoria
+    if client_item_id and client_item_id in IDEMPOTENCY_CACHE:
+        cached = dict(IDEMPOTENCY_CACHE[client_item_id])
+        cached["deduplicated"] = True
+        cached["message"] = f"Ficha ya procesada previamente ({cached.get('participante', '')}). Deduplicado por idempotencia de dispositivo."
+        logger.info(f"Idempotencia detectada para ficha client_item_id={client_item_id}. Retornando caché.")
+        return cached
+
+    logger.info(f"Procesando encuesta en modo '{modo}' (Client ID={client_item_id}). Archivo 1: {foto_anverso.filename}, Archivo 2: {foto_reverso.filename}")
 
     # Validar y resolver tipos de archivo con tolerancia para IndexedDB
     mime1 = resolver_mime_imagen(foto_anverso, "image/jpeg")
@@ -340,15 +361,16 @@ async def process_survey(
                 detail="Una o ambas imágenes están vacías (0 bytes)."
             )
 
-        # 1. Extracción con IA de Visión (Offloaded a threadpool para proteger el event loop)
-        logger.info("Iniciando extracción multimodal con IA...")
-        datos_dict = await run_in_threadpool(
-            vision_service.extraer_datos_ficha,
-            img_anverso_bytes=anverso_bytes,
-            img_reverso_bytes=reverso_bytes,
-            mime_type_1=mime1,
-            mime_type_2=mime2
-        )
+        # 1. Extracción con IA de Visión bajo semáforo
+        logger.info("Encolando extracción multimodal de Ficha con IA (Semaphore)...")
+        async with GEMINI_CONCURRENCY_SEMAPHORE:
+            datos_dict = await run_in_threadpool(
+                vision_service.extraer_datos_ficha,
+                img_anverso_bytes=anverso_bytes,
+                img_reverso_bytes=reverso_bytes,
+                mime_type_1=mime1,
+                mime_type_2=mime2
+            )
 
         ficha = FichaCaracterizacion.model_validate(datos_dict)
         fila_ordenada = [str(x or "").strip().upper() for x in ficha.to_ordered_row()]
@@ -361,11 +383,12 @@ async def process_survey(
             f"Col 43 (Por qué)='{fila_ordenada[42]}'"
         )
 
-        # 2. Inserción en Google Sheets (Offloaded a threadpool con contingencia)
-        logger.info("Enviando fila estructurada a Google Sheets...")
+        # 2. Inserción atómica en Google Sheets bajo semáforo
+        logger.info("Encolando escritura de ficha en Google Sheets bajo lock...")
         sheets_result = None
         try:
-            sheets_result = await run_in_threadpool(sheets_service.insertar_encuesta, fila_ordenada)
+            async with SHEETS_WRITE_SEMAPHORE:
+                sheets_result = await run_in_threadpool(sheets_service.insertar_encuesta, fila_ordenada)
         except Exception as sheet_err:
             logger.error(f"Error escribiendo encuesta en Google Sheets: {sheet_err}")
             guardar_pendiente_local("ficha", fila_ordenada, str(sheet_err))
@@ -397,14 +420,25 @@ async def process_survey(
         except Exception as e:
             logger.warning(f"No se pudo registrar participante en caché: {e}")
 
-        return {
+        is_dedup = bool(sheets_result and sheets_result.get("deduplicated", False))
+        msg_final = sheets_result.get("message") if (sheets_result and is_dedup) else "Ficha de caracterización procesada y registrada exitosamente en Google Sheets."
+
+        response_payload = {
             "success": True,
-            "message": "Ficha de caracterización procesada y registrada exitosamente en Google Sheets.",
+            "deduplicated": is_dedup,
+            "message": msg_final,
             "participante": fila_ordenada[2] or "SIN NOMBRE",
             "documento": fila_ordenada[4] or "SIN DOCUMENTO",
             "sheets_result": sheets_result,
             "datos_extraidos": ficha.to_canonical_dict()
         }
+
+        if client_item_id:
+            if len(IDEMPOTENCY_CACHE) > IDEMPOTENCY_CACHE_MAX:
+                IDEMPOTENCY_CACHE.clear()
+            IDEMPOTENCY_CACHE[client_item_id] = response_payload
+
+        return response_payload
 
     except HTTPException:
         raise
@@ -424,14 +458,23 @@ async def process_survey(
 async def process_test(
     foto_test: UploadFile = File(..., description="Fotografía Hoja Única del Test (Pre o Post)"),
     tipo_evaluacion: Optional[str] = Form(None, description="Override opcional ('PRE-TEST', 'POST-TEST' o None para autodetección)"),
-    modo: Optional[str] = Form("inmediato", description="Modo de sincronización ('inmediato' o 'batch')")
+    modo: Optional[str] = Form("inmediato", description="Modo de sincronización ('inmediato' o 'batch')"),
+    client_item_id: Optional[str] = Form(None, description="Identificador único del registro en el cliente (idempotencia)")
 ) -> Dict[str, Any]:
     """
     Recibe la fotografía única del Pre-Test o Post-Test (Anexo 4),
     realiza extracción OCR multimodal con IA (con reconciliación de participantes)
-    y registra la fila resultante en Google Sheets.
+    y registra la fila resultante en Google Sheets con control de concurrencia y deduplicación atómica.
     """
-    logger.info(f"Procesando test en modo '{modo}'. Archivo: {foto_test.filename}, Override: {tipo_evaluacion}")
+    # 0. Verificación de Idempotencia en memoria
+    if client_item_id and client_item_id in IDEMPOTENCY_CACHE:
+        cached = dict(IDEMPOTENCY_CACHE[client_item_id])
+        cached["deduplicated"] = True
+        cached["message"] = f"Test ya procesado previamente ({cached.get('participante', '')}). Deduplicado por idempotencia de dispositivo."
+        logger.info(f"Idempotencia detectada para test client_item_id={client_item_id}. Retornando caché.")
+        return cached
+
+    logger.info(f"Procesando test en modo '{modo}' (Client ID={client_item_id}). Archivo: {foto_test.filename}, Override: {tipo_evaluacion}")
 
     mime = resolver_mime_imagen(foto_test, "image/jpeg")
 
@@ -443,14 +486,15 @@ async def process_test(
                 detail="La imagen del test está vacía (0 bytes)."
             )
 
-        # 1. Extracción con IA de Visión (Offloaded a threadpool para proteger event loop)
-        logger.info("Iniciando extracción con IA para Pre/Post Test...")
-        datos_dict = await run_in_threadpool(
-            vision_service.extraer_datos_test,
-            img_bytes=test_bytes,
-            mime_type=mime,
-            tipo_evaluacion_override=tipo_evaluacion
-        )
+        # 1. Extracción con IA de Visión bajo semáforo
+        logger.info("Encolando extracción con IA para Pre/Post Test Anexo 4 (Semaphore)...")
+        async with GEMINI_CONCURRENCY_SEMAPHORE:
+            datos_dict = await run_in_threadpool(
+                vision_service.extraer_datos_test,
+                img_bytes=test_bytes,
+                mime_type=mime,
+                tipo_evaluacion_override=tipo_evaluacion
+            )
 
         test_obj = PrePostTest.model_validate(datos_dict)
         fila_ordenada = [str(x or "").strip().upper() for x in test_obj.to_ordered_row()]
@@ -462,15 +506,16 @@ async def process_test(
             f"P5='{test_obj.pregunta_5}'"
         )
 
-        # 2. Inserción en Google Sheets (Offloaded a threadpool con contingencia)
-        logger.info(f"Enviando fila de test estructurada a Google Sheets (Pestaña: '{test_obj.tipo_evaluacion}')...")
+        # 2. Inserción en Google Sheets bajo semáforo
+        logger.info(f"Encolando escritura de test en Google Sheets (Pestaña: '{test_obj.tipo_evaluacion}') bajo lock...")
         sheets_result = None
         try:
-            sheets_result = await run_in_threadpool(
-                sheets_service.insertar_test,
-                valores_ordenados=fila_ordenada,
-                tipo_evaluacion=test_obj.tipo_evaluacion
-            )
+            async with SHEETS_WRITE_SEMAPHORE:
+                sheets_result = await run_in_threadpool(
+                    sheets_service.insertar_test,
+                    valores_ordenados=fila_ordenada,
+                    tipo_evaluacion=test_obj.tipo_evaluacion
+                )
         except Exception as sheet_err:
             logger.error(f"Error escribiendo test en Google Sheets: {sheet_err}")
             guardar_pendiente_local(test_obj.tipo_evaluacion, fila_ordenada, str(sheet_err))
@@ -481,15 +526,26 @@ async def process_test(
                 "message": f"{test_obj.tipo_evaluacion} procesado correctamente por la IA. Google Sheets tardó en responder; guardado localmente para sincronización."
             }
 
-        return {
+        is_dedup = bool(sheets_result and sheets_result.get("deduplicated", False))
+        msg_final = sheets_result.get("message") if (sheets_result and is_dedup) else f"{test_obj.tipo_evaluacion} procesado y registrado exitosamente en Google Sheets."
+
+        response_payload = {
             "success": True,
-            "message": f"{test_obj.tipo_evaluacion} procesado y registrado exitosamente en Google Sheets.",
+            "deduplicated": is_dedup,
+            "message": msg_final,
             "tipo_evaluacion": test_obj.tipo_evaluacion,
             "participante": test_obj.nombre or "SIN NOMBRE",
             "municipio": test_obj.municipio or "SIN MUNICIPIO",
             "sheets_result": sheets_result,
             "datos_extraidos": test_obj.to_canonical_dict()
         }
+
+        if client_item_id:
+            if len(IDEMPOTENCY_CACHE) > IDEMPOTENCY_CACHE_MAX:
+                IDEMPOTENCY_CACHE.clear()
+            IDEMPOTENCY_CACHE[client_item_id] = response_payload
+
+        return response_payload
 
     except HTTPException:
         raise
@@ -511,13 +567,22 @@ async def process_anexo17(
     foto_reverso: Optional[UploadFile] = File(None, description="Fotografía Página 2 del Anexo 17 (Preguntas 6 a 10)"),
     foto_test: Optional[UploadFile] = File(None, description="Compatibilidad con foto única"),
     tipo_evaluacion: Optional[str] = Form(None, description="Override opcional ('PRE-TEST', 'POST-TEST' o None para autodetección)"),
-    modo: Optional[str] = Form("inmediato", description="Modo de sincronización ('inmediato' o 'batch')")
+    modo: Optional[str] = Form("inmediato", description="Modo de sincronización ('inmediato' o 'batch')"),
+    client_item_id: Optional[str] = Form(None, description="Identificador único del registro en el cliente (idempotencia)")
 ) -> Dict[str, Any]:
     """
     Recibe las dos fotografías (Página 1 y Página 2) del Pre-Test o Post-Test (Anexo 17 Pellízcate con Generación B+),
     realiza extracción OCR multimodal con IA (con reconciliación de participantes Jaro-Winkler)
-    y registra la fila resultante en Google Sheets o cola de contingencia.
+    y registra la fila resultante en Google Sheets con control de concurrencia y deduplicación atómica.
     """
+    # 0. Verificación de Idempotencia en memoria (por client_item_id de dispositivo)
+    if client_item_id and client_item_id in IDEMPOTENCY_CACHE:
+        cached = dict(IDEMPOTENCY_CACHE[client_item_id])
+        cached["deduplicated"] = True
+        cached["message"] = f"Registro ya procesado previamente ({cached.get('participante', '')}). Deduplicado por idempotencia de dispositivo."
+        logger.info(f"Idempotencia detectada para client_item_id={client_item_id}. Retornando caché sin duplicar.")
+        return cached
+
     f1 = foto_anverso or foto_test
     if not f1:
         raise HTTPException(
@@ -545,22 +610,23 @@ async def process_anexo17(
                 mime2 = None
 
         logger.info(
-            f"Procesando Anexo 17 en modo '{modo}'. "
+            f"Procesando Anexo 17 en modo '{modo}' (Client ID={client_item_id}). "
             f"Pág 1={f1.filename} ({len(bytes1)/1024:.1f}KB), "
             f"Pág 2={'Sí (' + str(len(bytes2)/1024) + 'KB)' if bytes2 else 'No'}, "
             f"Override={tipo_evaluacion}"
         )
 
-        # 1. Extracción con IA de Visión (Offloaded a threadpool)
-        logger.info("Iniciando extracción con IA para Pre/Post Test Anexo 17...")
-        datos_dict = await run_in_threadpool(
-            vision_service.extraer_datos_anexo17,
-            img_anverso_bytes=bytes1,
-            img_reverso_bytes=bytes2,
-            mime_type_1=mime1,
-            mime_type_2=mime2,
-            tipo_evaluacion_override=tipo_evaluacion
-        )
+        # 1. Extracción con IA de Visión bajo semáforo de concurrencia
+        logger.info("Encolando extracción con IA para Pre/Post Test Anexo 17 (Semaphore)...")
+        async with GEMINI_CONCURRENCY_SEMAPHORE:
+            datos_dict = await run_in_threadpool(
+                vision_service.extraer_datos_anexo17,
+                img_anverso_bytes=bytes1,
+                img_reverso_bytes=bytes2,
+                mime_type_1=mime1,
+                mime_type_2=mime2,
+                tipo_evaluacion_override=tipo_evaluacion
+            )
 
         test_obj = PrePostTestAnexo17.model_validate(datos_dict)
         fila_ordenada = [str(x or "").strip().upper() for x in test_obj.to_ordered_row()]
@@ -572,15 +638,16 @@ async def process_anexo17(
             f"Fecha='{test_obj.fecha}'"
         )
 
-        # 2. Inserción en Google Sheets (Offloaded a threadpool con contingencia)
-        logger.info(f"Enviando fila de Anexo 17 estructurada a Google Sheets (Pestaña: '{test_obj.tipo_evaluacion}')...")
+        # 2. Inserción atómica en Google Sheets bajo semáforo de escritura serializada
+        logger.info(f"Encolando escritura en Google Sheets (Pestaña: '{test_obj.tipo_evaluacion}') bajo lock...")
         sheets_result = None
         try:
-            sheets_result = await run_in_threadpool(
-                sheets_service.insertar_anexo17,
-                valores_ordenados=fila_ordenada,
-                tipo_evaluacion=test_obj.tipo_evaluacion
-            )
+            async with SHEETS_WRITE_SEMAPHORE:
+                sheets_result = await run_in_threadpool(
+                    sheets_service.insertar_anexo17,
+                    valores_ordenados=fila_ordenada,
+                    tipo_evaluacion=test_obj.tipo_evaluacion
+                )
         except Exception as sheet_err:
             logger.error(f"Error escribiendo Anexo 17 en Google Sheets: {sheet_err}")
             guardar_pendiente_local(f"anexo17_{test_obj.tipo_evaluacion.lower()}", fila_ordenada, str(sheet_err))
@@ -588,12 +655,16 @@ async def process_anexo17(
                 "success": False,
                 "error": str(sheet_err),
                 "saved_locally": True,
-                "message": f"Anexo 17 ({test_obj.tipo_evaluacion}) procesado correctamente por la IA. Google Sheets tardó en responder o está pendiente de vincular; guardado localmente para sincronización."
+                "message": f"Anexo 17 ({test_obj.tipo_evaluacion}) procesado correctamente por la IA. Google Sheets tardó en responder; guardado localmente para sincronización."
             }
 
-        return {
+        is_dedup = bool(sheets_result and sheets_result.get("deduplicated", False))
+        msg_final = sheets_result.get("message") if (sheets_result and is_dedup) else f"Anexo 17 ({test_obj.tipo_evaluacion}) procesado y registrado exitosamente."
+
+        response_payload = {
             "success": True,
-            "message": f"Anexo 17 ({test_obj.tipo_evaluacion}) procesado y registrado exitosamente.",
+            "deduplicated": is_dedup,
+            "message": msg_final,
             "tipo_evaluacion": test_obj.tipo_evaluacion,
             "participante": test_obj.nombre or "SIN NOMBRE",
             "municipio": test_obj.municipio or "SIN MUNICIPIO",
@@ -601,6 +672,14 @@ async def process_anexo17(
             "sheets_result": sheets_result,
             "datos_extraidos": test_obj.to_canonical_dict()
         }
+
+        # Guardar en caché de idempotencia para absorber reintentos de red del mismo cliente
+        if client_item_id:
+            if len(IDEMPOTENCY_CACHE) > IDEMPOTENCY_CACHE_MAX:
+                IDEMPOTENCY_CACHE.clear()
+            IDEMPOTENCY_CACHE[client_item_id] = response_payload
+
+        return response_payload
 
     except HTTPException:
         raise

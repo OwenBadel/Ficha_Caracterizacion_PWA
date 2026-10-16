@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import json
 import logging
+import threading
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import requests
@@ -30,7 +31,7 @@ logger = logging.getLogger("sheets_service")
 
 
 class GoogleSheetsService:
-    """Gestiona la inserción atómica de encuestas y tests (Anexo 4 y Anexo 17) en Google Sheets."""
+    """Gestiona la inserción atómica y deduplicación de encuestas y tests en Google Sheets."""
 
     def __init__(self):
         self.sheet_id = os.getenv("GOOGLE_SHEET_ID", "").strip()
@@ -52,6 +53,7 @@ class GoogleSheetsService:
 
         self._gspread_client = None
         self._tabs_inicializados = set()
+        self._lock = threading.Lock()
         self._init_gspread()
 
     def _init_gspread(self):
@@ -105,84 +107,120 @@ class GoogleSheetsService:
         errores = []
         target_sheet_id = sheet_id_override or self.sheet_id
 
-        # 1. Intentar con API Oficial (gspread) si está configurado
-        if self._gspread_client and target_sheet_id:
-            try:
-                sheet = self._gspread_client.open_by_key(target_sheet_id)
-                cache_key = f"{target_sheet_id}:{tab_name}"
+        # Serialización atómica para evitar colisiones concurrentes entre dispositivos
+        with self._lock:
+            # 1. Intentar con API Oficial (gspread) si está configurado
+            if self._gspread_client and target_sheet_id:
                 try:
-                    worksheet = sheet.worksheet(tab_name)
-                except Exception:
-                    # Crear la pestaña si no existe
-                    worksheet = sheet.add_worksheet(title=tab_name, rows=1000, cols=len(headers))
-                    worksheet.append_row(headers, value_input_option="USER_ENTERED")
-                    self._tabs_inicializados.add(cache_key)
-
-                # Verificar encabezados una única vez por pestaña durante el ciclo de vida del servicio
-                if cache_key not in self._tabs_inicializados:
-                    primera_fila = worksheet.row_values(1)
-                    if not primera_fila:
+                    sheet = self._gspread_client.open_by_key(target_sheet_id)
+                    cache_key = f"{target_sheet_id}:{tab_name}"
+                    try:
+                        worksheet = sheet.worksheet(tab_name)
+                    except Exception:
+                        # Crear la pestaña si no existe
+                        worksheet = sheet.add_worksheet(title=tab_name, rows=1000, cols=len(headers))
                         worksheet.append_row(headers, value_input_option="USER_ENTERED")
-                    self._tabs_inicializados.add(cache_key)
+                        self._tabs_inicializados.add(cache_key)
 
-                # Insertar los datos
-                res = worksheet.append_row(fila, value_input_option="USER_ENTERED")
-                return {
-                    "success": True,
-                    "method": "google_sheets_api",
-                    "sheet_id": target_sheet_id,
-                    "tab": tab_name,
-                    "updated_cells": getattr(res, "get", lambda k, d: d)("updates", {}).get("updatedCells", len(fila))
-                }
-            except Exception as e:
-                err_msg = f"Error en Google Sheets API ({tipo_registro}): {e}"
-                logger.error(err_msg)
-                errores.append(err_msg)
+                    # Verificar encabezados una única vez por pestaña durante el ciclo de vida del servicio
+                    if cache_key not in self._tabs_inicializados:
+                        primera_fila = worksheet.row_values(1)
+                        if not primera_fila:
+                            worksheet.append_row(headers, value_input_option="USER_ENTERED")
+                        self._tabs_inicializados.add(cache_key)
 
-        # 2. Intentar con Webhook de Google Apps Script como alternativa con reintentos
-        if webhook_url:
-            payload = {
-                "tipo": tipo_registro,
-                "tab": tab_name,
-                "sheet_name": tab_name,
-                "hoja": tab_name,
-                "headers": headers,
-                "row": fila,
-                "data": dict(zip(headers, fila))
-            }
-            max_intentos = 3
-            timeout_segundos = 65
-            for intento in range(1, max_intentos + 1):
-                try:
-                    logger.info(f"Enviando webhook Google Apps Script ({tipo_registro}, intento {intento}/{max_intentos})...")
-                    resp = requests.post(webhook_url, json=payload, timeout=timeout_segundos)
-                    hubo_redirect_exitoso = any(h.status_code in [301, 302, 307, 308] for h in resp.history)
+                    # DEDUPLICACIÓN ATÓMICA EN GSPREAD:
+                    # Para Anexo 17: Columna C (índice 3 en 1-based, fila[2] en 0-based) es el Nombre
+                    if "anexo17" in tipo_registro.lower():
+                        nombre_candidato = str(fila[2] if len(fila) > 2 else "").strip().upper()
+                        if nombre_candidato and nombre_candidato != "SIN NOMBRE":
+                            try:
+                                col_nombres = [str(x or "").strip().upper() for x in worksheet.col_values(3)[1:]]
+                                if nombre_candidato in col_nombres:
+                                    logger.info(f"Deduplicación gspread activa: '{nombre_candidato}' ya existe en {tab_name}.")
+                                    return {
+                                        "success": True,
+                                        "method": "google_sheets_api",
+                                        "sheet_id": target_sheet_id,
+                                        "tab": tab_name,
+                                        "deduplicated": True,
+                                        "message": f"Registro ya existente para '{nombre_candidato}' en {tab_name}. Deduplicado exitosamente.",
+                                        "updated_cells": 0
+                                    }
+                            except Exception as e_dedup:
+                                logger.warning(f"No se pudo consultar duplicados en gspread: {e_dedup}")
 
-                    if resp.status_code in [200, 201, 302] or hubo_redirect_exitoso:
-                        return {
-                            "success": True,
-                            "method": "apps_script_webhook",
-                            "tab": tab_name,
-                            "status_code": resp.status_code,
-                            "redirected": hubo_redirect_exitoso,
-                            "intento": intento
-                        }
-                    else:
-                        errores.append(f"Webhook ({tipo_registro}, intento {intento}) respondió con código HTTP {resp.status_code}: {resp.text[:150]}")
-                except requests.exceptions.Timeout as e:
-                    err_msg = f"Timeout ({timeout_segundos}s) en Webhook Google Apps Script ({tipo_registro}, intento {intento}/{max_intentos}): {e}"
-                    logger.warning(err_msg)
-                    if intento == max_intentos:
-                        errores.append(err_msg)
-                    else:
-                        time.sleep(2.0)
+                    # Insertar los datos si no existe duplicado
+                    res = worksheet.append_row(fila, value_input_option="USER_ENTERED")
+                    return {
+                        "success": True,
+                        "method": "google_sheets_api",
+                        "sheet_id": target_sheet_id,
+                        "tab": tab_name,
+                        "deduplicated": False,
+                        "updated_cells": getattr(res, "get", lambda k, d: d)("updates", {}).get("updatedCells", len(fila))
+                    }
                 except Exception as e:
-                    err_msg = f"Error en Webhook Google Apps Script ({tipo_registro}, intento {intento}/{max_intentos}): {e}"
+                    err_msg = f"Error en Google Sheets API ({tipo_registro}): {e}"
                     logger.error(err_msg)
-                    if intento == max_intentos:
-                        errores.append(err_msg)
-                    else:
-                        time.sleep(1.5)
+                    errores.append(err_msg)
+
+            # 2. Intentar con Webhook de Google Apps Script como alternativa con reintentos
+            if webhook_url:
+                payload = {
+                    "tipo": tipo_registro,
+                    "tab": tab_name,
+                    "sheet_name": tab_name,
+                    "hoja": tab_name,
+                    "headers": headers,
+                    "row": fila,
+                    "data": dict(zip(headers, fila))
+                }
+                max_intentos = 4
+                timeout_segundos = 65
+                for intento in range(1, max_intentos + 1):
+                    try:
+                        logger.info(f"Enviando webhook Google Apps Script ({tipo_registro}, intento {intento}/{max_intentos})...")
+                        resp = requests.post(webhook_url, json=payload, timeout=timeout_segundos)
+                        hubo_redirect_exitoso = any(h.status_code in [301, 302, 307, 308] for h in resp.history)
+
+                        if resp.status_code in [200, 201, 302] or hubo_redirect_exitoso:
+                            dedup = False
+                            msg = "Registro insertado exitosamente en Google Sheets."
+                            try:
+                                res_json = resp.json()
+                                dedup = bool(res_json.get("deduplicated", False))
+                                if dedup:
+                                    msg = res_json.get("message", "Registro ya existente en Google Sheets. Deduplicado exitosamente.")
+                            except Exception:
+                                pass
+
+                            return {
+                                "success": True,
+                                "method": "apps_script_webhook",
+                                "tab": tab_name,
+                                "status_code": resp.status_code,
+                                "redirected": hubo_redirect_exitoso,
+                                "intento": intento,
+                                "deduplicated": dedup,
+                                "message": msg
+                            }
+                        else:
+                            errores.append(f"Webhook ({tipo_registro}, intento {intento}) respondió con código HTTP {resp.status_code}: {resp.text[:150]}")
+                    except requests.exceptions.Timeout as e:
+                        err_msg = f"Timeout ({timeout_segundos}s) en Webhook Google Apps Script ({tipo_registro}, intento {intento}/{max_intentos}): {e}"
+                        logger.warning(err_msg)
+                        if intento == max_intentos:
+                            errores.append(err_msg)
+                        else:
+                            time.sleep(2.0 * intento)
+                    except Exception as e:
+                        err_msg = f"Error en Webhook Google Apps Script ({tipo_registro}, intento {intento}/{max_intentos}): {e}"
+                        logger.error(err_msg)
+                        if intento == max_intentos:
+                            errores.append(err_msg)
+                        else:
+                            time.sleep(1.5 * intento)
 
         if not self._gspread_client and not webhook_url:
             raise ValueError(

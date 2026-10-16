@@ -35,7 +35,7 @@ def ejecutar_prueba(nombre_base: str = None, edad: str = "15", modo: str = "AMBO
     print("=" * 65)
     print("INICIANDO INSERCIÓN EN VIVO: ANEXO 17 (PELLÍZCATE)")
     print(f"-> Participante: {nombre_pre}")
-    print(f"-> Municipio: EL CARMEN DE BOLIVAR | Fecha Entrada: {fecha_a_usar} | Edad: {edad}")
+    print(f"-> Municipio: SANTA CATALINA | Fecha Entrada: {fecha_a_usar} | Edad: {edad}")
     print(f"-> Modo: {modo.upper()}")
     print("=" * 65)
 
@@ -51,7 +51,7 @@ def ejecutar_prueba(nombre_base: str = None, edad: str = "15", modo: str = "AMBO
         datos_pre = {
             "TIPO DE EVALUACIÓN": "PRE-TEST",
             "NOMBRE": nombre_pre,
-            "MUNICIPIO": "EL CARMEN DE BOLIVAR",
+            "MUNICIPIO": "SANTA CATALINA",
             "FECHA": fecha_a_usar,
             "EDAD": str(edad),
             "1. ¿QUÉ ES UN PROYECTO DE VIDA?": "A",
@@ -77,7 +77,7 @@ def ejecutar_prueba(nombre_base: str = None, edad: str = "15", modo: str = "AMBO
         datos_post = {
             "TIPO DE EVALUACIÓN": "POST-TEST",
             "NOMBRE": nombre_post,
-            "MUNICIPIO": "EL CARMEN DE BOLIVAR",
+            "MUNICIPIO": "SANTA CATALINA",
             "FECHA": fecha_a_usar,
             "EDAD": str(edad),
             "1. ¿QUÉ ES UN PROYECTO DE VIDA?": "A. UN PLAN SOBRE LO QUE QUIERO LOGRAR EN EL FUTURO",

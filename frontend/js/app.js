@@ -670,6 +670,7 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.append('foto_anverso', normalizarBlobParaEnvio(state.foto1Blob, 'anverso.jpg'), 'anverso.jpg');
         formData.append('foto_reverso', normalizarBlobParaEnvio(state.foto2Blob, 'reverso.jpg'), 'reverso.jpg');
         formData.append('modo', 'inmediato');
+        formData.append('client_item_id', 'direct_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6));
 
         const response = await fetch('/api/process-survey', {
           method: 'POST',
@@ -682,7 +683,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         ocultarModalProcesamiento();
-        showToast(`¡Éxito! Registrada ficha de: ${data.participante || 'Participante'}`, 'success');
+        if (data.deduplicated) {
+          showToast(`🛡️ Ficha deduplicada: ya existía registro previo para ${data.participante}`, 'info');
+        } else {
+          showToast(`¡Éxito! Registrada ficha de: ${data.participante || 'Participante'}`, 'success');
+        }
         resetFichaForm();
         cargarResumenParticipantes();
 
@@ -706,6 +711,7 @@ document.addEventListener('DOMContentLoaded', () => {
           formData.append('tipo_evaluacion', state.tipoEvaluacion);
         }
         formData.append('modo', 'inmediato');
+        formData.append('client_item_id', 'direct_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6));
 
         const response = await fetch('/api/process-anexo17', {
           method: 'POST',
@@ -718,7 +724,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         ocultarModalProcesamiento();
-        showToast(`¡Éxito! Anexo 17 (${data.tipo_evaluacion}) registrado: ${data.participante} (${data.municipio})`, 'success');
+        if (data.deduplicated) {
+          showToast(`🛡️ Anexo 17 (${data.tipo_evaluacion}) deduplicado: ya existía registro previo para ${data.participante}`, 'info');
+        } else {
+          showToast(`¡Éxito! Anexo 17 (${data.tipo_evaluacion}) registrado: ${data.participante} (${data.municipio})`, 'success');
+        }
         resetFichaForm();
 
       } catch (error) {
@@ -738,6 +748,7 @@ document.addEventListener('DOMContentLoaded', () => {
           formData.append('tipo_evaluacion', state.tipoEvaluacion);
         }
         formData.append('modo', 'inmediato');
+        formData.append('client_item_id', 'direct_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6));
 
         const response = await fetch('/api/process-test', {
           method: 'POST',
@@ -750,7 +761,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         ocultarModalProcesamiento();
-        showToast(`¡Éxito! Anexo 4 (${data.tipo_evaluacion}) registrado: ${data.participante} (${data.municipio})`, 'success');
+        if (data.deduplicated) {
+          showToast(`🛡️ Anexo 4 (${data.tipo_evaluacion}) deduplicado: ya existía registro previo para ${data.participante}`, 'info');
+        } else {
+          showToast(`¡Éxito! Anexo 4 (${data.tipo_evaluacion}) registrado: ${data.participante} (${data.municipio})`, 'success');
+        }
         resetTestForm();
 
       } catch (error) {
@@ -935,6 +950,7 @@ document.addEventListener('DOMContentLoaded', () => {
               formData.append('tipo_evaluacion', item.tipoEvaluacion);
             }
             formData.append('modo', 'batch');
+            formData.append('client_item_id', item.id);
 
             resp = await fetch('/api/process-anexo17', {
               method: 'POST',
@@ -947,6 +963,7 @@ document.addEventListener('DOMContentLoaded', () => {
               formData.append('tipo_evaluacion', item.tipoEvaluacion);
             }
             formData.append('modo', 'batch');
+            formData.append('client_item_id', item.id);
 
             resp = await fetch('/api/process-test', {
               method: 'POST',
@@ -957,6 +974,7 @@ document.addEventListener('DOMContentLoaded', () => {
             formData.append('foto_anverso', normalizarBlobParaEnvio(item.anversoBlob, 'anverso.jpg'), 'anverso.jpg');
             formData.append('foto_reverso', normalizarBlobParaEnvio(item.reversoBlob, 'reverso.jpg'), 'reverso.jpg');
             formData.append('modo', 'batch');
+            formData.append('client_item_id', item.id);
 
             resp = await fetch('/api/process-survey', {
               method: 'POST',
@@ -967,13 +985,19 @@ document.addEventListener('DOMContentLoaded', () => {
           const resData = await resp.json();
 
           if (resp.ok && resData.success) {
+            const esDedup = Boolean(resData.deduplicated);
             await window.surveyDB.actualizarEstado(item.id, 'synced', {
               extractedData: resData.datos_extraidos,
               sheetsResult: resData.sheets_result,
+              deduplicated: esDedup,
               errorMsg: null
             });
             exitosas++;
-            showToast(`✅ ${labelTipo} sincronizada (${restantes - 1} restantes)`, 'success');
+            if (esDedup) {
+              showToast(`🛡️ ${labelTipo} sincronizada (Deduplicada: ya estaba en Sheets)`, 'info');
+            } else {
+              showToast(`✅ ${labelTipo} sincronizada (${restantes - 1} restantes)`, 'success');
+            }
           } else {
             throw new Error(resData.detail || resData.error || 'Error de servidor');
           }
@@ -1086,6 +1110,7 @@ document.addEventListener('DOMContentLoaded', () => {
           formData.append('tipo_evaluacion', item.tipoEvaluacion);
         }
         formData.append('modo', 'batch');
+        formData.append('client_item_id', item.id);
 
         resp = await fetch('/api/process-anexo17', {
           method: 'POST',
@@ -1098,6 +1123,7 @@ document.addEventListener('DOMContentLoaded', () => {
           formData.append('tipo_evaluacion', item.tipoEvaluacion);
         }
         formData.append('modo', 'batch');
+        formData.append('client_item_id', item.id);
 
         resp = await fetch('/api/process-test', {
           method: 'POST',
@@ -1108,6 +1134,7 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.append('foto_anverso', normalizarBlobParaEnvio(item.anversoBlob, 'anverso.jpg'), 'anverso.jpg');
         formData.append('foto_reverso', normalizarBlobParaEnvio(item.reversoBlob, 'reverso.jpg'), 'reverso.jpg');
         formData.append('modo', 'batch');
+        formData.append('client_item_id', item.id);
 
         resp = await fetch('/api/process-survey', {
           method: 'POST',
@@ -1118,12 +1145,18 @@ document.addEventListener('DOMContentLoaded', () => {
       const resData = await resp.json();
 
       if (resp.ok && resData.success) {
+        const esDedup = Boolean(resData.deduplicated);
         await window.surveyDB.actualizarEstado(item.id, 'synced', {
           extractedData: resData.datos_extraidos,
           sheetsResult: resData.sheets_result,
+          deduplicated: esDedup,
           errorMsg: null
         });
-        showToast(`✅ ${labelTipo} sincronizada con éxito en Google Sheets`, 'success');
+        if (esDedup) {
+          showToast(`🛡️ ${labelTipo} sincronizado (Deduplicado: ya estaba registrado en Sheets)`, 'info');
+        } else {
+          showToast(`✅ ${labelTipo} sincronizado con éxito en Google Sheets`, 'success');
+        }
       } else {
         throw new Error(resData.detail || resData.error || 'Error al procesar en el servidor');
       }
@@ -1247,7 +1280,11 @@ document.addEventListener('DOMContentLoaded', () => {
       } else if (item.status === 'syncing') {
         statusPill = `<span class="status-pill status-pending"><span class="spinner-inline"></span> Sincronizando</span>`;
       } else if (item.status === 'synced') {
-        statusPill = `<span class="status-pill status-synced">✅ Sincronizado</span>`;
+        if (item.deduplicated) {
+          statusPill = `<span class="status-pill status-synced" style="background: rgba(6, 182, 212, 0.18); color: #38bdf8; border: 1px solid rgba(6, 182, 212, 0.45);">🛡️ Sincronizado (Deduplicado)</span>`;
+        } else {
+          statusPill = `<span class="status-pill status-synced">✅ Sincronizado</span>`;
+        }
       } else if (item.status === 'error') {
         statusPill = `<span class="status-pill status-error">❌ Con Error</span>`;
       }
@@ -1331,6 +1368,11 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
             ${item.extractedData && item.extractedData.numero_documento ? `
               <div class="rich-meta-detail">Doc: ${item.extractedData.numero_documento}</div>
+            ` : ''}
+            ${item.deduplicated ? `
+              <div class="rich-meta-detail" style="color: #38bdf8; font-weight: 600; font-size: 0.7rem; margin-top: 2px;">
+                🛡️ Ya existía en Sheets (Deduplicado sin repetir fila)
+              </div>
             ` : ''}
           </div>
         </div>
