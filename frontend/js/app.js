@@ -155,7 +155,7 @@ document.addEventListener('DOMContentLoaded', () => {
       testTypeBar.style.display = 'none';
       photosGridFicha.style.display = 'grid';
       photosSingleTest.style.display = 'none';
-      brandSubtitle.textContent = 'Fichas de Caracterización (2 Páginas)';
+      brandSubtitle.textContent = 'Anexo 10 — Fichas de Caracterización (2 Páginas)';
       if (labelPlaceholder1) labelPlaceholder1.innerHTML = 'Página 1<br>(Anverso)';
       if (labelPlaceholder2) labelPlaceholder2.innerHTML = 'Página 2<br>(Reverso)';
       resetFichaForm();
@@ -619,6 +619,11 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast('Debes tomar ambas fotos de la ficha antes de enviar.', 'error');
         return;
       }
+    } else if (state.mode === 'anexo17') {
+      if (!state.foto1Blob) {
+        showToast('Debes tomar al menos la foto de la Página 1 de Anexo 17 antes de enviar.', 'error');
+        return;
+      }
     } else {
       if (!state.fotoTestBlob) {
         showToast('Debes tomar la foto del test antes de enviar.', 'error');
@@ -729,7 +734,7 @@ document.addEventListener('DOMContentLoaded', () => {
         await ejecutarGuardadoEnCola();
       }
     }
-  });
+  }
 
   // -------------------------------------------------------------
   // GUARDADO EN MODO COLA (INDEXEDDB)
