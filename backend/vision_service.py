@@ -234,7 +234,7 @@ Tu única misión es transcribir con EXACTITUD Y FIDELIDAD VISUAL ABSOLUTA la in
      * Si contiene "POS-TEST", "POS TEST" o "POST-TEST" -> "POST-TEST"
 5. DATOS DEL PARTICIPANTE:
    - Nombre: Lee el texto manuscrito en "Nombre: __________________________".
-   - Municipio: El Anexo 17 corresponde al municipio de "EL CARMEN DE BOLIVAR". Si viene manuscrito abreviado ("Carmen", "El Carmen") o en blanco, asigna estrictamente "EL CARMEN DE BOLIVAR".
+   - Municipio: El Anexo 17 corresponde exclusivamente al municipio de "SANTA CATALINA". Asigna siempre y estrictamente "SANTA CATALINA".
    - Fecha: Lee la fecha manuscrita en "Fecha: ___________________________". Estandariza obligatoriamente a formato numérico DD/MM/AAAA (por ejemplo: si dice "14 de septiembre de 2026", "14 septiembre 2026", "14-sep-26" o cualquier nombre de mes, estandarízalo siempre con el mes en números: "14/09/2026"; si solo viene mes y año, "09/2026").
    - Edad: Lee los dígitos manuscritos en "Edad: _______".
 6. PREGUNTAS DE OPCIÓN MÚLTIPLE (1 A 10):
@@ -268,7 +268,7 @@ USER_PROMPT_ANEXO17 = """Analiza las fotografías adjuntas correspondientes al f
 {
   "TIPO DE EVALUACIÓN": "PRE-TEST o POST-TEST según el título/encabezado",
   "NOMBRE": "NOMBRE COMPLETO MANUSCRITO",
-  "MUNICIPIO": "EL CARMEN DE BOLIVAR",
+  "MUNICIPIO": "SANTA CATALINA",
   "FECHA": "FECHA MANUSCRITA ESTANDARIZADA NUMÉRICA (DD/MM/AAAA) o vacía",
   "EDAD": "EDAD EN DÍGITOS o vacía",
   "1. ¿QUÉ ES UN PROYECTO DE VIDA?": "Opción seleccionada (A, B, C o texto) o vacía",
@@ -584,7 +584,7 @@ class VisionService:
     ) -> Dict[str, Any]:
         """
         Extrae datos de 1 o 2 fotografías correspondientes a Pre-Test o Post-Test (Anexo 17 Pellízcate con Generación B+).
-        - Página 1: Encabezado, Nombre, Municipio (El Carmen de Bolívar), Fecha, Edad y Preguntas 1 a 5.
+        - Página 1: Encabezado, Nombre, Municipio (Santa Catalina), Fecha, Edad y Preguntas 1 a 5.
         - Página 2 (Reverso): Preguntas 6 a 10.
         Reconcilia automáticamente con el PATRÓN MAESTRO y el caché de participantes
         mediante Jaro-Winkler tokenizado para garantizar coincidencia del 100% en:

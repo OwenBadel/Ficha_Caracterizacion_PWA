@@ -113,23 +113,10 @@ def normalizar_texto_base(val: Any) -> str:
 
 def normalizar_municipio(val: Any) -> str:
     """
-    Asigna el municipio a uno de los territorios canónicos autorizados o su variante oficial.
-    Por directiva del proyecto, las evaluaciones del Anexo 17 corresponden a EL CARMEN DE BOLIVAR.
+    Por directiva oficial exclusiva del proyecto para Anexo 17 (Pellízcate con Generación B+),
+    el municipio siempre es SANTA CATALINA. Es lo único que se consigna en la columna MUNICIPIO.
     """
-    txt = normalizar_texto_base(val)
-    if not txt:
-        return "EL CARMEN DE BOLIVAR"
-    if "CARMEN" in txt:
-        return "EL CARMEN DE BOLIVAR"
-    res = normalizar_territorio(txt)
-    if res in TERRITORIOS_VALIDOS:
-        return res
-    if txt in TERRITORIOS_VALIDOS:
-        return txt
-    coincidencias = difflib.get_close_matches(txt, TERRITORIOS_VALIDOS, n=1, cutoff=0.6)
-    if coincidencias:
-        return coincidencias[0]
-    return res if res else "EL CARMEN DE BOLIVAR"
+    return "SANTA CATALINA"
 
 
 # Mapeo exhaustivo de nombres de meses en español y abreviaturas comunes a representación numérica

@@ -23,7 +23,8 @@ document.addEventListener('DOMContentLoaded', () => {
     tipoEvaluacion: 'AUTO', // 'AUTO', 'PRE-TEST', 'POST-TEST'
 
     isSyncing: false,
-    drawerOpen: false
+    drawerOpen: false,
+    queueFilter: 'all' // 'all', 'pending', 'error', 'synced'
   };
 
   // -------------------------------------------------------------
@@ -110,6 +111,31 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnCloseDrawer = document.getElementById('btnCloseDrawer');
   const drawerQueueList = document.getElementById('drawerQueueList');
   const btnLimpiarCompletadas = document.getElementById('btnLimpiarCompletadas');
+  const btnSyncAllFromDrawer = document.getElementById('btnSyncAllFromDrawer');
+
+  // Chips de estado en el drawer
+  const chipPending = document.getElementById('chipPending');
+  const chipSynced = document.getElementById('chipSynced');
+  const chipError = document.getElementById('chipError');
+
+  // Filtros de estado en el drawer
+  const filterAll = document.getElementById('filterAll');
+  const filterPending = document.getElementById('filterPending');
+  const filterError = document.getElementById('filterError');
+  const filterSynced = document.getElementById('filterSynced');
+
+  /**
+   * Asegura que un Blob o File tenga tipo MIME de imagen válido y nombre de archivo consistente.
+   * Evita errores 400 Bad Request por Content-Type 'application/octet-stream' desde IndexedDB.
+   */
+  function normalizarBlobParaEnvio(blob, defaultNombre = 'captura.jpg') {
+    if (!blob) return null;
+    let mime = 'image/jpeg';
+    if (blob.type && (blob.type.startsWith('image/') || blob.type === 'application/pdf')) {
+      mime = blob.type;
+    }
+    return new File([blob], defaultNombre, { type: mime });
+  }
 
 
 
@@ -178,7 +204,7 @@ document.addEventListener('DOMContentLoaded', () => {
       testTypeBar.style.display = 'flex';
       photosGridFicha.style.display = 'grid'; // ¡Anexo 17 utiliza 2 páginas físicas!
       photosSingleTest.style.display = 'none';
-      brandSubtitle.textContent = 'Pre/Post Test — Anexo 17 (El Carmen de Bolívar)';
+      brandSubtitle.textContent = 'Pre/Post Test — Anexo 17 (Santa Catalina)';
       if (labelPlaceholder1) labelPlaceholder1.innerHTML = 'Página 1<br>(Datos y Preg. 1-5)';
       if (labelPlaceholder2) labelPlaceholder2.innerHTML = 'Página 2<br>(Preg. 6-10)';
       resetFichaForm();
@@ -465,7 +491,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (step === 1) {
       stepTag.textContent = esAnexo17 ? `Paso 1 de 2 • Anexo 17 (${state.tipoEvaluacion})` : 'Paso 1 de 2';
       stepTitle.textContent = esAnexo17 ? 'Foto 1: Página 1 (Datos y Preg. 1 a 5)' : 'Foto 1: Anverso (Frente)';
-      stepDesc.textContent = esAnexo17 ? 'Enfoca la primera hoja con el nombre y preguntas 1 a 5 (El Carmen de Bolívar).' : 'Enfoca la cara frontal de la ficha con buena iluminación.';
+      stepDesc.textContent = esAnexo17 ? 'Enfoca la primera hoja con el nombre y preguntas 1 a 5 (Santa Catalina).' : 'Enfoca la cara frontal de la ficha con buena iluminación.';
       stepBadge.textContent = '1/2';
       shutterLabel.textContent = esAnexo17 ? 'Tomar Foto Pág. 1 (Anexo 17)' : 'Tomar Foto 1 (Anverso)';
       slotFoto1.classList.add('active-slot');
@@ -641,8 +667,8 @@ document.addEventListener('DOMContentLoaded', () => {
       mostrarModalProcesamiento('Extrayendo Ficha con IA', 'Analizando 43 variables, checkboxes manuscritos y subiendo a Google Sheets...');
       try {
         const formData = new FormData();
-        formData.append('foto_anverso', state.foto1Blob, 'anverso.jpg');
-        formData.append('foto_reverso', state.foto2Blob, 'reverso.jpg');
+        formData.append('foto_anverso', normalizarBlobParaEnvio(state.foto1Blob, 'anverso.jpg'), 'anverso.jpg');
+        formData.append('foto_reverso', normalizarBlobParaEnvio(state.foto2Blob, 'reverso.jpg'), 'reverso.jpg');
         formData.append('modo', 'inmediato');
 
         const response = await fetch('/api/process-survey', {
@@ -672,9 +698,9 @@ document.addEventListener('DOMContentLoaded', () => {
       mostrarModalProcesamiento('Extrayendo Pre/Post Test Anexo 17 con IA', 'Digitalizando ambas páginas de Pellízcate con Generación B+, reconciliando participante y registrando...');
       try {
         const formData = new FormData();
-        formData.append('foto_anverso', state.foto1Blob, 'anexo17_pag1.jpg');
+        formData.append('foto_anverso', normalizarBlobParaEnvio(state.foto1Blob, 'anexo17_pag1.jpg'), 'anexo17_pag1.jpg');
         if (state.foto2Blob) {
-          formData.append('foto_reverso', state.foto2Blob, 'anexo17_pag2.jpg');
+          formData.append('foto_reverso', normalizarBlobParaEnvio(state.foto2Blob, 'anexo17_pag2.jpg'), 'anexo17_pag2.jpg');
         }
         if (state.tipoEvaluacion && state.tipoEvaluacion !== 'AUTO') {
           formData.append('tipo_evaluacion', state.tipoEvaluacion);
@@ -707,7 +733,7 @@ document.addEventListener('DOMContentLoaded', () => {
       mostrarModalProcesamiento('Extrayendo Pre/Post Test Anexo 4 con IA', 'Digitalizando respuestas SSR ITS, reconciliando con base de participantes y subiendo a Google Sheets...');
       try {
         const formData = new FormData();
-        formData.append('foto_test', state.fotoTestBlob, 'test.jpg');
+        formData.append('foto_test', normalizarBlobParaEnvio(state.fotoTestBlob, 'test.jpg'), 'test.jpg');
         if (state.tipoEvaluacion && state.tipoEvaluacion !== 'AUTO') {
           formData.append('tipo_evaluacion', state.tipoEvaluacion);
         }
@@ -901,9 +927,9 @@ document.addEventListener('DOMContentLoaded', () => {
           let resp;
           if (esAnexo17) {
             const formData = new FormData();
-            formData.append('foto_anverso', item.anversoBlob || item.fotoBlob, 'anexo17_pag1.jpg');
+            formData.append('foto_anverso', normalizarBlobParaEnvio(item.anversoBlob || item.fotoBlob, 'anexo17_pag1.jpg'), 'anexo17_pag1.jpg');
             if (item.reversoBlob) {
-              formData.append('foto_reverso', item.reversoBlob, 'anexo17_pag2.jpg');
+              formData.append('foto_reverso', normalizarBlobParaEnvio(item.reversoBlob, 'anexo17_pag2.jpg'), 'anexo17_pag2.jpg');
             }
             if (item.tipoEvaluacion && item.tipoEvaluacion !== 'AUTO') {
               formData.append('tipo_evaluacion', item.tipoEvaluacion);
@@ -916,7 +942,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
           } else if (esAnexo4) {
             const formData = new FormData();
-            formData.append('foto_test', item.anversoBlob || item.fotoBlob, 'test.jpg');
+            formData.append('foto_test', normalizarBlobParaEnvio(item.anversoBlob || item.fotoBlob, 'test.jpg'), 'test.jpg');
             if (item.tipoEvaluacion && item.tipoEvaluacion !== 'AUTO') {
               formData.append('tipo_evaluacion', item.tipoEvaluacion);
             }
@@ -928,8 +954,8 @@ document.addEventListener('DOMContentLoaded', () => {
             });
           } else {
             const formData = new FormData();
-            formData.append('foto_anverso', item.anversoBlob, 'anverso.jpg');
-            formData.append('foto_reverso', item.reversoBlob, 'reverso.jpg');
+            formData.append('foto_anverso', normalizarBlobParaEnvio(item.anversoBlob, 'anverso.jpg'), 'anverso.jpg');
+            formData.append('foto_reverso', normalizarBlobParaEnvio(item.reversoBlob, 'reverso.jpg'), 'reverso.jpg');
             formData.append('modo', 'batch');
 
             resp = await fetch('/api/process-survey', {
@@ -943,7 +969,8 @@ document.addEventListener('DOMContentLoaded', () => {
           if (resp.ok && resData.success) {
             await window.surveyDB.actualizarEstado(item.id, 'synced', {
               extractedData: resData.datos_extraidos,
-              sheetsResult: resData.sheets_result
+              sheetsResult: resData.sheets_result,
+              errorMsg: null
             });
             exitosas++;
             showToast(`✅ ${labelTipo} sincronizada (${restantes - 1} restantes)`, 'success');
@@ -1021,74 +1048,328 @@ document.addEventListener('DOMContentLoaded', () => {
     drawerContainer.style.display = 'none';
   }
 
+  // -------------------------------------------------------------
+  // REINTENTO / SINCRONIZACIÓN INDIVIDUAL POR ÍTEM
+  // -------------------------------------------------------------
+  async function sincronizarItemIndividual(id) {
+    if (!navigator.onLine) {
+      showToast('No tienes conexión a Internet para sincronizar este registro.', 'error');
+      return;
+    }
+
+    const items = await window.surveyDB.obtenerTodas();
+    const item = items.find(it => it.id === id);
+    if (!item) {
+      showToast('Registro no encontrado en el dispositivo.', 'error');
+      return;
+    }
+
+    await window.surveyDB.actualizarEstado(item.id, 'syncing');
+    await actualizarContadorCola();
+    await renderizarListaDrawer();
+
+    const esAnexo17 = item.tipo === 'anexo17';
+    const esAnexo4 = item.tipo === 'anexo4' || item.tipo === 'test';
+    const labelTipo = esAnexo17 ? 'Anexo 17' : (esAnexo4 ? 'Anexo 4' : 'Ficha');
+
+    showToast(`🔄 Sincronizando ${labelTipo} individualmente...`, 'info');
+
+    try {
+      let resp;
+      if (esAnexo17) {
+        const formData = new FormData();
+        formData.append('foto_anverso', normalizarBlobParaEnvio(item.anversoBlob || item.fotoBlob, 'anexo17_pag1.jpg'), 'anexo17_pag1.jpg');
+        if (item.reversoBlob) {
+          formData.append('foto_reverso', normalizarBlobParaEnvio(item.reversoBlob, 'anexo17_pag2.jpg'), 'anexo17_pag2.jpg');
+        }
+        if (item.tipoEvaluacion && item.tipoEvaluacion !== 'AUTO') {
+          formData.append('tipo_evaluacion', item.tipoEvaluacion);
+        }
+        formData.append('modo', 'batch');
+
+        resp = await fetch('/api/process-anexo17', {
+          method: 'POST',
+          body: formData
+        });
+      } else if (esAnexo4) {
+        const formData = new FormData();
+        formData.append('foto_test', normalizarBlobParaEnvio(item.anversoBlob || item.fotoBlob, 'test.jpg'), 'test.jpg');
+        if (item.tipoEvaluacion && item.tipoEvaluacion !== 'AUTO') {
+          formData.append('tipo_evaluacion', item.tipoEvaluacion);
+        }
+        formData.append('modo', 'batch');
+
+        resp = await fetch('/api/process-test', {
+          method: 'POST',
+          body: formData
+        });
+      } else {
+        const formData = new FormData();
+        formData.append('foto_anverso', normalizarBlobParaEnvio(item.anversoBlob, 'anverso.jpg'), 'anverso.jpg');
+        formData.append('foto_reverso', normalizarBlobParaEnvio(item.reversoBlob, 'reverso.jpg'), 'reverso.jpg');
+        formData.append('modo', 'batch');
+
+        resp = await fetch('/api/process-survey', {
+          method: 'POST',
+          body: formData
+        });
+      }
+
+      const resData = await resp.json();
+
+      if (resp.ok && resData.success) {
+        await window.surveyDB.actualizarEstado(item.id, 'synced', {
+          extractedData: resData.datos_extraidos,
+          sheetsResult: resData.sheets_result,
+          errorMsg: null
+        });
+        showToast(`✅ ${labelTipo} sincronizada con éxito en Google Sheets`, 'success');
+      } else {
+        throw new Error(resData.detail || resData.error || 'Error al procesar en el servidor');
+      }
+    } catch (err) {
+      console.error(`Error en sincronización individual de item ${item.id}:`, err);
+      await window.surveyDB.actualizarEstado(item.id, 'error', { errorMsg: err.message });
+      showToast(`❌ Error al sincronizar ${labelTipo}: ${err.message}`, 'error');
+    } finally {
+      await actualizarContadorCola();
+      await renderizarListaDrawer();
+      cargarResumenParticipantes();
+    }
+  }
+
+  // -------------------------------------------------------------
+  // FILTROS Y ACCIONES GLOBALES DEL DRAWER
+  // -------------------------------------------------------------
+  const filterBtns = [
+    { el: filterAll, val: 'all' },
+    { el: filterPending, val: 'pending' },
+    { el: filterError, val: 'error' },
+    { el: filterSynced, val: 'synced' }
+  ];
+
+  filterBtns.forEach(({ el, val }) => {
+    if (!el) return;
+    el.addEventListener('click', () => {
+      filterBtns.forEach(f => f.el && f.el.classList.remove('active'));
+      el.classList.add('active');
+      state.queueFilter = val;
+      renderizarListaDrawer();
+    });
+  });
+
+  if (btnSyncAllFromDrawer) {
+    btnSyncAllFromDrawer.addEventListener('click', () => {
+      iniciarSincronizacionSegundoPlano(true);
+    });
+  }
+
+  // -------------------------------------------------------------
+  // RENDERIZADO VISUAL ENRIQUECIDO DE LA COLA LOCAL
+  // -------------------------------------------------------------
   async function renderizarListaDrawer() {
     drawerQueueList.innerHTML = '';
     const items = await window.surveyDB.obtenerTodas();
 
-    if (items.length === 0) {
+    // Actualizar métricas en tiempo real de los chips
+    const totalPending = items.filter(it => it.status === 'pending' || it.status === 'syncing').length;
+    const totalSynced = items.filter(it => it.status === 'synced').length;
+    const totalError = items.filter(it => it.status === 'error').length;
+
+    if (chipPending) chipPending.textContent = totalPending;
+    if (chipSynced) chipSynced.textContent = totalSynced;
+    if (chipError) chipError.textContent = totalError;
+
+    if (btnSyncAllFromDrawer) {
+      if (state.isSyncing) {
+        btnSyncAllFromDrawer.disabled = true;
+        btnSyncAllFromDrawer.innerHTML = '<span class="spinner-inline"></span> Sincronizando...';
+      } else {
+        btnSyncAllFromDrawer.disabled = (totalPending === 0 || !navigator.onLine);
+        btnSyncAllFromDrawer.innerHTML = `
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 12v-3a3 3 0 0 1 3 -3h13m-3 -3l3 3l-3 3" />
+            <path d="M20 12v3a3 3 0 0 1 -3 3h-13m3 3l-3 -3l3 -3" />
+          </svg>
+          Sincronizar Todo (${totalPending})
+        `;
+      }
+    }
+
+    // Filtrar según la pestaña activa
+    let itemsFiltrados = items;
+    if (state.queueFilter === 'pending') {
+      itemsFiltrados = items.filter(it => it.status === 'pending' || it.status === 'syncing');
+    } else if (state.queueFilter === 'error') {
+      itemsFiltrados = items.filter(it => it.status === 'error');
+    } else if (state.queueFilter === 'synced') {
+      itemsFiltrados = items.filter(it => it.status === 'synced');
+    }
+
+    if (itemsFiltrados.length === 0) {
+      let emptyMsg = 'No tienes registros en la cola local.';
+      if (state.queueFilter === 'pending') emptyMsg = 'No hay registros pendientes por sincronizar.';
+      else if (state.queueFilter === 'error') emptyMsg = '¡Excelente! No hay registros con error.';
+      else if (state.queueFilter === 'synced') emptyMsg = 'Aún no se han sincronizado registros en esta sesión.';
+
       drawerQueueList.innerHTML = `
-        <div style="text-align: center; color: var(--text-muted); padding: 24px 0;">
-          No tienes registros en la cola local.
+        <div class="queue-empty-state">
+          <div class="queue-empty-icon">${state.queueFilter === 'error' ? '✨' : '📭'}</div>
+          <div class="queue-empty-text">${emptyMsg}</div>
+          <div class="queue-empty-sub">Las capturas tomadas se almacenan aquí de forma segura.</div>
         </div>
       `;
       return;
     }
 
-    items.forEach((item, index) => {
+    itemsFiltrados.forEach((item, index) => {
       const card = document.createElement('div');
-      card.className = 'queue-item-card';
+      card.className = `queue-card-rich card-status-${item.status}`;
 
       const esAnexo17 = item.tipo === 'anexo17';
       const esAnexo4 = item.tipo === 'anexo4' || item.tipo === 'test';
-      const url1 = URL.createObjectURL(item.anversoBlob || item.fotoBlob);
-      const url2 = item.reversoBlob ? URL.createObjectURL(item.reversoBlob) : null;
       const fecha = new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-      let statusBadge = '';
-      if (item.status === 'pending') statusBadge = '<span style="color: #f59e0b;">⏳ Pendiente</span>';
-      else if (item.status === 'syncing') statusBadge = '<span style="color: #06b6d4;">🔄 Sincronizando</span>';
-      else if (item.status === 'synced') statusBadge = '<span style="color: #10b981;">✅ Sincronizado</span>';
-      else if (item.status === 'error') statusBadge = `<span style="color: #ef4444;" title="${item.errorMsg || ''}">❌ Error</span>`;
-
+      // Badges de tipo
       let typeBadge = '';
       if (esAnexo17) {
         typeBadge = `<span class="badge-item-type badge-type-anexo17">🌟 Anexo 17 (${item.tipoEvaluacion || 'AUTO'})</span>`;
       } else if (esAnexo4) {
         typeBadge = `<span class="badge-item-type badge-type-test">📝 Anexo 4 (${item.tipoEvaluacion || 'AUTO'})</span>`;
       } else {
-        typeBadge = `<span class="badge-item-type badge-type-ficha">📋 Ficha (2 Fotos)</span>`;
+        typeBadge = `<span class="badge-item-type badge-type-ficha">📋 Ficha de Caracterización</span>`;
+      }
+
+      // Píldora de estado
+      let statusPill = '';
+      if (item.status === 'pending') {
+        statusPill = `<span class="status-pill status-pending">⏳ Pendiente</span>`;
+      } else if (item.status === 'syncing') {
+        statusPill = `<span class="status-pill status-pending"><span class="spinner-inline"></span> Sincronizando</span>`;
+      } else if (item.status === 'synced') {
+        statusPill = `<span class="status-pill status-synced">✅ Sincronizado</span>`;
+      } else if (item.status === 'error') {
+        statusPill = `<span class="status-pill status-error">❌ Con Error</span>`;
+      }
+
+      // Generar miniaturas seguras con etiquetas legibles
+      let thumbsHtml = '';
+      if (item.anversoBlob || item.fotoBlob) {
+        const u1 = URL.createObjectURL(item.anversoBlob || item.fotoBlob);
+        const lbl1 = esAnexo17 ? 'Pág 1' : (esAnexo4 ? 'Test' : 'Anverso');
+        thumbsHtml += `
+          <div class="rich-thumb-box">
+            <img class="rich-thumb-img" src="${u1}" alt="${lbl1}" />
+            <span class="rich-thumb-label">${lbl1}</span>
+          </div>
+        `;
+      }
+      if (item.reversoBlob) {
+        const u2 = URL.createObjectURL(item.reversoBlob);
+        const lbl2 = esAnexo17 ? 'Pág 2' : 'Reverso';
+        thumbsHtml += `
+          <div class="rich-thumb-box">
+            <img class="rich-thumb-img" src="${u2}" alt="${lbl2}" />
+            <span class="rich-thumb-label">${lbl2}</span>
+          </div>
+        `;
+      }
+
+      // Información de participante y municipio
+      let metaTitulo = `Registro #${items.length - index}`;
+      let metaMunicipio = esAnexo17 ? 'SANTA CATALINA' : '';
+
+      if (item.extractedData) {
+        const ed = item.extractedData;
+        const nombreExt = ed.nombres_apellidos || ed.NOMBRE_COMPLETO || ed.nombre || '';
+        if (nombreExt) metaTitulo = nombreExt;
+        if (ed.municipio) metaMunicipio = ed.municipio;
+      }
+
+      // Caja de error visible (sin tooltips inaccesibles en táctil)
+      let errorBoxHtml = '';
+      if (item.status === 'error' && item.errorMsg) {
+        errorBoxHtml = `
+          <div class="rich-error-box">
+            <div class="rich-error-header">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="9" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              <span>Error al procesar:</span>
+            </div>
+            <div class="rich-error-msg">${item.errorMsg}</div>
+          </div>
+        `;
+      }
+
+      // Botón de sincronización individual
+      let btnSyncHtml = '';
+      if (item.status !== 'synced') {
+        const btnText = item.status === 'error' ? '🔄 Reintentar' : '⚡ Sincronizar';
+        const isThisSyncing = item.status === 'syncing';
+        btnSyncHtml = `
+          <button class="btn-card-sync" data-id="${item.id}" ${isThisSyncing ? 'disabled' : ''}>
+            ${isThisSyncing ? '<span class="spinner-inline"></span> Enviando...' : btnText}
+          </button>
+        `;
       }
 
       card.innerHTML = `
-        <div class="queue-item-left">
-          <div class="item-thumb-pair">
-            <img class="item-thumb" src="${url1}" alt="Foto 1">
-            ${url2 ? `<img class="item-thumb" src="${url2}" alt="Foto 2">` : ''}
+        <div class="rich-card-header">
+          ${typeBadge}
+          ${statusPill}
+        </div>
+        <div class="rich-card-body">
+          <div class="rich-thumbs-wrapper">
+            ${thumbsHtml}
           </div>
-          <div class="item-meta">
-            ${typeBadge}
-            <span>#${items.length - index} • ${fecha}</span>
-            <small>${statusBadge}</small>
+          <div class="rich-details">
+            <div class="rich-meta-title">${metaTitulo}</div>
+            <div class="rich-meta-sub">
+              <span>🕒 ${fecha}</span>
+              ${metaMunicipio ? `<span>• 📍 ${metaMunicipio}</span>` : ''}
+            </div>
+            ${item.extractedData && item.extractedData.numero_documento ? `
+              <div class="rich-meta-detail">Doc: ${item.extractedData.numero_documento}</div>
+            ` : ''}
           </div>
         </div>
-        <button class="btn-delete-item" data-id="${item.id}" title="Eliminar de cola">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M4 7l16 0" /><path d="M10 11l0 6" /><path d="M14 11l0 6" />
-            <path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12" />
-            <path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3" />
-          </svg>
-        </button>
+        ${errorBoxHtml}
+        <div class="rich-card-actions">
+          ${btnSyncHtml}
+          <button class="btn-card-delete" data-id="${item.id}" title="Eliminar de la cola">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 7l16 0" /><path d="M10 11l0 6" /><path d="M14 11l0 6" />
+              <path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12" />
+              <path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3" />
+            </svg>
+            Eliminar
+          </button>
+        </div>
       `;
 
-      card.querySelector('.btn-delete-item').addEventListener('click', async (e) => {
-        const id = e.currentTarget.getAttribute('data-id');
-        if (confirm('¿Eliminar este registro de la cola local?')) {
-          await window.surveyDB.eliminarEncuesta(id);
-          await actualizarContadorCola();
-          await renderizarListaDrawer();
-          showToast('Registro eliminado de la cola.', 'info');
-        }
-      });
+      // Evento reintentar / sincronizar individual
+      const syncBtn = card.querySelector('.btn-card-sync');
+      if (syncBtn) {
+        syncBtn.addEventListener('click', async (e) => {
+          const id = e.currentTarget.getAttribute('data-id');
+          await sincronizarItemIndividual(id);
+        });
+      }
+
+      // Evento eliminar individual
+      const delBtn = card.querySelector('.btn-card-delete');
+      if (delBtn) {
+        delBtn.addEventListener('click', async (e) => {
+          const id = e.currentTarget.getAttribute('data-id');
+          if (confirm('¿Eliminar este registro de la cola local? Esta acción no se puede deshacer.')) {
+            await window.surveyDB.eliminarEncuesta(id);
+            await actualizarContadorCola();
+            await renderizarListaDrawer();
+            showToast('Registro eliminado de la cola.', 'info');
+          }
+        });
+      }
 
       drawerQueueList.appendChild(card);
     });

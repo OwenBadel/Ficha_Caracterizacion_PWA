@@ -294,6 +294,26 @@ def get_participants() -> Dict[str, Any]:
     }
 
 
+def resolver_mime_imagen(f: Optional[UploadFile], fallback: str = "image/jpeg") -> str:
+    """
+    Resuelve el tipo MIME real de una imagen, tolerando blobs de IndexedDB
+    que los navegadores móviles envían como 'application/octet-stream' o vacíos.
+    """
+    if not f:
+        return fallback
+    mime = (getattr(f, "content_type", None) or "").lower().strip()
+    if mime.startswith("image/"):
+        return mime
+    fname = (getattr(f, "filename", None) or "").lower().strip()
+    if fname.endswith((".jpg", ".jpeg")):
+        return "image/jpeg"
+    elif fname.endswith(".png"):
+        return "image/png"
+    elif fname.endswith(".webp"):
+        return "image/webp"
+    return fallback
+
+
 @app.post("/api/process-survey")
 async def process_survey(
     foto_anverso: UploadFile = File(..., description="Fotografía Página 1 (Anverso)"),
@@ -306,15 +326,9 @@ async def process_survey(
     """
     logger.info(f"Procesando encuesta en modo '{modo}'. Archivo 1: {foto_anverso.filename}, Archivo 2: {foto_reverso.filename}")
 
-    # Validar tipos de archivo
-    mime1 = foto_anverso.content_type or "image/jpeg"
-    mime2 = foto_reverso.content_type or "image/jpeg"
-
-    if not mime1.startswith("image/") or not mime2.startswith("image/"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Ambos archivos deben ser imágenes válidas (JPEG, PNG, WebP, etc.)."
-        )
+    # Validar y resolver tipos de archivo con tolerancia para IndexedDB
+    mime1 = resolver_mime_imagen(foto_anverso, "image/jpeg")
+    mime2 = resolver_mime_imagen(foto_reverso, "image/jpeg")
 
     try:
         anverso_bytes = await foto_anverso.read()
@@ -419,12 +433,7 @@ async def process_test(
     """
     logger.info(f"Procesando test en modo '{modo}'. Archivo: {foto_test.filename}, Override: {tipo_evaluacion}")
 
-    mime = foto_test.content_type or "image/jpeg"
-    if not mime.startswith("image/"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El archivo debe ser una imagen válida (JPEG, PNG, WebP)."
-        )
+    mime = resolver_mime_imagen(foto_test, "image/jpeg")
 
     try:
         test_bytes = await foto_test.read()
@@ -516,12 +525,7 @@ async def process_anexo17(
             detail="Se requiere al menos la fotografía de la Página 1 (foto_anverso o foto_test)."
         )
 
-    mime1 = f1.content_type or "image/jpeg"
-    if not mime1.startswith("image/"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El archivo de la Página 1 debe ser una imagen válida (JPEG, PNG, WebP)."
-        )
+    mime1 = resolver_mime_imagen(f1, "image/jpeg")
 
     try:
         bytes1 = await f1.read()
@@ -534,7 +538,7 @@ async def process_anexo17(
         bytes2 = None
         mime2 = None
         if foto_reverso:
-            mime2 = foto_reverso.content_type or "image/jpeg"
+            mime2 = resolver_mime_imagen(foto_reverso, "image/jpeg")
             bytes2 = await foto_reverso.read()
             if len(bytes2) == 0:
                 bytes2 = None

@@ -134,7 +134,7 @@ function doGet(e) {
   return ContentService.createTextOutput(JSON.stringify({
     status: "online",
     modulo: "Anexo 17 — Pellízcate con Generación B+",
-    municipio_objetivo: "EL CARMEN DE BOLIVAR",
+    municipio_objetivo: "SANTA CATALINA",
     pestanas_soportadas: ["PRE-TEST", "POST-TEST"],
     total_columnas: ENCABEZADOS_ANEXO17.length,
     fecha_servidor: Utilities.formatDate(new Date(), "America/Bogota", "dd/MM/yyyy HH:mm:ss")

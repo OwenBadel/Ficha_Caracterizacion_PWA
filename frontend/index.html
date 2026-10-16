@@ -7,7 +7,7 @@
   <meta name="description" content="PWA Mobile-First para captura de Fichas de Caracterización y Pre/Post Test SSR ITS con IA de Visión y sincronización en Google Sheets.">
   <meta name="theme-color" content="#10b981">
   <link rel="manifest" href="/manifest.json">
-  <link rel="stylesheet" href="/static/css/styles.css?v=16">
+  <link rel="stylesheet" href="/static/css/styles.css?v=17">
   <link rel="icon" href="https://cdn.jsdelivr.net/npm/@tabler/icons@3.2.0/icons/outline/clipboard-heart.svg" type="image/svg+xml">
 </head>
 <body>
@@ -192,18 +192,26 @@
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M13 3l0 7l6 0l-8 11l0 -7l-6 0z" />
             </svg>
-            <span>⚡ Sincronizar Ahora</span>
+            <div class="btn-text-col">
+              <span class="btn-main-title">⚡ Sincronizar Ahora</span>
+              <small class="btn-main-sub">Extrae con IA y envía directamente a Google Sheets</small>
+            </div>
           </button>
+
           <button id="btnGuardarEnCola" class="btn-action-queue" type="button">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M4 4m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z" />
               <path d="M4 12h16" />
               <path d="M12 4v16" />
             </svg>
-            <span>📦 Mandar a la Cola</span>
+            <div class="btn-text-col">
+              <span class="btn-main-title">📦 Mandar a la Cola de Espera</span>
+              <small class="btn-main-sub">Guarda offline en el celular y continúa capturando</small>
+            </div>
           </button>
+
           <button id="btnCancelarEncuesta" class="btn-secondary" type="button">
-            🗑️ Descartar y Repetir
+            🗑️ Descartar Fotos y Repetir
           </button>
         </div>
       </section>
@@ -218,7 +226,7 @@
           <span id="queueCountBadge" class="queue-counter-badge">0</span>
           <div class="queue-label-text">
             <span id="queueLabel">0 registros pendientes</span>
-            <small id="queueSubLabel">Toca para ver la cola</small>
+            <small id="queueSubLabel">Toca para gestionar la cola</small>
           </div>
         </div>
         <button id="btnSyncAllNow" class="btn-sync-all" type="button" disabled>
@@ -233,17 +241,46 @@
       </div>
     </footer>
 
-    <!-- DRAWER / MODAL DE GESTIÓN DE COLA LOCAL -->
+    <!-- DRAWER / MODAL DE GESTIÓN DE COLA LOCAL MEJORADO -->
     <div id="drawerBackdrop" class="drawer-backdrop"></div>
     <div id="drawerContainer" class="drawer-container">
       <div class="drawer-header">
-        <h2>📦 Cola de Registros Offline</h2>
-        <button id="btnCloseDrawer" class="drawer-close" type="button">✕</button>
+        <div class="drawer-header-title">
+          <span style="font-size: 1.3rem;">📦</span>
+          <div>
+            <h2>Cola de Registros</h2>
+            <div class="drawer-stats-row">
+              <span id="chipPending" class="stat-chip stat-chip-pending">⏳ 0 pendientes</span>
+              <span id="chipSynced" class="stat-chip stat-chip-synced">✅ 0 listos</span>
+              <span id="chipError" class="stat-chip stat-chip-error" style="display: none;">❌ 0 errores</span>
+            </div>
+          </div>
+        </div>
+        <button id="btnCloseDrawer" class="drawer-close" type="button" aria-label="Cerrar cola">✕</button>
       </div>
+
+      <!-- Barra de Acciones Globales del Drawer -->
+      <div class="drawer-actions-bar">
+        <button id="btnSyncAllFromDrawer" class="btn-drawer-sync-all" type="button" disabled>
+          <span>⚡ Sincronizar Cola Completa</span>
+        </button>
+        <button id="btnLimpiarCompletadas" class="btn-drawer-clean" type="button">
+          🧹 Limpiar
+        </button>
+      </div>
+
+      <!-- Filtros Rápidos de la Cola -->
+      <div class="drawer-filters">
+        <button id="filterAll" class="drawer-filter-btn active" type="button" data-filter="all">Todos (0)</button>
+        <button id="filterPending" class="drawer-filter-btn" type="button" data-filter="pending">⏳ Pendientes (0)</button>
+        <button id="filterError" class="drawer-filter-btn" type="button" data-filter="error">❌ Errores (0)</button>
+        <button id="filterSynced" class="drawer-filter-btn" type="button" data-filter="synced">✅ Sincronizados (0)</button>
+      </div>
+
+      <!-- Lista Enriquecida de Registros -->
       <div id="drawerQueueList" class="drawer-list">
-        <!-- Elementos guardados en IndexedDB se renderizan aquí dinámicamente -->
+        <!-- Renderizado dinámico de tarjetas ricas -->
       </div>
-      <button id="btnLimpiarCompletadas" class="btn-secondary" type="button">Limpiar Registros Ya Sincronizados</button>
     </div>
 
     <!-- BACKDROP & MODAL PATRÓN MAESTRO -->
@@ -324,7 +361,7 @@
 
   </div>
 
-  <script src="/static/js/db.js?v=16"></script>
-  <script src="/static/js/app.js?v=16"></script>
+  <script src="/static/js/db.js?v=17"></script>
+  <script src="/static/js/app.js?v=17"></script>
 </body>
 </html>

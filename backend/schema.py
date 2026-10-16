@@ -84,7 +84,8 @@ TERRITORIOS_VALIDOS: List[str] = [
     "MORALES",
     "SANTA ROSA DEL SUR",
     "ARENAL",
-    "SOPLAVIENTO"
+    "SOPLAVIENTO",
+    "SANTA CATALINA"
 ]
 
 TIPOS_DOCUMENTO_VALIDOS: List[str] = [
@@ -227,6 +228,8 @@ def normalizar_territorio(val: Optional[Any]) -> str:
         return "ARENAL"
     if "SOPLAVIENTO" in s or "SOPLA VIENTO" in s or "SOPLA" in s:
         return "SOPLAVIENTO"
+    if "CATALINA" in s:
+        return "SANTA CATALINA"
     return s
 
 

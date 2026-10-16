@@ -79,12 +79,11 @@ class TestAnexo17Schema(unittest.TestCase):
         self.assertEqual(normalizar_fecha("14 de septiembre de 2020"), "14/09/2026")
 
     def test_normalizacion_municipio(self):
-        """Verifica coincidencia difusa con los municipios autorizados y el default de El Carmen de Bolívar."""
-        self.assertEqual(normalizar_municipio("santa rosa"), "SANTA ROSA DEL SUR")
-        self.assertEqual(normalizar_municipio("turbaco"), "TURBACO")
-        self.assertEqual(normalizar_municipio("carmen de bolivar"), "EL CARMEN DE BOLIVAR")
-        self.assertEqual(normalizar_municipio("el carmen"), "EL CARMEN DE BOLIVAR")
-        self.assertEqual(normalizar_municipio(""), "EL CARMEN DE BOLIVAR")
+        """Verifica que en Anexo 17 el municipio sea estrictamente SANTA CATALINA."""
+        self.assertEqual(normalizar_municipio("santa catalina"), "SANTA CATALINA")
+        self.assertEqual(normalizar_municipio("santa rosa"), "SANTA CATALINA")
+        self.assertEqual(normalizar_municipio("carmen de bolivar"), "SANTA CATALINA")
+        self.assertEqual(normalizar_municipio(""), "SANTA CATALINA")
 
     def test_normalizacion_10_preguntas_por_letra(self):
         """Verifica que las opciones a, b, c mapeen exactamente al texto canónico prefijado."""
@@ -150,7 +149,7 @@ class TestAnexo17Schema(unittest.TestCase):
         self.assertEqual(len(fila), 15)
         self.assertEqual(fila[0], "PRE-TEST")
         self.assertEqual(fila[1], "ANDREA CASTILLO")
-        self.assertEqual(fila[2], "TURBACO")
+        self.assertEqual(fila[2], "SANTA CATALINA")
         self.assertEqual(fila[3], "14/10/2026")
         self.assertEqual(fila[4], "14")
         self.assertTrue(fila[5].startswith("A."))
