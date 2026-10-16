@@ -3,7 +3,6 @@ Pruebas Unitarias para Rotación Automática a Vertical y Prioridad de Gemini 2.
 """
 
 import io
-import os
 import sys
 from pathlib import Path
 from PIL import Image

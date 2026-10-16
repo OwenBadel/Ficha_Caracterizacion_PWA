@@ -7,10 +7,12 @@ además de servir la aplicación PWA frontend en modo Mobile-First.
 from __future__ import annotations
 import os
 import sys
+import json
 import logging
 import asyncio
+from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,7 +23,7 @@ import uvicorn
 from dotenv import load_dotenv
 
 try:
-    from .schema import FichaCaracterizacion, COLUMNAS_FICHA
+    from .schema import FichaCaracterizacion, COLUMNAS_FICHA, ENCABEZADOS_FICHA_SHEETS
     from .schema_test import PrePostTest, COLUMNAS_TEST, ENCABEZADOS_TEST_SHEETS
     from .schema_anexo17 import PrePostTestAnexo17, COLUMNAS_ANEXO17, ENCABEZADOS_ANEXO17_SHEETS
     from .vision_service import VisionService
@@ -32,7 +34,7 @@ except (ImportError, ValueError):
     backend_dir = Path(__file__).resolve().parent
     if str(backend_dir) not in sys.path:
         sys.path.insert(0, str(backend_dir))
-    from schema import FichaCaracterizacion, COLUMNAS_FICHA
+    from schema import FichaCaracterizacion, COLUMNAS_FICHA, ENCABEZADOS_FICHA_SHEETS
     from schema_test import PrePostTest, COLUMNAS_TEST, ENCABEZADOS_TEST_SHEETS
     from schema_anexo17 import PrePostTestAnexo17, COLUMNAS_ANEXO17, ENCABEZADOS_ANEXO17_SHEETS
     from vision_service import VisionService
@@ -158,7 +160,6 @@ def health_check() -> Dict[str, Any]:
 # ENDPOINTS PARA PATRÓN MAESTRO Y COINCIDENCIA JARO-WINKLER
 # =====================================================================
 
-@app.get("/api/participants")
 @app.get("/api/participants/summary")
 def get_participants_summary() -> Dict[str, Any]:
     """Retorna el conteo y resumen territorial del Patrón Maestro."""
@@ -260,10 +261,11 @@ def test_participant_match(payload: Dict[str, str]) -> Dict[str, Any]:
 
 @app.get("/api/columns")
 def get_columns() -> Dict[str, Any]:
-    """Retorna la lista exacta y ordenada de las 43 columnas."""
+    """Retorna la lista exacta y ordenada de las 43 columnas y encabezados para Google Sheets."""
     return {
         "total": len(COLUMNAS_FICHA),
-        "columns": COLUMNAS_FICHA
+        "columns": COLUMNAS_FICHA,
+        "headers_sheets": ENCABEZADOS_FICHA_SHEETS
     }
 
 
@@ -529,6 +531,20 @@ async def process_test(
         is_dedup = bool(sheets_result and sheets_result.get("deduplicated", False))
         msg_final = sheets_result.get("message") if (sheets_result and is_dedup) else f"{test_obj.tipo_evaluacion} procesado y registrado exitosamente en Google Sheets."
 
+        # 3. Auto-aprendizaje continuo en base de participantes
+        try:
+            if test_obj.nombre and len(test_obj.nombre) >= 4:
+                await run_in_threadpool(
+                    participant_cache.aprender_participante,
+                    nombre=test_obj.nombre,
+                    edad=test_obj.edad or "",
+                    municipio=test_obj.municipio or "",
+                    eapb=test_obj.eps or "",
+                    documento=""
+                )
+        except Exception as e:
+            logger.warning(f"No se pudo registrar participante de test en caché: {e}")
+
         response_payload = {
             "success": True,
             "deduplicated": is_dedup,
@@ -660,6 +676,20 @@ async def process_anexo17(
 
         is_dedup = bool(sheets_result and sheets_result.get("deduplicated", False))
         msg_final = sheets_result.get("message") if (sheets_result and is_dedup) else f"Anexo 17 ({test_obj.tipo_evaluacion}) procesado y registrado exitosamente."
+
+        # 3. Auto-aprendizaje continuo en base de participantes
+        try:
+            if test_obj.nombre and len(test_obj.nombre) >= 4:
+                await run_in_threadpool(
+                    participant_cache.aprender_participante,
+                    nombre=test_obj.nombre,
+                    edad=test_obj.edad or "",
+                    municipio=test_obj.municipio or "SANTA CATALINA",
+                    eapb="",
+                    documento=""
+                )
+        except Exception as e:
+            logger.warning(f"No se pudo registrar participante de Anexo 17 en caché: {e}")
 
         response_payload = {
             "success": True,

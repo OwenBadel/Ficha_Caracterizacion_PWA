@@ -8,8 +8,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // ESTADO DE LA APLICACIÓN
   // -------------------------------------------------------------
   const state = {
-    mode: 'ficha',         // 'ficha' o 'test'
-    currentStep: 1,        // Ficha: 1 (Anverso), 2 (Reverso), 3 (Lista). Test: 1 (Foto), 2 (Lista)
+    mode: 'ficha',         // 'ficha', 'anexo4', 'anexo17'
+    currentStep: 1,        // Ficha/Anexo17: 1 (Pág 1), 2 (Pág 2), 3 (Lista). Anexo4: 1 (Foto), 2 (Lista)
     
     // Fotos Ficha
     foto1Blob: null,
@@ -730,6 +730,7 @@ document.addEventListener('DOMContentLoaded', () => {
           showToast(`¡Éxito! Anexo 17 (${data.tipo_evaluacion}) registrado: ${data.participante} (${data.municipio})`, 'success');
         }
         resetFichaForm();
+        cargarResumenParticipantes();
 
       } catch (error) {
         console.error('Error en envío inmediato de Anexo 17:', error);
@@ -767,6 +768,7 @@ document.addEventListener('DOMContentLoaded', () => {
           showToast(`¡Éxito! Anexo 4 (${data.tipo_evaluacion}) registrado: ${data.participante} (${data.municipio})`, 'success');
         }
         resetTestForm();
+        cargarResumenParticipantes();
 
       } catch (error) {
         console.error('Error en envío inmediato de test:', error);
@@ -1209,9 +1211,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const totalSynced = items.filter(it => it.status === 'synced').length;
     const totalError = items.filter(it => it.status === 'error').length;
 
-    if (chipPending) chipPending.textContent = totalPending;
-    if (chipSynced) chipSynced.textContent = totalSynced;
-    if (chipError) chipError.textContent = totalError;
+    if (chipPending) chipPending.textContent = `⏳ ${totalPending} pendientes`;
+    if (chipSynced) chipSynced.textContent = `✅ ${totalSynced} listos`;
+    if (chipError) {
+      chipError.textContent = `❌ ${totalError} errores`;
+      chipError.style.display = totalError > 0 ? 'inline-flex' : 'none';
+    }
+
+    // Actualizar números en los botones de filtro
+    if (filterAll) filterAll.textContent = `Todos (${items.length})`;
+    if (filterPending) filterPending.textContent = `⏳ Pendientes (${totalPending})`;
+    if (filterError) filterError.textContent = `❌ Errores (${totalError})`;
+    if (filterSynced) filterSynced.textContent = `✅ Sincronizados (${totalSynced})`;
 
     if (btnSyncAllFromDrawer) {
       if (state.isSyncing) {
@@ -1315,12 +1326,15 @@ document.addEventListener('DOMContentLoaded', () => {
       // Información de participante y municipio
       let metaTitulo = `Registro #${items.length - index}`;
       let metaMunicipio = esAnexo17 ? 'SANTA CATALINA' : '';
+      let metaDocumento = '';
 
       if (item.extractedData) {
         const ed = item.extractedData;
-        const nombreExt = ed.nombres_apellidos || ed.NOMBRE_COMPLETO || ed.nombre || '';
+        const nombreExt = ed['NOMBRE'] || ed['Nombre completo del participante'] || ed.nombres_apellidos || ed.NOMBRE_COMPLETO || ed.nombre || '';
         if (nombreExt) metaTitulo = nombreExt;
-        if (ed.municipio) metaMunicipio = ed.municipio;
+        const muniExt = ed['MUNICIPIO'] || ed['Municipio'] || ed.municipio || '';
+        if (muniExt) metaMunicipio = muniExt;
+        metaDocumento = ed['Numero de documento identidad'] || ed['numero_documento'] || ed.documento || '';
       }
 
       // Caja de error visible (sin tooltips inaccesibles en táctil)
@@ -1366,8 +1380,8 @@ document.addEventListener('DOMContentLoaded', () => {
               <span>🕒 ${fecha}</span>
               ${metaMunicipio ? `<span>• 📍 ${metaMunicipio}</span>` : ''}
             </div>
-            ${item.extractedData && item.extractedData.numero_documento ? `
-              <div class="rich-meta-detail">Doc: ${item.extractedData.numero_documento}</div>
+            ${metaDocumento ? `
+              <div class="rich-meta-detail">Doc: ${metaDocumento}</div>
             ` : ''}
             ${item.deduplicated ? `
               <div class="rich-meta-detail" style="color: #38bdf8; font-weight: 600; font-size: 0.7rem; margin-top: 2px;">

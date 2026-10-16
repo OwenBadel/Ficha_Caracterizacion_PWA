@@ -19,13 +19,16 @@ if str(backend_dir) not in sys.path:
 
 from participant_cache import (
     ParticipantCache,
-    jaro_similarity,
     jaro_winkler_similarity,
     token_jaro_winkler_similarity
 )
 from vocabulary_learner import VocabularyLearner
 from sheets_service import GoogleSheetsService
 from vision_service import VisionService
+from schema import COLUMNAS_FICHA, ENCABEZADOS_FICHA_SHEETS, normalizar_temas_interes
+from schema_test import COLUMNAS_TEST, ENCABEZADOS_TEST_SHEETS
+from schema_anexo17 import COLUMNAS_ANEXO17, ENCABEZADOS_ANEXO17_SHEETS
+from main import app, guardar_pendiente_local
 
 
 def test_participant_cache_thread_safety_and_batch_io():
@@ -251,6 +254,69 @@ def test_gemini_models_and_exponential_backoff():
     assert mock_client.models.intentos == 2, f"Se esperaban 2 intentos tras 503, se ejecutaron {mock_client.models.intentos}"
 
 
+def test_simetria_canonica_columnas_y_encabezados():
+    """Verifica que Ficha (43), Anexo 4 (14) y Anexo 17 (15) tengan simetría canónica total en backend y API."""
+    from fastapi.testclient import TestClient
+    client = TestClient(app)
+
+    # 1. Longitudes canónicas
+    assert len(COLUMNAS_FICHA) == 43
+    assert len(ENCABEZADOS_FICHA_SHEETS) == 44
+    assert ENCABEZADOS_FICHA_SHEETS[0] == "Marca temporal"
+    assert ENCABEZADOS_FICHA_SHEETS[1:] == COLUMNAS_FICHA
+
+    assert len(COLUMNAS_TEST) == 14
+    assert len(ENCABEZADOS_TEST_SHEETS) == 15
+    assert ENCABEZADOS_TEST_SHEETS[0] == "Marca temporal"
+    assert ENCABEZADOS_TEST_SHEETS[1:] == COLUMNAS_TEST
+
+    assert len(COLUMNAS_ANEXO17) == 15
+    assert len(ENCABEZADOS_ANEXO17_SHEETS) == 16
+    assert ENCABEZADOS_ANEXO17_SHEETS[0] == "Marca temporal"
+    assert ENCABEZADOS_ANEXO17_SHEETS[1:] == COLUMNAS_ANEXO17
+
+    # 2. Endpoints de columnas simétricos
+    res_ficha = client.get("/api/columns")
+    assert res_ficha.status_code == 200
+    data_f = res_ficha.json()
+    assert data_f["total"] == 43
+    assert len(data_f["headers_sheets"]) == 44
+
+    res_test = client.get("/api/columns-test")
+    assert res_test.status_code == 200
+    data_t = res_test.json()
+    assert data_t["total"] == 14
+    assert len(data_t["headers_sheets"]) == 15
+
+    res_a17 = client.get("/api/columns-anexo17")
+    assert res_a17.status_code == 200
+    data_a = res_a17.json()
+    assert data_a["total"] == 15
+    assert len(data_a["headers_sheets"]) == 16
+
+
+def test_json_resiliencia_schemas_y_contingencia():
+    """Valida que la normalización de listas JSON y contingencia local no lancen NameError."""
+    # 1. Normalización de temas de interés con lista serializada
+    res1 = normalizar_temas_interes('["VIH", "SIFILIS", "METODOS ANTICONCEPTIVOS"]')
+    assert "VIH" in res1
+    assert "SIFILIS" in res1
+
+    # 2. Guardar contingencia local sin fallar
+    with tempfile.TemporaryDirectory() as tmpdir:
+        import main
+        orig_file = main.PENDIENTES_FILE
+        try:
+            main.PENDIENTES_FILE = Path(tmpdir) / "test_pendientes.json"
+            guardar_pendiente_local("ficha", ["VALOR1", "VALOR2"], "Error simulado de timeout")
+            assert main.PENDIENTES_FILE.exists()
+            content = main.PENDIENTES_FILE.read_text(encoding="utf-8")
+            assert "Error simulado de timeout" in content
+            assert "VALOR1" in content
+        finally:
+            main.PENDIENTES_FILE = orig_file
+
+
 if __name__ == "__main__":
     test_participant_cache_thread_safety_and_batch_io()
     print("[PASS] test_participant_cache_thread_safety_and_batch_io")
@@ -268,4 +334,8 @@ if __name__ == "__main__":
     print("[PASS] test_openrouter_removed_and_gemini_rate_limited")
     test_gemini_models_and_exponential_backoff()
     print("[PASS] test_gemini_models_and_exponential_backoff")
+    test_simetria_canonica_columnas_y_encabezados()
+    print("[PASS] test_simetria_canonica_columnas_y_encabezados")
+    test_json_resiliencia_schemas_y_contingencia()
+    print("[PASS] test_json_resiliencia_schemas_y_contingencia")
     print("Todas las pruebas de auditoría pasaron exitosamente.")

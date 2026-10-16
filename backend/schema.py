@@ -4,6 +4,7 @@ Define la estructura exacta de 43 campos, el orden para Google Sheets y normaliz
 """
 
 import re
+import json
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, model_validator
 
@@ -61,6 +62,9 @@ COLUMNAS_FICHA: List[str] = [
     "¿Te gustaria que en tu institución educativa se hicieran mas espacios para dialogar de estos temas?",
     "¿Por que?"
 ]
+
+# Encabezados canónicos completos para Google Sheets (44 columnas con Marca temporal)
+ENCABEZADOS_FICHA_SHEETS: List[str] = ["Marca temporal"] + COLUMNAS_FICHA
 
 
 # -------------------------------------------------------------

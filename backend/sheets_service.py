@@ -18,13 +18,13 @@ from datetime import datetime
 from dotenv import load_dotenv
 
 try:
-    from .schema import COLUMNAS_FICHA
-    from .schema_test import COLUMNAS_TEST, ENCABEZADOS_TEST_SHEETS
-    from .schema_anexo17 import COLUMNAS_ANEXO17, ENCABEZADOS_ANEXO17_SHEETS
+    from .schema import COLUMNAS_FICHA, ENCABEZADOS_FICHA_SHEETS
+    from .schema_test import ENCABEZADOS_TEST_SHEETS
+    from .schema_anexo17 import ENCABEZADOS_ANEXO17_SHEETS
 except (ImportError, ValueError):
-    from schema import COLUMNAS_FICHA
-    from schema_test import COLUMNAS_TEST, ENCABEZADOS_TEST_SHEETS
-    from schema_anexo17 import COLUMNAS_ANEXO17, ENCABEZADOS_ANEXO17_SHEETS
+    from schema import COLUMNAS_FICHA, ENCABEZADOS_FICHA_SHEETS
+    from schema_test import ENCABEZADOS_TEST_SHEETS
+    from schema_anexo17 import ENCABEZADOS_ANEXO17_SHEETS
 
 load_dotenv()
 logger = logging.getLogger("sheets_service")
@@ -130,14 +130,14 @@ class GoogleSheetsService:
                         self._tabs_inicializados.add(cache_key)
 
                     # DEDUPLICACIÓN ATÓMICA EN GSPREAD:
-                    # Para Anexo 17: Columna C (índice 3 en 1-based, fila[2] en 0-based) es el Nombre
-                    if "anexo17" in tipo_registro.lower():
+                    # Para Anexo 17 y Anexo 4: Columna C (índice 3 en 1-based, fila[2] en 0-based) es el Nombre del Participante
+                    if "anexo17" in tipo_registro.lower() or "test" in tipo_registro.lower():
                         nombre_candidato = str(fila[2] if len(fila) > 2 else "").strip().upper()
                         if nombre_candidato and nombre_candidato != "SIN NOMBRE":
                             try:
                                 col_nombres = [str(x or "").strip().upper() for x in worksheet.col_values(3)[1:]]
                                 if nombre_candidato in col_nombres:
-                                    logger.info(f"Deduplicación gspread activa: '{nombre_candidato}' ya existe en {tab_name}.")
+                                    logger.info(f"Deduplicación gspread activa ({tipo_registro}): '{nombre_candidato}' ya existe en {tab_name}.")
                                     return {
                                         "success": True,
                                         "method": "google_sheets_api",
@@ -237,7 +237,7 @@ class GoogleSheetsService:
         """
         valores_upper = [str(v or "").strip().upper() for v in valores_ordenados]
         fila_final = ([""] + valores_upper) if self.skip_first_col else valores_upper
-        headers_final = (["Marca temporal"] + COLUMNAS_FICHA) if self.skip_first_col else COLUMNAS_FICHA
+        headers_final = ENCABEZADOS_FICHA_SHEETS if self.skip_first_col else COLUMNAS_FICHA
         tab_destino = self.sheet_tab if self.sheet_tab and self.sheet_tab != "Respuestas" else "Respuestas de formulario 1"
 
         return self._ejecutar_insercion(

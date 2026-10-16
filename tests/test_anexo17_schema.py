@@ -20,7 +20,6 @@ from schema_anexo17 import (
     normalizar_fecha,
     normalizar_municipio
 )
-from participant_cache import participant_cache
 
 
 class TestAnexo17Schema(unittest.TestCase):

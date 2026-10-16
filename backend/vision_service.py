@@ -17,20 +17,20 @@ import logging
 import time
 import random
 import threading
-from typing import Tuple, Dict, Any, Optional
+from typing import Dict, Any, Optional
 from dotenv import load_dotenv
 
 logger = logging.getLogger("vision_service")
 
 try:
     from .schema import FichaCaracterizacion, COLUMNAS_FICHA
-    from .schema_test import PrePostTest, COLUMNAS_TEST
-    from .schema_anexo17 import PrePostTestAnexo17, COLUMNAS_ANEXO17
+    from .schema_test import PrePostTest
+    from .schema_anexo17 import PrePostTestAnexo17
     from .participant_cache import participant_cache
 except (ImportError, ValueError):
     from schema import FichaCaracterizacion, COLUMNAS_FICHA
-    from schema_test import PrePostTest, COLUMNAS_TEST
-    from schema_anexo17 import PrePostTestAnexo17, COLUMNAS_ANEXO17
+    from schema_test import PrePostTest
+    from schema_anexo17 import PrePostTestAnexo17
     from participant_cache import participant_cache
 
 load_dotenv()

@@ -19,7 +19,7 @@ import threading
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger("participant_cache")
 

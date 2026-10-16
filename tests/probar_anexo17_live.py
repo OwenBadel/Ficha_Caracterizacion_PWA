@@ -17,7 +17,7 @@ BACKEND_DIR = PROJECT_ROOT / "backend"
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from schema_anexo17 import PrePostTestAnexo17, COLUMNAS_ANEXO17, ENCABEZADOS_ANEXO17_SHEETS
+from schema_anexo17 import PrePostTestAnexo17
 from sheets_service import GoogleSheetsService
 
 

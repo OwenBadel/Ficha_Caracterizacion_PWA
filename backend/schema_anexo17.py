@@ -8,17 +8,8 @@ Autor: Owen Badel Hooker — Ingeniero de Sistemas / Software Architect.
 from __future__ import annotations
 import re
 import difflib
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 from pydantic import BaseModel, Field, model_validator
-
-# Importar catálogos canónicos ya definidos en schema.py
-try:
-    from .schema import TERRITORIOS_VALIDOS, normalizar_territorio
-except (ImportError, ValueError):
-    try:
-        from schema import TERRITORIOS_VALIDOS, normalizar_territorio
-    except ImportError:
-        from backend.schema import TERRITORIOS_VALIDOS, normalizar_territorio
 
 
 # -------------------------------------------------------------

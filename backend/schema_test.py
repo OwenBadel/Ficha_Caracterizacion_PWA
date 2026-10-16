@@ -7,7 +7,7 @@ y estandarización a MAYÚSCULAS con catálogos canónicos de municipios y EPS.
 from __future__ import annotations
 import re
 import difflib
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 from pydantic import BaseModel, Field, model_validator
 
 # Importar catálogos canónicos ya definidos en schema.py
