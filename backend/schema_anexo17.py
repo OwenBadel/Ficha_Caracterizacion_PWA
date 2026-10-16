@@ -112,10 +112,13 @@ def normalizar_texto_base(val: Any) -> str:
 
 
 def normalizar_municipio(val: Any) -> str:
-    """Asigna el municipio a uno de los territorios canónicos autorizados o su variante oficial."""
+    """
+    Asigna el municipio a uno de los territorios canónicos autorizados o su variante oficial.
+    Por directiva del proyecto, las evaluaciones del Anexo 17 corresponden a EL CARMEN DE BOLIVAR.
+    """
     txt = normalizar_texto_base(val)
     if not txt:
-        return ""
+        return "EL CARMEN DE BOLIVAR"
     if "CARMEN" in txt:
         return "EL CARMEN DE BOLIVAR"
     res = normalizar_territorio(txt)
@@ -126,7 +129,7 @@ def normalizar_municipio(val: Any) -> str:
     coincidencias = difflib.get_close_matches(txt, TERRITORIOS_VALIDOS, n=1, cutoff=0.6)
     if coincidencias:
         return coincidencias[0]
-    return res if res else txt
+    return res if res else "EL CARMEN DE BOLIVAR"
 
 
 def normalizar_fecha(val: Any) -> str:

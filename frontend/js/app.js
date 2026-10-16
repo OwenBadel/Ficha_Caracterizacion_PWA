@@ -55,6 +55,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const slotFoto2 = document.getElementById('slotFoto2');
   const placeholderFoto1 = document.getElementById('placeholderFoto1');
   const placeholderFoto2 = document.getElementById('placeholderFoto2');
+  const labelPlaceholder1 = document.getElementById('labelPlaceholder1');
+  const labelPlaceholder2 = document.getElementById('labelPlaceholder2');
   const imgPreview1 = document.getElementById('imgPreview1');
   const imgPreview2 = document.getElementById('imgPreview2');
   const badgeCheck1 = document.getElementById('badgeCheck1');
@@ -154,6 +156,8 @@ document.addEventListener('DOMContentLoaded', () => {
       photosGridFicha.style.display = 'grid';
       photosSingleTest.style.display = 'none';
       brandSubtitle.textContent = 'Fichas de Caracterización (2 Páginas)';
+      if (labelPlaceholder1) labelPlaceholder1.innerHTML = 'Página 1<br>(Anverso)';
+      if (labelPlaceholder2) labelPlaceholder2.innerHTML = 'Página 2<br>(Reverso)';
       resetFichaForm();
     } else if (nuevoModo === 'anexo4') {
       if (tabModoAnexo4) tabModoAnexo4.classList.add('active');
@@ -172,13 +176,13 @@ document.addEventListener('DOMContentLoaded', () => {
       tabModoFicha.classList.remove('active');
       if (tabModoAnexo4) tabModoAnexo4.classList.remove('active');
       testTypeBar.style.display = 'flex';
-      photosGridFicha.style.display = 'none';
-      photosSingleTest.style.display = 'flex';
-      brandSubtitle.textContent = 'Pre/Post Test — Anexo 17 (Pellízcate)';
-      if (testPlaceholderMain) testPlaceholderMain.textContent = 'Pre o Post Test';
-      if (testPlaceholderSub) testPlaceholderSub.textContent = '(Anexo 17 Pellízcate — 10 Preguntas)';
-      resetTestForm();
-      actualizarEtiquetaTest();
+      photosGridFicha.style.display = 'grid'; // ¡Anexo 17 utiliza 2 páginas físicas!
+      photosSingleTest.style.display = 'none';
+      brandSubtitle.textContent = 'Pre/Post Test — Anexo 17 (El Carmen de Bolívar)';
+      if (labelPlaceholder1) labelPlaceholder1.innerHTML = 'Página 1<br>(Datos y Preg. 1-5)';
+      if (labelPlaceholder2) labelPlaceholder2.innerHTML = 'Página 2<br>(Preg. 6-10)';
+      resetFichaForm();
+      setStepFicha(1);
     }
   }
 
@@ -188,13 +192,17 @@ document.addEventListener('DOMContentLoaded', () => {
       pillBtns.forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       state.tipoEvaluacion = btn.getAttribute('data-type');
-      actualizarEtiquetaTest();
+      if (state.mode === 'anexo17') {
+        setStepFicha(state.currentStep || 1);
+      } else {
+        actualizarEtiquetaTest();
+      }
     });
   });
 
   function actualizarEtiquetaTest() {
-    if (state.mode === 'ficha') return;
-    const anexoLabel = state.mode === 'anexo17' ? 'Anexo 17' : 'Anexo 4';
+    if (state.mode !== 'anexo4') return;
+    const anexoLabel = 'Anexo 4';
     const tipo = state.tipoEvaluacion;
     if (state.fotoTestBlob) {
       stepTag.textContent = tipo === 'AUTO' ? `${anexoLabel} Listo (Auto IA)` : `${anexoLabel} ${tipo} Listo`;
@@ -212,7 +220,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // -------------------------------------------------------------
   function dispararCamara() {
     try {
-      if (state.mode === 'ficha') {
+      if (state.mode === 'ficha' || state.mode === 'anexo17') {
         if (state.currentStep === 1) {
           if (cameraInput1) { cameraInput1.value = ''; cameraInput1.click(); }
         } else if (state.currentStep === 2) {
@@ -221,7 +229,7 @@ document.addEventListener('DOMContentLoaded', () => {
           showToast('Fotos listas. Elige "Sincronizar Ahora" o "Mandar a la Cola" abajo.', 'info');
         }
       } else {
-        // Modo Anexo 4 o Anexo 17
+        // Modo Anexo 4 (Hoja Única)
         if (!state.fotoTestBlob) {
           if (cameraInputTest) { cameraInputTest.value = ''; cameraInputTest.click(); }
         } else {
@@ -452,34 +460,36 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function setStepFicha(step) {
     state.currentStep = step;
+    const esAnexo17 = state.mode === 'anexo17';
+
     if (step === 1) {
-      stepTag.textContent = 'Paso 1 de 2';
-      stepTitle.textContent = 'Foto 1: Anverso (Frente)';
-      stepDesc.textContent = 'Enfoca la cara frontal de la ficha con buena iluminación.';
+      stepTag.textContent = esAnexo17 ? `Paso 1 de 2 • Anexo 17 (${state.tipoEvaluacion})` : 'Paso 1 de 2';
+      stepTitle.textContent = esAnexo17 ? 'Foto 1: Página 1 (Datos y Preg. 1 a 5)' : 'Foto 1: Anverso (Frente)';
+      stepDesc.textContent = esAnexo17 ? 'Enfoca la primera hoja con el nombre y preguntas 1 a 5 (El Carmen de Bolívar).' : 'Enfoca la cara frontal de la ficha con buena iluminación.';
       stepBadge.textContent = '1/2';
-      shutterLabel.textContent = 'Tomar Foto 1 (Anverso)';
+      shutterLabel.textContent = esAnexo17 ? 'Tomar Foto Pág. 1 (Anexo 17)' : 'Tomar Foto 1 (Anverso)';
       slotFoto1.classList.add('active-slot');
       slotFoto2.classList.remove('active-slot');
       cameraTriggerSection.style.display = 'flex';
       readyActionBox.style.display = 'none';
     } else if (step === 2) {
-      stepTag.textContent = 'Paso 2 de 2';
-      stepTitle.textContent = 'Foto 2: Reverso (Atrás)';
-      stepDesc.textContent = 'Gira la ficha y fotografía la parte posterior.';
+      stepTag.textContent = esAnexo17 ? `Paso 2 de 2 • Anexo 17 (${state.tipoEvaluacion})` : 'Paso 2 de 2';
+      stepTitle.textContent = esAnexo17 ? 'Foto 2: Página 2 (Preguntas 6 a 10)' : 'Foto 2: Reverso (Atrás)';
+      stepDesc.textContent = esAnexo17 ? 'Enfoca la segunda hoja con las preguntas 6 a 10.' : 'Gira la ficha y fotografía la parte posterior.';
       stepBadge.textContent = '2/2';
-      shutterLabel.textContent = 'Tomar Foto 2 (Reverso)';
+      shutterLabel.textContent = esAnexo17 ? 'Tomar Foto Pág. 2 (Anexo 17)' : 'Tomar Foto 2 (Reverso)';
       slotFoto2.classList.add('active-slot');
       slotFoto1.classList.remove('active-slot');
       cameraTriggerSection.style.display = 'flex';
       readyActionBox.style.display = 'none';
     } else if (step === 3) {
       stepTag.textContent = '¡Fotos Listas!';
-      stepTitle.textContent = 'Encuesta Completa (2/2 Fotos)';
-      stepDesc.textContent = 'Verifica las fotos y elige cómo registrarla.';
+      stepTitle.textContent = esAnexo17 ? `Anexo 17 Completo (${state.tipoEvaluacion})` : 'Encuesta Completa (2/2 Fotos)';
+      stepDesc.textContent = esAnexo17 ? 'Verifica las 2 páginas y elige cómo registrarla.' : 'Verifica las fotos y elige cómo registrarla.';
       stepBadge.textContent = '✔';
-      readyIcon.textContent = '📋';
-      readyTitle.textContent = 'Fotos Listas (2/2)';
-      readySubtitle.textContent = 'Selecciona la acción para esta ficha:';
+      readyIcon.textContent = esAnexo17 ? '🌟' : '📋';
+      readyTitle.textContent = esAnexo17 ? 'Fotos Listas (2/2) — Anexo 17' : 'Fotos Listas (2/2)';
+      readySubtitle.textContent = esAnexo17 ? 'Página 1 y Página 2 listas para procesar con IA:' : 'Selecciona la acción para esta ficha:';
       cameraTriggerSection.style.display = 'none';
       readyActionBox.style.display = 'flex';
       readyActionBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -653,11 +663,14 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
     } else if (state.mode === 'anexo17') {
-      // Modo Anexo 17
-      mostrarModalProcesamiento('Extrayendo Pre/Post Test Anexo 17 con IA', 'Digitalizando respuestas de Pellízcate con Generación B+, reconciliando participante y registrando...');
+      // Modo Anexo 17 (2 Páginas)
+      mostrarModalProcesamiento('Extrayendo Pre/Post Test Anexo 17 con IA', 'Digitalizando ambas páginas de Pellízcate con Generación B+, reconciliando participante y registrando...');
       try {
         const formData = new FormData();
-        formData.append('foto_test', state.fotoTestBlob, 'anexo17.jpg');
+        formData.append('foto_anverso', state.foto1Blob, 'anexo17_pag1.jpg');
+        if (state.foto2Blob) {
+          formData.append('foto_reverso', state.foto2Blob, 'anexo17_pag2.jpg');
+        }
         if (state.tipoEvaluacion && state.tipoEvaluacion !== 'AUTO') {
           formData.append('tipo_evaluacion', state.tipoEvaluacion);
         }
@@ -675,7 +688,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         ocultarModalProcesamiento();
         showToast(`¡Éxito! Anexo 17 (${data.tipo_evaluacion}) registrado: ${data.participante} (${data.municipio})`, 'success');
-        resetTestForm();
+        resetFichaForm();
 
       } catch (error) {
         console.error('Error en envío inmediato de Anexo 17:', error);
@@ -716,7 +729,7 @@ document.addEventListener('DOMContentLoaded', () => {
         await ejecutarGuardadoEnCola();
       }
     }
-  }
+  });
 
   // -------------------------------------------------------------
   // GUARDADO EN MODO COLA (INDEXEDDB)
@@ -736,16 +749,18 @@ document.addEventListener('DOMContentLoaded', () => {
         );
         resetFichaForm();
       } else if (state.mode === 'anexo17') {
-        if (!state.fotoTestBlob) {
-          showToast('Debes tomar la foto del test Anexo 17.', 'error');
+        if (!state.foto1Blob) {
+          showToast('Debes tomar al menos la foto de la Página 1.', 'error');
           return;
         }
         await window.surveyDB.guardarAnexo17(
-          state.fotoTestBlob,
-          state.fotoTestMime,
+          state.foto1Blob,
+          state.foto2Blob,
+          state.foto1Mime,
+          state.foto2Mime,
           state.tipoEvaluacion
         );
-        resetTestForm();
+        resetFichaForm();
       } else {
         if (!state.fotoTestBlob) {
           showToast('Debes tomar la foto del test Anexo 4.', 'error');
@@ -881,7 +896,10 @@ document.addEventListener('DOMContentLoaded', () => {
           let resp;
           if (esAnexo17) {
             const formData = new FormData();
-            formData.append('foto_test', item.anversoBlob || item.fotoBlob, 'anexo17.jpg');
+            formData.append('foto_anverso', item.anversoBlob || item.fotoBlob, 'anexo17_pag1.jpg');
+            if (item.reversoBlob) {
+              formData.append('foto_reverso', item.reversoBlob, 'anexo17_pag2.jpg');
+            }
             if (item.tipoEvaluacion && item.tipoEvaluacion !== 'AUTO') {
               formData.append('tipo_evaluacion', item.tipoEvaluacion);
             }

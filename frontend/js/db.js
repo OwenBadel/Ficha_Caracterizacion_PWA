@@ -108,22 +108,25 @@ class LocalSurveyDB {
   }
 
   /**
-   * Guarda un Pre-Test o Post-Test de Anexo 17 (Pellízcate) en la cola local
-   * @param {Blob} fotoBlob
-   * @param {string} fotoMime
+   * Guarda un Pre-Test o Post-Test de Anexo 17 (Pellízcate - 2 Páginas) en la cola local
+   * @param {Blob} anversoBlob Fotografía Página 1
+   * @param {Blob|null} reversoBlob Fotografía Página 2
+   * @param {string} anversoMime
+   * @param {string} reversoMime
    * @param {string} tipoEvaluacion 'AUTO', 'PRE-TEST', 'POST-TEST'
    */
-  async guardarAnexo17(fotoBlob, fotoMime = 'image/jpeg', tipoEvaluacion = 'AUTO') {
+  async guardarAnexo17(anversoBlob, reversoBlob = null, anversoMime = 'image/jpeg', reversoMime = 'image/jpeg', tipoEvaluacion = 'AUTO') {
     await this.init();
     const id = 'anexo17_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
     const item = {
       id,
       tipo: 'anexo17',
-      anversoBlob: fotoBlob,
-      reversoBlob: null,
-      fotoBlob,
-      fotoMime,
-      anversoMime: fotoMime,
+      anversoBlob,
+      reversoBlob,
+      fotoBlob: anversoBlob,
+      fotoMime: anversoMime,
+      anversoMime,
+      reversoMime,
       tipoEvaluacion: tipoEvaluacion || 'AUTO',
       createdAt: new Date().toISOString(),
       status: 'pending', // 'pending', 'syncing', 'synced', 'error'

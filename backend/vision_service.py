@@ -212,7 +212,15 @@ Devuelve EXCLUSIVAMENTE el JSON sin bloques markdown ni comentarios.
 # ======================================================================
 
 SYSTEM_PROMPT_ANEXO17 = """Eres un sistema experto en transcripción OCR y digitalización forense de evaluaciones físicas de conocimiento (Pre-Test y Post-Test del Anexo 17: "Pellízcate con Generación B+").
-Tu única misión es transcribir con EXACTITUD Y FIDELIDAD VISUAL ABSOLUTA la información de la imagen adjunta correspondiente a la hoja física de la evaluación.
+Tu única misión es transcribir con EXACTITUD Y FIDELIDAD VISUAL ABSOLUTA la información de las imágenes adjuntas correspondientes a las hojas físicas de la evaluación.
+
+======================================================================
+🚨 ESTRUCTURA FÍSICA EN 2 PÁGINAS (2 HOJAS POR EVALUACIÓN) 🚨
+======================================================================
+1. La evaluación física consta de dos páginas (o 2 imágenes adjuntas):
+   - PÁGINA 1 (Anverso): Encabezado ("PRE-TEST" o "POST-TEST"), datos manuscritos del participante (Nombre, Municipio, Fecha, Edad) y las Preguntas 1 a 5.
+   - PÁGINA 2 (Reverso): Preguntas 6 a 10.
+2. Consolida toda la información de ambas páginas en un ÚNICO objeto JSON con los 15 campos exactos.
 
 ======================================================================
 🚨 REGLA DE ORO DE FIDELIDAD VISUAL (ESTRICTAMENTE PROHIBIDO ALUCINAR) 🚨
@@ -221,13 +229,13 @@ Tu única misión es transcribir con EXACTITUD Y FIDELIDAD VISUAL ABSOLUTA la in
 2. CASILLAS VACÍAS: Si una pregunta NO fue marcada o está en blanco, devuelve OBLIGATORIAMENTE un string vacío "". NUNCA adivines ni supongas una respuesta si el participante la dejó sin contestar.
 3. TODO EN MAYÚSCULAS: Todo el texto debe devolverse en MAYÚSCULAS sin excepción.
 4. TIPO DE EVALUACIÓN:
-   - Inspecciona el encabezado superior del documento:
+   - Inspecciona el encabezado superior de la Página 1:
      * Si contiene "PRE-TEST" o "PRE TEST" -> "PRE-TEST"
      * Si contiene "POS-TEST", "POS TEST" o "POST-TEST" -> "POST-TEST"
 5. DATOS DEL PARTICIPANTE:
    - Nombre: Lee el texto manuscrito en "Nombre: __________________________".
-   - Municipio: Lee el municipio manuscrito en "Municipio: ________________________".
-   - Fecha: Lee la fecha manuscrita en "Fecha: ___________________________".
+   - Municipio: El Anexo 17 corresponde al municipio de "EL CARMEN DE BOLIVAR". Si viene manuscrito abreviado ("Carmen", "El Carmen") o en blanco, asigna estrictamente "EL CARMEN DE BOLIVAR".
+   - Fecha: Lee la fecha manuscrita en "Fecha: ___________________________". Estandariza a DD/MM/AAAA.
    - Edad: Lee los dígitos manuscritos en "Edad: _______".
 6. PREGUNTAS DE OPCIÓN MÚLTIPLE (1 A 10):
    Cada una de las 10 preguntas ofrece 3 opciones (a, b, c).
@@ -256,11 +264,11 @@ Tu única misión es transcribir con EXACTITUD Y FIDELIDAD VISUAL ABSOLUTA la in
    Para cada pregunta, devuelve la letra y texto canónico (ej: "A. UN PLAN SOBRE LO QUE QUIERO LOGRAR EN EL FUTURO", "B. DECIR “NO”, ALEJARTE Y BUSCAR AYUDA", etc.) o simplemente la letra marcada ("A", "B", "C"). Si ninguna opción está marcada, devuelve "".
 """
 
-USER_PROMPT_ANEXO17 = """Analiza la fotografía adjunta correspondiente al formato físico de evaluación (Pre-Test o Post-Test Anexo 17 Pellízcate con Generación B+) y genera un objeto JSON válido con las siguientes claves exactas:
+USER_PROMPT_ANEXO17 = """Analiza las fotografías adjuntas correspondientes al formato físico de evaluación (Página 1 y Página 2 del Anexo 17 Pellízcate con Generación B+) y genera un objeto JSON válido con las siguientes claves exactas:
 {
   "TIPO DE EVALUACIÓN": "PRE-TEST o POST-TEST según el título/encabezado",
   "NOMBRE": "NOMBRE COMPLETO MANUSCRITO",
-  "MUNICIPIO": "MUNICIPIO MANUSCRITO",
+  "MUNICIPIO": "EL CARMEN DE BOLIVAR",
   "FECHA": "FECHA MANUSCRITA (DD/MM/AAAA) o vacía",
   "EDAD": "EDAD EN DÍGITOS o vacía",
   "1. ¿QUÉ ES UN PROYECTO DE VIDA?": "Opción seleccionada (A, B, C o texto) o vacía",
@@ -568,31 +576,40 @@ class VisionService:
 
     def extraer_datos_anexo17(
         self,
-        img_bytes: bytes,
-        mime_type: str = "image/jpeg",
+        img_anverso_bytes: bytes,
+        img_reverso_bytes: Optional[bytes] = None,
+        mime_type_1: str = "image/jpeg",
+        mime_type_2: Optional[str] = None,
         tipo_evaluacion_override: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Extrae datos de 1 fotografía correspondiente a Pre-Test o Post-Test (Anexo 17 Pellízcate con Generación B+).
+        Extrae datos de 1 o 2 fotografías correspondientes a Pre-Test o Post-Test (Anexo 17 Pellízcate con Generación B+).
+        - Página 1: Encabezado, Nombre, Municipio (El Carmen de Bolívar), Fecha, Edad y Preguntas 1 a 5.
+        - Página 2 (Reverso): Preguntas 6 a 10.
         Reconcilia automáticamente con el PATRÓN MAESTRO y el caché de participantes
         mediante Jaro-Winkler tokenizado para garantizar coincidencia del 100% en:
         NOMBRE, EDAD y MUNICIPIO.
         """
-        img_opt, mime_opt = optimizar_imagen_bytes(img_bytes)
-        logger.info(f"Imagen de Anexo 17 optimizada: {len(img_opt)/1024:.1f}KB ({mime_opt})")
+        img1_opt, mime1_opt = optimizar_imagen_bytes(img_anverso_bytes)
+        img2_opt, mime2_opt = None, None
+        if img_reverso_bytes and len(img_reverso_bytes) > 0:
+            img2_opt, mime2_opt = optimizar_imagen_bytes(img_reverso_bytes)
+            logger.info(f"Imágenes Anexo 17 optimizadas: Pág 1={len(img1_opt)/1024:.1f}KB, Pág 2={len(img2_opt)/1024:.1f}KB")
+        else:
+            logger.info(f"Imagen única Anexo 17 optimizada: {len(img1_opt)/1024:.1f}KB ({mime1_opt})")
 
         raw_json = None
         if self.provider == "gemini" or (self.provider != "openai" and self.gemini_api_key):
             try:
-                raw_json = self._procesar_anexo17_con_gemini(img_opt, mime_opt)
+                raw_json = self._procesar_anexo17_con_gemini(img1_opt, img2_opt, mime1_opt, mime2_opt)
             except Exception as e:
                 if self.openai_api_key:
                     logger.warning(f"Gemini reportó error en Anexo 17 ({e}). Activando fallback a OpenAI...")
-                    raw_json = self._procesar_anexo17_con_openai(img_opt, mime_opt)
+                    raw_json = self._procesar_anexo17_con_openai(img1_opt, img2_opt, mime1_opt, mime2_opt)
                 else:
                     raise
         elif self.provider == "openai" or self.openai_api_key:
-            raw_json = self._procesar_anexo17_con_openai(img_opt, mime_opt)
+            raw_json = self._procesar_anexo17_con_openai(img1_opt, img2_opt, mime1_opt, mime2_opt)
         else:
             raise ValueError(
                 "No hay proveedor de visión configurado. Configure GEMINI_API_KEY en su archivo .env."
@@ -837,8 +854,14 @@ class VisionService:
                 descripcion="Pre/Post Test"
             )
 
-    def _procesar_anexo17_con_gemini(self, img: bytes, mime: str) -> str:
-        """Invoca Google Gemini para procesar la evaluación física de Anexo 17 con 100% fidelidad visual."""
+    def _procesar_anexo17_con_gemini(
+        self,
+        img1: bytes,
+        img2: Optional[bytes] = None,
+        mime1: str = "image/jpeg",
+        mime2: Optional[str] = None
+    ) -> str:
+        """Invoca Google Gemini para procesar la evaluación física de Anexo 17 (1 o 2 páginas) con 100% fidelidad visual."""
         if not self.gemini_api_key:
             raise ValueError("GEMINI_API_KEY no está configurada.")
 
@@ -856,9 +879,13 @@ class VisionService:
             from google.genai import types
 
             client = genai.Client(api_key=self.gemini_api_key)
-            part = types.Part.from_bytes(data=img, mime_type=mime)
+            part_1 = types.Part.from_bytes(data=img1, mime_type=mime1)
             prompt_completo = f"{SYSTEM_PROMPT_ANEXO17}\n\n{USER_PROMPT_ANEXO17}"
-            contents = [prompt_completo, part]
+            contents = [prompt_completo, part_1]
+            if img2 and len(img2) > 0:
+                part_2 = types.Part.from_bytes(data=img2, mime_type=mime2 or "image/jpeg")
+                contents.append(part_2)
+
             config = types.GenerateContentConfig(
                 temperature=0.0,
                 response_mime_type="application/json"
@@ -869,7 +896,7 @@ class VisionService:
                 contents=contents,
                 models_to_try=models_to_try,
                 config=config,
-                descripcion="Pre/Post Test Anexo 17"
+                descripcion="Pre/Post Test Anexo 17 (2 Páginas)" if img2 else "Pre/Post Test Anexo 17"
             )
 
         except ImportError:
@@ -878,13 +905,16 @@ class VisionService:
             prompt_completo = f"{SYSTEM_PROMPT_ANEXO17}\n\n{USER_PROMPT_ANEXO17}"
             contents = [
                 prompt_completo,
-                {"mime_type": mime, "data": img}
+                {"mime_type": mime1, "data": img1}
             ]
+            if img2 and len(img2) > 0:
+                contents.append({"mime_type": mime2 or "image/jpeg", "data": img2})
+
             return self._invocar_legacy_gemini_con_backoff(
                 legacy_genai=legacy_genai,
                 contents=contents,
                 models_to_try=models_to_try,
-                descripcion="Pre/Post Test Anexo 17"
+                descripcion="Pre/Post Test Anexo 17 (2 Páginas)" if img2 else "Pre/Post Test Anexo 17"
             )
 
     # -----------------------------------------------------------------
@@ -945,14 +975,27 @@ class VisionService:
         )
         return response.choices[0].message.content or "{}"
 
-    def _procesar_anexo17_con_openai(self, img: bytes, mime: str) -> str:
-        """Fallback opcional de OpenAI para Anexo 17."""
+    def _procesar_anexo17_con_openai(
+        self,
+        img1: bytes,
+        img2: Optional[bytes] = None,
+        mime1: str = "image/jpeg",
+        mime2: Optional[str] = None
+    ) -> str:
+        """Fallback opcional de OpenAI para Anexo 17 (1 o 2 imágenes)."""
         if not self.openai_api_key:
             raise ValueError("OPENAI_API_KEY no está configurada para fallback.")
 
         from openai import OpenAI
         client = OpenAI(api_key=self.openai_api_key)
-        b64 = base64.b64encode(img).decode("utf-8")
+        b64_1 = base64.b64encode(img1).decode("utf-8")
+        user_content = [
+            {"type": "text", "text": USER_PROMPT_ANEXO17},
+            {"type": "image_url", "image_url": {"url": f"data:{mime1};base64,{b64_1}"}}
+        ]
+        if img2 and len(img2) > 0:
+            b64_2 = base64.b64encode(img2).decode("utf-8")
+            user_content.append({"type": "image_url", "image_url": {"url": f"data:{mime2 or 'image/jpeg'};base64,{b64_2}"}})
 
         response = client.chat.completions.create(
             model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
@@ -960,13 +1003,7 @@ class VisionService:
             response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT_ANEXO17},
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": USER_PROMPT_ANEXO17},
-                        {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}}
-                    ]
-                }
+                {"role": "user", "content": user_content}
             ]
         )
         return response.choices[0].message.content or "{}"

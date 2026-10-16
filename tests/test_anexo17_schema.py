@@ -63,10 +63,12 @@ class TestAnexo17Schema(unittest.TestCase):
         self.assertEqual(normalizar_fecha(""), "")
 
     def test_normalizacion_municipio(self):
-        """Verifica coincidencia difusa con los municipios autorizados."""
+        """Verifica coincidencia difusa con los municipios autorizados y el default de El Carmen de Bolívar."""
         self.assertEqual(normalizar_municipio("santa rosa"), "SANTA ROSA DEL SUR")
         self.assertEqual(normalizar_municipio("turbaco"), "TURBACO")
         self.assertEqual(normalizar_municipio("carmen de bolivar"), "EL CARMEN DE BOLIVAR")
+        self.assertEqual(normalizar_municipio("el carmen"), "EL CARMEN DE BOLIVAR")
+        self.assertEqual(normalizar_municipio(""), "EL CARMEN DE BOLIVAR")
 
     def test_normalizacion_10_preguntas_por_letra(self):
         """Verifica que las opciones a, b, c mapeen exactamente al texto canónico prefijado."""

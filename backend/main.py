@@ -498,38 +498,63 @@ async def process_test(
 
 @app.post("/api/process-anexo17")
 async def process_anexo17(
-    foto_test: UploadFile = File(..., description="Fotografía Hoja Única del Test Anexo 17 (Pre o Post)"),
+    foto_anverso: Optional[UploadFile] = File(None, description="Fotografía Página 1 del Anexo 17 (Datos y preguntas 1 a 5)"),
+    foto_reverso: Optional[UploadFile] = File(None, description="Fotografía Página 2 del Anexo 17 (Preguntas 6 a 10)"),
+    foto_test: Optional[UploadFile] = File(None, description="Compatibilidad con foto única"),
     tipo_evaluacion: Optional[str] = Form(None, description="Override opcional ('PRE-TEST', 'POST-TEST' o None para autodetección)"),
     modo: Optional[str] = Form("inmediato", description="Modo de sincronización ('inmediato' o 'batch')")
 ) -> Dict[str, Any]:
     """
-    Recibe la fotografía única del Pre-Test o Post-Test (Anexo 17 Pellízcate con Generación B+),
+    Recibe las dos fotografías (Página 1 y Página 2) del Pre-Test o Post-Test (Anexo 17 Pellízcate con Generación B+),
     realiza extracción OCR multimodal con IA (con reconciliación de participantes Jaro-Winkler)
     y registra la fila resultante en Google Sheets o cola de contingencia.
     """
-    logger.info(f"Procesando Anexo 17 en modo '{modo}'. Archivo: {foto_test.filename}, Override: {tipo_evaluacion}")
-
-    mime = foto_test.content_type or "image/jpeg"
-    if not mime.startswith("image/"):
+    f1 = foto_anverso or foto_test
+    if not f1:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El archivo debe ser una imagen válida (JPEG, PNG, WebP)."
+            detail="Se requiere al menos la fotografía de la Página 1 (foto_anverso o foto_test)."
+        )
+
+    mime1 = f1.content_type or "image/jpeg"
+    if not mime1.startswith("image/"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El archivo de la Página 1 debe ser una imagen válida (JPEG, PNG, WebP)."
         )
 
     try:
-        test_bytes = await foto_test.read()
-        if len(test_bytes) == 0:
+        bytes1 = await f1.read()
+        if len(bytes1) == 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="La imagen del Anexo 17 está vacía (0 bytes)."
+                detail="La imagen de la Página 1 está vacía (0 bytes)."
             )
+
+        bytes2 = None
+        mime2 = None
+        if foto_reverso:
+            mime2 = foto_reverso.content_type or "image/jpeg"
+            bytes2 = await foto_reverso.read()
+            if len(bytes2) == 0:
+                bytes2 = None
+                mime2 = None
+
+        logger.info(
+            f"Procesando Anexo 17 en modo '{modo}'. "
+            f"Pág 1={f1.filename} ({len(bytes1)/1024:.1f}KB), "
+            f"Pág 2={'Sí (' + str(len(bytes2)/1024) + 'KB)' if bytes2 else 'No'}, "
+            f"Override={tipo_evaluacion}"
+        )
 
         # 1. Extracción con IA de Visión (Offloaded a threadpool)
         logger.info("Iniciando extracción con IA para Pre/Post Test Anexo 17...")
         datos_dict = await run_in_threadpool(
             vision_service.extraer_datos_anexo17,
-            img_bytes=test_bytes,
-            mime_type=mime,
+            img_anverso_bytes=bytes1,
+            img_reverso_bytes=bytes2,
+            mime_type_1=mime1,
+            mime_type_2=mime2,
             tipo_evaluacion_override=tipo_evaluacion
         )
 
