@@ -56,11 +56,27 @@ class TestAnexo17Schema(unittest.TestCase):
         self.assertEqual(obj2.tipo_evaluacion, "POST-TEST")
 
     def test_normalizacion_fecha(self):
-        """Verifica la estandarización de fechas manuscritas a DD/MM/AAAA."""
+        """Verifica la estandarización de fechas manuscritas a formato numérico (incluyendo nombres de meses)."""
         self.assertEqual(normalizar_fecha("16/10/2026"), "16/10/2026")
         self.assertEqual(normalizar_fecha("5-9-2026"), "05/09/2026")
         self.assertEqual(normalizar_fecha("14.10.26"), "14/10/2026")
+        self.assertEqual(normalizar_fecha("2026-09-14"), "14/09/2026")
         self.assertEqual(normalizar_fecha(""), "")
+
+        # Estandarización de nombres de meses a números (Septiembre, Octubre, etc.)
+        self.assertEqual(normalizar_fecha("14 de septiembre de 2026"), "14/09/2026")
+        self.assertEqual(normalizar_fecha("14 DE SEPTIEMBRE DEL 2026"), "14/09/2026")
+        self.assertEqual(normalizar_fecha("14 septiembre 2026"), "14/09/2026")
+        self.assertEqual(normalizar_fecha("14-septiembre-2026"), "14/09/2026")
+        self.assertEqual(normalizar_fecha("14/septiembre/2026"), "14/09/2026")
+        self.assertEqual(normalizar_fecha("14 de septiembre"), "14/09/2026")
+        self.assertEqual(normalizar_fecha("14 sep 2026"), "14/09/2026")
+        self.assertEqual(normalizar_fecha("14-sep-26"), "14/09/2026")
+        self.assertEqual(normalizar_fecha("septiembre 14 2026"), "14/09/2026")
+        self.assertEqual(normalizar_fecha("septiembre 14, 2026"), "14/09/2026")
+        self.assertEqual(normalizar_fecha("septiembre 2026"), "09/2026")
+        self.assertEqual(normalizar_fecha("octubre 2026"), "10/2026")
+        self.assertEqual(normalizar_fecha("14 de septiembre de 2020"), "14/09/2026")
 
     def test_normalizacion_municipio(self):
         """Verifica coincidencia difusa con los municipios autorizados y el default de El Carmen de Bolívar."""

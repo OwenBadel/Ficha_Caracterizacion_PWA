@@ -132,22 +132,115 @@ def normalizar_municipio(val: Any) -> str:
     return res if res else "EL CARMEN DE BOLIVAR"
 
 
+# Mapeo exhaustivo de nombres de meses en español y abreviaturas comunes a representación numérica
+MESES_MAP_ANEXO17: Dict[str, str] = {
+    "ENERO": "01",
+    "ENE": "01",
+    "FEBRERO": "02",
+    "FEB": "02",
+    "MARZO": "03",
+    "MAR": "03",
+    "ABRIL": "04",
+    "ABR": "04",
+    "MAYO": "05",
+    "MAY": "05",
+    "JUNIO": "06",
+    "JUN": "06",
+    "JULIO": "07",
+    "JUL": "07",
+    "AGOSTO": "08",
+    "AGO": "08",
+    "SEPTIEMBRE": "09",
+    "SETIEMBRE": "09",
+    "SEPT": "09",
+    "SEP": "09",
+    "OCTUBRE": "10",
+    "OCT": "10",
+    "NOVIEMBRE": "11",
+    "NOV": "11",
+    "DICIEMBRE": "12",
+    "DIC": "12",
+}
+
+
 def normalizar_fecha(val: Any) -> str:
-    """Estandariza formatos de fecha manuscrita a DD/MM/AAAA si contiene dígitos válidos."""
+    """
+    Estandariza formatos de fecha manuscrita a formato numérico canónico DD/MM/AAAA (o MM/AAAA).
+    Si el texto contiene nombres de meses (ej. '14 de septiembre de 2026', '14 septiembre 2026',
+    'septiembre 2026', '14-sep-26'), convierte el mes a su representación numérica de 2 dígitos.
+    Corrige también confusiones OCR de año (ej. 2020 -> 2026).
+    """
     txt = normalizar_texto_base(val)
-    if not txt:
+    if not txt or txt in ["NONE", "NULL", "N/A", "UNDEFINED"]:
         return ""
-    # Buscar patrones tipo 14/10/2026 o 14-10-2026
-    m = re.search(r"(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})", txt)
-    if m:
-        dia, mes, anio = m.group(1), m.group(2), m.group(3)
-        if len(dia) == 1:
-            dia = f"0{dia}"
-        if len(mes) == 1:
-            mes = f"0{mes}"
+
+    # Corrección de OCR para el año del proyecto
+    txt = re.sub(r"\b2020\b", "2026", txt)
+    txt = re.sub(r"\b202O\b", "2026", txt)
+
+    # 1. Formato ISO YYYY-MM-DD o YYYY/MM/DD
+    m_iso = re.search(r"(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})", txt)
+    if m_iso:
+        anio, mes, dia = m_iso.group(1), m_iso.group(2).zfill(2), m_iso.group(3).zfill(2)
+        return f"{dia}/{mes}/{anio}"
+
+    # 2. Formatos con nombre o abreviatura de mes (ej. '14 de septiembre de 2026', '14 sep 2026')
+    meses_patron = "|".join(sorted(MESES_MAP_ANEXO17.keys(), key=len, reverse=True))
+
+    # 2a. Patrón: Día + Mes + (Año opcional)
+    m_dia_mes = re.search(
+        rf"(\b\d{{1,2}})\s*(?:DE|\/|\-|\.)?\s*({meses_patron})\b(?:\s*(?:DE|DEL|\/|\-|\.)?\s*(\d{{2,4}}))?",
+        txt
+    )
+    if m_dia_mes:
+        dia = m_dia_mes.group(1).zfill(2)
+        mes_nombre = m_dia_mes.group(2)
+        mes = MESES_MAP_ANEXO17.get(mes_nombre, "01")
+        anio = m_dia_mes.group(3)
+        if anio:
+            if len(anio) == 2:
+                anio = f"20{anio}"
+        else:
+            anio = "2026"
+        return f"{dia}/{mes}/{anio}"
+
+    # 2b. Patrón: Mes + Día + (Año opcional), ej: 'SEPTIEMBRE 14, 2026'
+    m_mes_dia = re.search(
+        rf"({meses_patron})\s*(\d{{1,2}})\b(?:\s*(?:DE|DEL|,|\/|\-|\.)?\s*(\d{{2,4}}))?",
+        txt
+    )
+    if m_mes_dia:
+        mes_nombre = m_mes_dia.group(1)
+        dia = m_mes_dia.group(2).zfill(2)
+        mes = MESES_MAP_ANEXO17.get(mes_nombre, "01")
+        anio = m_mes_dia.group(3)
+        if anio:
+            if len(anio) == 2:
+                anio = f"20{anio}"
+        else:
+            anio = "2026"
+        return f"{dia}/{mes}/{anio}"
+
+    # 2c. Patrón: Solo Mes + Año, ej: 'SEPTIEMBRE 2026' o 'SEPTIEMBRE DE 2026'
+    m_mes_anio = re.search(
+        rf"({meses_patron})\s*(?:DE|DEL)?\s*(\d{{2,4}})",
+        txt
+    )
+    if m_mes_anio:
+        mes = MESES_MAP_ANEXO17.get(m_mes_anio.group(1), "01")
+        anio = m_mes_anio.group(2)
+        if len(anio) == 2:
+            anio = f"20{anio}"
+        return f"{mes}/{anio}"
+
+    # 3. Formato numérico DD/MM/YYYY o DD-MM-YY
+    m_num = re.search(r"(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})", txt)
+    if m_num:
+        dia, mes, anio = m_num.group(1).zfill(2), m_num.group(2).zfill(2), m_num.group(3)
         if len(anio) == 2:
             anio = f"20{anio}"
         return f"{dia}/{mes}/{anio}"
+
     return txt
 
 

@@ -235,7 +235,7 @@ Tu única misión es transcribir con EXACTITUD Y FIDELIDAD VISUAL ABSOLUTA la in
 5. DATOS DEL PARTICIPANTE:
    - Nombre: Lee el texto manuscrito en "Nombre: __________________________".
    - Municipio: El Anexo 17 corresponde al municipio de "EL CARMEN DE BOLIVAR". Si viene manuscrito abreviado ("Carmen", "El Carmen") o en blanco, asigna estrictamente "EL CARMEN DE BOLIVAR".
-   - Fecha: Lee la fecha manuscrita en "Fecha: ___________________________". Estandariza a DD/MM/AAAA.
+   - Fecha: Lee la fecha manuscrita en "Fecha: ___________________________". Estandariza obligatoriamente a formato numérico DD/MM/AAAA (por ejemplo: si dice "14 de septiembre de 2026", "14 septiembre 2026", "14-sep-26" o cualquier nombre de mes, estandarízalo siempre con el mes en números: "14/09/2026"; si solo viene mes y año, "09/2026").
    - Edad: Lee los dígitos manuscritos en "Edad: _______".
 6. PREGUNTAS DE OPCIÓN MÚLTIPLE (1 A 10):
    Cada una de las 10 preguntas ofrece 3 opciones (a, b, c).
@@ -269,7 +269,7 @@ USER_PROMPT_ANEXO17 = """Analiza las fotografías adjuntas correspondientes al f
   "TIPO DE EVALUACIÓN": "PRE-TEST o POST-TEST según el título/encabezado",
   "NOMBRE": "NOMBRE COMPLETO MANUSCRITO",
   "MUNICIPIO": "EL CARMEN DE BOLIVAR",
-  "FECHA": "FECHA MANUSCRITA (DD/MM/AAAA) o vacía",
+  "FECHA": "FECHA MANUSCRITA ESTANDARIZADA NUMÉRICA (DD/MM/AAAA) o vacía",
   "EDAD": "EDAD EN DÍGITOS o vacía",
   "1. ¿QUÉ ES UN PROYECTO DE VIDA?": "Opción seleccionada (A, B, C o texto) o vacía",
   "2. SI ALGUIEN QUIERE TOCAR TU CUERPO Y TÚ NO DESEAS, ¿QUÉ PUEDES HACER?": "Opción seleccionada (A, B, C o texto) o vacía",

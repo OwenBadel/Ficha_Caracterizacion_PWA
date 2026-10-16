@@ -21,9 +21,9 @@ from schema_anexo17 import PrePostTestAnexo17, COLUMNAS_ANEXO17, ENCABEZADOS_ANE
 from sheets_service import GoogleSheetsService
 
 
-def ejecutar_prueba(nombre_base: str = None, edad: str = "15", modo: str = "AMBOS"):
+def ejecutar_prueba(nombre_base: str = None, edad: str = "15", modo: str = "AMBOS", fecha_custom: str = None):
     hora_actual = datetime.now().strftime("%H:%M:%S")
-    fecha_actual = datetime.now().strftime("%d/%m/%Y")
+    fecha_a_usar = fecha_custom if fecha_custom else datetime.now().strftime("%d/%m/%Y")
 
     if not nombre_base:
         nombre_pre = f"DANIELA MARGARITA TORRES CASTRO ({hora_actual})"
@@ -35,7 +35,7 @@ def ejecutar_prueba(nombre_base: str = None, edad: str = "15", modo: str = "AMBO
     print("=" * 65)
     print("INICIANDO INSERCIÓN EN VIVO: ANEXO 17 (PELLÍZCATE)")
     print(f"-> Participante: {nombre_pre}")
-    print(f"-> Municipio: EL CARMEN DE BOLIVAR | Fecha: {fecha_actual} | Edad: {edad}")
+    print(f"-> Municipio: EL CARMEN DE BOLIVAR | Fecha Entrada: {fecha_a_usar} | Edad: {edad}")
     print(f"-> Modo: {modo.upper()}")
     print("=" * 65)
 
@@ -52,7 +52,7 @@ def ejecutar_prueba(nombre_base: str = None, edad: str = "15", modo: str = "AMBO
             "TIPO DE EVALUACIÓN": "PRE-TEST",
             "NOMBRE": nombre_pre,
             "MUNICIPIO": "EL CARMEN DE BOLIVAR",
-            "FECHA": fecha_actual,
+            "FECHA": fecha_a_usar,
             "EDAD": str(edad),
             "1. ¿QUÉ ES UN PROYECTO DE VIDA?": "A",
             "2. SI ALGUIEN QUIERE TOCAR TU CUERPO Y TÚ NO DESEAS, ¿QUÉ PUEDES HACER?": "B",
@@ -78,7 +78,7 @@ def ejecutar_prueba(nombre_base: str = None, edad: str = "15", modo: str = "AMBO
             "TIPO DE EVALUACIÓN": "POST-TEST",
             "NOMBRE": nombre_post,
             "MUNICIPIO": "EL CARMEN DE BOLIVAR",
-            "FECHA": fecha_actual,
+            "FECHA": fecha_a_usar,
             "EDAD": str(edad),
             "1. ¿QUÉ ES UN PROYECTO DE VIDA?": "A. UN PLAN SOBRE LO QUE QUIERO LOGRAR EN EL FUTURO",
             "2. SI ALGUIEN QUIERE TOCAR TU CUERPO Y TÚ NO DESEAS, ¿QUÉ PUEDES HACER?": "B. DECIR “NO”, ALEJARTE Y BUSCAR AYUDA",
@@ -112,4 +112,5 @@ if __name__ == "__main__":
     nombre_arg = sys.argv[1] if len(sys.argv) > 1 else None
     edad_arg = sys.argv[2] if len(sys.argv) > 2 else "15"
     modo_arg = sys.argv[3] if len(sys.argv) > 3 else "AMBOS"
-    ejecutar_prueba(nombre_base=nombre_arg, edad=edad_arg, modo=modo_arg)
+    fecha_arg = sys.argv[4] if len(sys.argv) > 4 else None
+    ejecutar_prueba(nombre_base=nombre_arg, edad=edad_arg, modo=modo_arg, fecha_custom=fecha_arg)
