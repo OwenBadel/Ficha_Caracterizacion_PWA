@@ -298,7 +298,54 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnRotateTest) btnRotateTest.addEventListener('click', (e) => { e.stopPropagation(); rotarFoto('test'); });
 
   // -------------------------------------------------------------
-  // ORIENTACIÓN VERTICAL AUTOMÁTICA Y RESOLUCIÓN ULTRA ALTA (3200px)
+  // GESTIÓN DE SCREEN WAKE LOCK & CONECTIVIDAD AL SERVIDOR LOCAL
+  // -------------------------------------------------------------
+  let wakeLockSentinel = null;
+
+  async function solicitarWakeLock() {
+    try {
+      if ('wakeLock' in navigator && !wakeLockSentinel) {
+        wakeLockSentinel = await navigator.wakeLock.request('screen');
+        wakeLockSentinel.addEventListener('release', () => {
+          wakeLockSentinel = null;
+        });
+        console.log('Screen Wake Lock activo (impidiendo suspensión de pantalla/Wi-Fi).');
+      }
+    } catch (err) {
+      console.warn('Wake Lock no disponible o denegado:', err);
+    }
+  }
+
+  async function liberarWakeLock() {
+    try {
+      if (wakeLockSentinel) {
+        await wakeLockSentinel.release();
+        wakeLockSentinel = null;
+        console.log('Screen Wake Lock liberado.');
+      }
+    } catch (err) {
+      console.warn('Error al liberar Wake Lock:', err);
+    }
+  }
+
+  async function verificarConexionServidor() {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      const res = await fetch('/api/health', {
+        method: 'GET',
+        signal: controller.signal,
+        cache: 'no-store'
+      });
+      clearTimeout(timeoutId);
+      return res.ok;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // -------------------------------------------------------------
+  // ORIENTACIÓN VERTICAL AUTOMÁTICA Y RESOLUCIÓN OPTIMIZADA (1600px @ 82%)
   // -------------------------------------------------------------
   async function cargarImagenElemento(fileOrBlob) {
     if (typeof createImageBitmap === 'function') {
@@ -333,7 +380,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  async function procesarYOrientarImagen(fileOrBlob, maxDimension = 3200, quality = 0.95, forceRotate90 = false) {
+  async function procesarYOrientarImagen(fileOrBlob, maxDimension = 1600, quality = 0.82, forceRotate90 = false) {
     if (!fileOrBlob) return fileOrBlob;
 
     const imgData = await cargarImagenElemento(fileOrBlob);
@@ -410,7 +457,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       showToast('Rotando 90°...', 'info');
-      const rotatedBlob = await procesarYOrientarImagen(currentBlob, 3200, 0.95, true);
+      const rotatedBlob = await procesarYOrientarImagen(currentBlob, 1600, 0.82, true);
       const newUrl = URL.createObjectURL(rotatedBlob);
       previewEl.src = newUrl;
 
@@ -434,7 +481,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       showToast('Procesando foto 1...', 'info');
-      const verticalBlob = await procesarYOrientarImagen(file, 3200, 0.95, false);
+      const verticalBlob = await procesarYOrientarImagen(file, 1600, 0.82, false);
       const previewUrl = URL.createObjectURL(verticalBlob);
 
       imgPreview1.src = previewUrl;
@@ -462,7 +509,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       showToast('Procesando foto 2...', 'info');
-      const verticalBlob = await procesarYOrientarImagen(file, 3200, 0.95, false);
+      const verticalBlob = await procesarYOrientarImagen(file, 1600, 0.82, false);
       const previewUrl = URL.createObjectURL(verticalBlob);
 
       imgPreview2.src = previewUrl;
@@ -556,7 +603,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       showToast('Procesando test...', 'info');
-      const verticalBlob = await procesarYOrientarImagen(file, 3200, 0.95, false);
+      const verticalBlob = await procesarYOrientarImagen(file, 1600, 0.82, false);
       const previewUrl = URL.createObjectURL(verticalBlob);
 
       imgPreviewTest.src = previewUrl;
@@ -622,7 +669,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // -------------------------------------------------------------
   btnCancelarEncuesta.addEventListener('click', () => {
     if (confirm('¿Deseas descartar la captura actual?')) {
-      if (state.mode === 'ficha') resetFichaForm();
+      if (state.mode === 'ficha' || state.mode === 'anexo17') resetFichaForm();
       else resetTestForm();
       showToast('Captura descartada.', 'info');
     }
@@ -637,9 +684,10 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // -------------------------------------------------------------
-  // ENVÍO EN MODO INMEDIATO
+  // ENVÍO EN MODO INMEDIATO (GUARDADO PREVIO EN IDB + SYNC INMEDIATO)
   // -------------------------------------------------------------
   async function ejecutarEnvioInmediato() {
+    // 1. Validaciones previas de fotos tomadas
     if (state.mode === 'ficha') {
       if (!state.foto1Blob || !state.foto2Blob) {
         showToast('Debes tomar ambas fotos de la ficha antes de enviar.', 'error');
@@ -657,126 +705,48 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    if (!navigator.onLine) {
-      showToast('Sin conexión a Internet. Guardando automáticamente en Modo Cola.', 'error');
-      await ejecutarGuardadoEnCola();
+    // 2. Guardar PRIMERO en IndexedDB para tener un ID permanente e inmutable ante cortes
+    let itemGuardado = null;
+    try {
+      if (state.mode === 'ficha') {
+        itemGuardado = await window.surveyDB.guardarEncuesta(
+          state.foto1Blob,
+          state.foto2Blob,
+          state.foto1Mime,
+          state.foto2Mime
+        );
+        resetFichaForm();
+      } else if (state.mode === 'anexo17') {
+        itemGuardado = await window.surveyDB.guardarAnexo17(
+          state.foto1Blob,
+          state.foto2Blob,
+          state.foto1Mime,
+          state.foto2Mime,
+          state.tipoEvaluacion
+        );
+        resetFichaForm();
+      } else {
+        itemGuardado = await window.surveyDB.guardarTest(
+          state.fotoTestBlob,
+          state.fotoTestMime,
+          state.tipoEvaluacion
+        );
+        resetTestForm();
+      }
+
+      await actualizarContadorCola();
+      if (state.drawerOpen) await renderizarListaDrawer();
+    } catch (errDb) {
+      console.error('Error guardando en IDB previo a sincronizar:', errDb);
+      showToast('Error al persistir registro en el teléfono: ' + errDb.message, 'error');
       return;
     }
 
-    if (state.mode === 'ficha') {
-      mostrarModalProcesamiento('Extrayendo Ficha con IA', 'Analizando 43 variables, checkboxes manuscritos y subiendo a Google Sheets...');
-      try {
-        const formData = new FormData();
-        formData.append('foto_anverso', normalizarBlobParaEnvio(state.foto1Blob, 'anverso.jpg'), 'anverso.jpg');
-        formData.append('foto_reverso', normalizarBlobParaEnvio(state.foto2Blob, 'reverso.jpg'), 'reverso.jpg');
-        formData.append('modo', 'inmediato');
-        formData.append('client_item_id', 'direct_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6));
+    if (!itemGuardado) return;
 
-        const response = await fetch('/api/process-survey', {
-          method: 'POST',
-          body: formData
-        });
-        const data = await response.json();
-
-        if (!response.ok || !data.success) {
-          throw new Error(data.detail || data.error || 'Error en el servidor');
-        }
-
-        ocultarModalProcesamiento();
-        if (data.deduplicated) {
-          showToast(`🛡️ Ficha deduplicada: ya existía registro previo para ${data.participante}`, 'info');
-        } else {
-          showToast(`¡Éxito! Registrada ficha de: ${data.participante || 'Participante'}`, 'success');
-        }
-        resetFichaForm();
-        cargarResumenParticipantes();
-
-      } catch (error) {
-        console.error('Error en envío inmediato de ficha:', error);
-        ocultarModalProcesamiento();
-        showToast(`Error al procesar: ${error.message}. Se guardará en cola local.`, 'error');
-        await ejecutarGuardadoEnCola();
-      }
-
-    } else if (state.mode === 'anexo17') {
-      // Modo Anexo 17 (2 Páginas)
-      mostrarModalProcesamiento('Extrayendo Pre/Post Test Anexo 17 con IA', 'Digitalizando ambas páginas de Pellízcate con Generación B+, reconciliando participante y registrando...');
-      try {
-        const formData = new FormData();
-        formData.append('foto_anverso', normalizarBlobParaEnvio(state.foto1Blob, 'anexo17_pag1.jpg'), 'anexo17_pag1.jpg');
-        if (state.foto2Blob) {
-          formData.append('foto_reverso', normalizarBlobParaEnvio(state.foto2Blob, 'anexo17_pag2.jpg'), 'anexo17_pag2.jpg');
-        }
-        if (state.tipoEvaluacion && state.tipoEvaluacion !== 'AUTO') {
-          formData.append('tipo_evaluacion', state.tipoEvaluacion);
-        }
-        formData.append('modo', 'inmediato');
-        formData.append('client_item_id', 'direct_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6));
-
-        const response = await fetch('/api/process-anexo17', {
-          method: 'POST',
-          body: formData
-        });
-        const data = await response.json();
-
-        if (!response.ok || !data.success) {
-          throw new Error(data.detail || data.error || 'Error en el servidor');
-        }
-
-        ocultarModalProcesamiento();
-        if (data.deduplicated) {
-          showToast(`🛡️ Anexo 17 (${data.tipo_evaluacion}) deduplicado: ya existía registro previo para ${data.participante}`, 'info');
-        } else {
-          showToast(`¡Éxito! Anexo 17 (${data.tipo_evaluacion}) registrado: ${data.participante} (${data.municipio})`, 'success');
-        }
-        resetFichaForm();
-        cargarResumenParticipantes();
-
-      } catch (error) {
-        console.error('Error en envío inmediato de Anexo 17:', error);
-        ocultarModalProcesamiento();
-        showToast(`Error al procesar Anexo 17: ${error.message}. Se guardará en cola local.`, 'error');
-        await ejecutarGuardadoEnCola();
-      }
-
-    } else {
-      // Modo Anexo 4
-      mostrarModalProcesamiento('Extrayendo Pre/Post Test Anexo 4 con IA', 'Digitalizando respuestas SSR ITS, reconciliando con base de participantes y subiendo a Google Sheets...');
-      try {
-        const formData = new FormData();
-        formData.append('foto_test', normalizarBlobParaEnvio(state.fotoTestBlob, 'test.jpg'), 'test.jpg');
-        if (state.tipoEvaluacion && state.tipoEvaluacion !== 'AUTO') {
-          formData.append('tipo_evaluacion', state.tipoEvaluacion);
-        }
-        formData.append('modo', 'inmediato');
-        formData.append('client_item_id', 'direct_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6));
-
-        const response = await fetch('/api/process-test', {
-          method: 'POST',
-          body: formData
-        });
-        const data = await response.json();
-
-        if (!response.ok || !data.success) {
-          throw new Error(data.detail || data.error || 'Error en el servidor');
-        }
-
-        ocultarModalProcesamiento();
-        if (data.deduplicated) {
-          showToast(`🛡️ Anexo 4 (${data.tipo_evaluacion}) deduplicado: ya existía registro previo para ${data.participante}`, 'info');
-        } else {
-          showToast(`¡Éxito! Anexo 4 (${data.tipo_evaluacion}) registrado: ${data.participante} (${data.municipio})`, 'success');
-        }
-        resetTestForm();
-        cargarResumenParticipantes();
-
-      } catch (error) {
-        console.error('Error en envío inmediato de test:', error);
-        ocultarModalProcesamiento();
-        showToast(`Error al procesar: ${error.message}. Se guardará en cola local.`, 'error');
-        await ejecutarGuardadoEnCola();
-      }
-    }
+    // 3. Sincronizar inmediatamente el registro con su ID único permanente
+    showToast('⚡ Registro asegurado localmente. Sincronizando con el servidor...', 'info');
+    await sincronizarItemIndividual(itemGuardado.id, true);
   }
 
   // -------------------------------------------------------------
@@ -880,7 +850,7 @@ document.addEventListener('DOMContentLoaded', () => {
   async function iniciarSincronizacionSegundoPlano(iniciadoManualmente = false) {
     if (!navigator.onLine) {
       if (iniciadoManualmente) {
-        showToast('No tienes conexión a Internet para sincronizar.', 'error');
+        showToast('No tienes conexión de red activa en el dispositivo.', 'error');
       }
       return;
     }
@@ -900,7 +870,17 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    // Verificación real de alcance al servidor en PC (evita falsos positivos con 4G)
+    const servidorAlcanzable = await verificarConexionServidor();
+    if (!servidorAlcanzable) {
+      if (iniciadoManualmente) {
+        showToast('El servidor en el PC no responde. Verifica que estés conectado a la misma red Wi-Fi.', 'error');
+      }
+      return;
+    }
+
     state.isSyncing = true;
+    await solicitarWakeLock();
     actualizarBarraSincronizacionUI(true, `Iniciando sincronización (${iniciales.length} pendientes)...`);
     if (iniciadoManualmente) {
       showToast(`⚡ Sincronización en segundo plano activa (${iniciales.length} registros). Puedes seguir capturando fotos libremente.`, 'info');
@@ -996,7 +976,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             exitosas++;
             if (esDedup) {
-              showToast(`🛡️ ${labelTipo} sincronizada (Deduplicada: ya estaba en Sheets)`, 'info');
+              showToast(`🛡️ ${labelTipo} sincronizada (Deduplicada en servidor)`, 'info');
             } else {
               showToast(`✅ ${labelTipo} sincronizada (${restantes - 1} restantes)`, 'success');
             }
@@ -1015,15 +995,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (state.drawerOpen) await renderizarListaDrawer();
         cargarResumenParticipantes();
 
-        // Verificar si continúan habiendo elementos pendientes no fallidos para aplicar el límite de tasa de 4s
+        // Pausa ligera optimizada de 500ms (evita saturación y permite respuesta inmediata)
         const pendientesPost = (await window.surveyDB.obtenerPendientes()).filter(it => !fallidosEnEstaSesion.has(it.id));
         if (pendientesPost.length > 0) {
-          actualizarBarraSincronizacionUI(true, `Pausa de 4s (tasa de peticiones) • ${pendientesPost.length} pendientes...`);
-          await new Promise(resolve => setTimeout(resolve, 4000));
+          actualizarBarraSincronizacionUI(true, `Encolando siguiente registro (${pendientesPost.length} pendientes)...`);
+          await new Promise(resolve => setTimeout(resolve, 500));
         }
       }
     } finally {
       state.isSyncing = false;
+      await liberarWakeLock();
       actualizarBarraSincronizacionUI(false);
       await actualizarContadorCola();
       if (state.drawerOpen) await renderizarListaDrawer();
@@ -1075,11 +1056,17 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // -------------------------------------------------------------
-  // REINTENTO / SINCRONIZACIÓN INDIVIDUAL POR ÍTEM
+  // REINTENTO / SINCRONIZACIÓN INDIVIDUAL POR ÍTEM (SEGURO Y DEDUPLICADO)
   // -------------------------------------------------------------
-  async function sincronizarItemIndividual(id) {
+  async function sincronizarItemIndividual(id, conModal = false) {
     if (!navigator.onLine) {
-      showToast('No tienes conexión a Internet para sincronizar este registro.', 'error');
+      showToast('No tienes conexión de red para sincronizar este registro.', 'error');
+      return;
+    }
+
+    // Prevenir colisiones con el background worker activo
+    if (state.isSyncing) {
+      showToast('Hay una sincronización general activa. El registro se procesará automáticamente.', 'info');
       return;
     }
 
@@ -1090,15 +1077,35 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    if (item.status === 'syncing') {
+      showToast('Este registro ya se encuentra en proceso de sincronización.', 'info');
+      return;
+    }
+
+    // Verificar alcance real con el servidor antes de empezar
+    const servidorAlcanzable = await verificarConexionServidor();
+    if (!servidorAlcanzable) {
+      showToast('El servidor en el PC no responde (revisa tu red Wi-Fi o si el PC está activo).', 'error');
+      await window.surveyDB.actualizarEstado(item.id, 'error', { errorMsg: 'Servidor no alcanzable' });
+      await actualizarContadorCola();
+      if (state.drawerOpen) await renderizarListaDrawer();
+      return;
+    }
+
     await window.surveyDB.actualizarEstado(item.id, 'syncing');
     await actualizarContadorCola();
     await renderizarListaDrawer();
+    await solicitarWakeLock();
 
     const esAnexo17 = item.tipo === 'anexo17';
     const esAnexo4 = item.tipo === 'anexo4' || item.tipo === 'test';
     const labelTipo = esAnexo17 ? 'Anexo 17' : (esAnexo4 ? 'Anexo 4' : 'Ficha');
 
-    showToast(`🔄 Sincronizando ${labelTipo} individualmente...`, 'info');
+    if (conModal) {
+      mostrarModalProcesamiento(`Digitalizando ${labelTipo} con IA`, 'Extrayendo datos forenses y sincronizando con el servidor...');
+    } else {
+      showToast(`🔄 Sincronizando ${labelTipo} individualmente...`, 'info');
+    }
 
     try {
       let resp;
@@ -1111,7 +1118,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (item.tipoEvaluacion && item.tipoEvaluacion !== 'AUTO') {
           formData.append('tipo_evaluacion', item.tipoEvaluacion);
         }
-        formData.append('modo', 'batch');
+        formData.append('modo', 'inmediato');
         formData.append('client_item_id', item.id);
 
         resp = await fetch('/api/process-anexo17', {
@@ -1124,7 +1131,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (item.tipoEvaluacion && item.tipoEvaluacion !== 'AUTO') {
           formData.append('tipo_evaluacion', item.tipoEvaluacion);
         }
-        formData.append('modo', 'batch');
+        formData.append('modo', 'inmediato');
         formData.append('client_item_id', item.id);
 
         resp = await fetch('/api/process-test', {
@@ -1135,7 +1142,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const formData = new FormData();
         formData.append('foto_anverso', normalizarBlobParaEnvio(item.anversoBlob, 'anverso.jpg'), 'anverso.jpg');
         formData.append('foto_reverso', normalizarBlobParaEnvio(item.reversoBlob, 'reverso.jpg'), 'reverso.jpg');
-        formData.append('modo', 'batch');
+        formData.append('modo', 'inmediato');
         formData.append('client_item_id', item.id);
 
         resp = await fetch('/api/process-survey', {
@@ -1155,9 +1162,9 @@ document.addEventListener('DOMContentLoaded', () => {
           errorMsg: null
         });
         if (esDedup) {
-          showToast(`🛡️ ${labelTipo} sincronizado (Deduplicado: ya estaba registrado en Sheets)`, 'info');
+          showToast(`🛡️ ${labelTipo} sincronizado (Deduplicado: ya existía registro en Sheets)`, 'info');
         } else {
-          showToast(`✅ ${labelTipo} sincronizado con éxito en Google Sheets`, 'success');
+          showToast(`✅ ${labelTipo} sincronizado con éxito (${resData.participante || 'Participante'})`, 'success');
         }
       } else {
         throw new Error(resData.detail || resData.error || 'Error al procesar en el servidor');
@@ -1167,6 +1174,8 @@ document.addEventListener('DOMContentLoaded', () => {
       await window.surveyDB.actualizarEstado(item.id, 'error', { errorMsg: err.message });
       showToast(`❌ Error al sincronizar ${labelTipo}: ${err.message}`, 'error');
     } finally {
+      if (conModal) ocultarModalProcesamiento();
+      await liberarWakeLock();
       await actualizarContadorCola();
       await renderizarListaDrawer();
       cargarResumenParticipantes();

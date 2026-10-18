@@ -5,6 +5,8 @@ credentials.json
 *.pem
 patron_maestro.xlsx
 patron_maestro.csv
+backend/idempotencia_cache.json
+backend/pendientes_sincronizacion.json
 *.tmp
 
 

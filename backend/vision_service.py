@@ -3,7 +3,7 @@ Servicio de Visión Artificial Multimodal (OCR Especializado y Forense).
 Autor: Owen Badel Hooker — Ingeniero de Sistemas / Software Architect.
 
 Procesa las fotografías físicas de Fichas de Caracterización y Evaluaciones Pre/Post Test
-utilizando modelos de visión multimodal de alta precisión mediante Google Gemini (gemini-3.5-flash-lite),
+utilizando modelos de visión multimodal de alta precisión mediante Google Gemini (gemini-2.5-flash),
 con control de tasa inteligente (Rate Limiter), reconciliación Jaro-Winkler contra el Patrón Maestro,
 y fallback opcional a OpenAI si está configurado.
 """
@@ -484,6 +484,26 @@ class VisionService:
         ficha = FichaCaracterizacion.model_validate(parsed)
         datos_canonicos = ficha.to_canonical_dict()
 
+        # Reconciliación con Patrón Maestro (Jaro-Winkler) para homogeneizar caligrafía
+        nombre_extraido = datos_canonicos.get("Nombre completo del participante", "")
+        municipio_extraido = datos_canonicos.get("Municipio", "") or datos_canonicos.get("TERRITORIO", "")
+        coincidencia = participant_cache.buscar_coincidencia(nombre_extraido, municipio_extraido)
+        if coincidencia:
+            score = coincidencia.get("score", 1.0)
+            logger.info(
+                f"Reconciliando Ficha: '{nombre_extraido}' -> '{coincidencia['nombre']}' "
+                f"(Score Jaro-Winkler: {score:.3f}). Estandarizando datos del participante."
+            )
+            datos_canonicos["Nombre completo del participante"] = coincidencia["nombre"]
+            if coincidencia.get("edad") and not datos_canonicos.get("Edad"):
+                datos_canonicos["Edad"] = coincidencia["edad"]
+            if coincidencia.get("municipio"):
+                datos_canonicos["Municipio"] = coincidencia["municipio"]
+            if coincidencia.get("eapb") and not datos_canonicos.get("EPS (si tienes)"):
+                datos_canonicos["EPS (si tienes)"] = coincidencia["eapb"]
+            if coincidencia.get("documento") and not datos_canonicos.get("Numero de documento identidad"):
+                datos_canonicos["Numero de documento identidad"] = coincidencia["documento"]
+
         # Auto-aprendizaje en el caché de participantes (memoria viva de la fábrica)
         nom = datos_canonicos.get("Nombre completo del participante", "")
         if nom and len(nom) >= 4:
@@ -757,12 +777,11 @@ class VisionService:
         if not self.gemini_api_key:
             raise ValueError("GEMINI_API_KEY no está configurada en las variables de entorno.")
 
-        primary_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite").strip()
+        primary_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
         candidate_models = [
             primary_model,
-            "gemini-3.5-flash-lite",
-            "gemini-3.8-flash",
-            "gemini-3.1-flash-lite"
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite"
         ]
         models_to_try = list(dict.fromkeys(candidate_models))
 
@@ -809,12 +828,11 @@ class VisionService:
         if not self.gemini_api_key:
             raise ValueError("GEMINI_API_KEY no está configurada.")
 
-        primary_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite").strip()
+        primary_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
         candidate_models = [
             primary_model,
-            "gemini-3.5-flash-lite",
-            "gemini-3.8-flash",
-            "gemini-3.1-flash-lite"
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite"
         ]
         models_to_try = list(dict.fromkeys(candidate_models))
 
@@ -865,12 +883,11 @@ class VisionService:
         if not self.gemini_api_key:
             raise ValueError("GEMINI_API_KEY no está configurada.")
 
-        primary_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite").strip()
+        primary_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
         candidate_models = [
             primary_model,
-            "gemini-3.5-flash-lite",
-            "gemini-3.8-flash",
-            "gemini-3.1-flash-lite"
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite"
         ]
         models_to_try = list(dict.fromkeys(candidate_models))
 

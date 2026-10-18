@@ -10,11 +10,13 @@ import sys
 import json
 import logging
 import asyncio
+import hashlib
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, status
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, status, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, FileResponse
@@ -49,6 +51,7 @@ logger = logging.getLogger("main_api")
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = PROJECT_DIR / "frontend"
 PENDIENTES_FILE = PROJECT_DIR / "backend" / "pendientes_sincronizacion.json"
+IDEMPOTENCIA_FILE = PROJECT_DIR / "backend" / "idempotencia_cache.json"
 
 
 def guardar_pendiente_local(tipo: str, fila: list, error: str):
@@ -72,6 +75,48 @@ def guardar_pendiente_local(tipo: str, fila: list, error: str):
         logger.error(f"Error guardando pendiente local: {e}")
 
 
+# =========================================================================
+# CONTROL DE CONCURRENCIA MULTI-DISPOSITIVO & DEDUPLICACIÓN
+# Garantiza que múltiples teléfonos mandando a cola simultáneamente se encolen
+# ordenadamente sin colapsar cuotas de Gemini ni saturar Google Sheets.
+# =========================================================================
+GEMINI_CONCURRENCY_SEMAPHORE = asyncio.Semaphore(2)  # Máximo 2 llamadas de visión simultáneas
+SHEETS_WRITE_SEMAPHORE = asyncio.Semaphore(1)        # Escritura estrictamente serializada y atómica
+
+IDEMPOTENCY_CACHE: Dict[str, Dict[str, Any]] = {}
+IDEMPOTENCY_CACHE_MAX = 3000
+ACTIVE_TASKS: Dict[str, asyncio.Event] = {}
+ACTIVE_RESULTS: Dict[str, Dict[str, Any]] = {}
+_CACHE_LOCK = threading.Lock()
+
+
+def cargar_idempotencia_disco():
+    """Carga el historial de idempotencia persistido en disco al iniciar el servidor."""
+    global IDEMPOTENCY_CACHE
+    if IDEMPOTENCIA_FILE.exists():
+        try:
+            data = json.loads(IDEMPOTENCIA_FILE.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                with _CACHE_LOCK:
+                    IDEMPOTENCY_CACHE.update(data)
+                logger.info(f"Caché de idempotencia cargado desde disco: {len(IDEMPOTENCY_CACHE)} entradas.")
+        except Exception as e:
+            logger.warning(f"Error cargando idempotencia desde disco: {e}")
+
+
+def guardar_idempotencia_disco():
+    """Persiste en disco el historial de idempotencia para sobrevivir a reinicios."""
+    try:
+        with _CACHE_LOCK:
+            copia = dict(list(IDEMPOTENCY_CACHE.items())[-IDEMPOTENCY_CACHE_MAX:])
+        IDEMPOTENCIA_FILE.write_text(json.dumps(copia, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as e:
+        logger.warning(f"Error guardando idempotencia en disco: {e}")
+
+
+# Cargar inmediatamente en tiempo de importación
+cargar_idempotencia_disco()
+
 load_dotenv(PROJECT_DIR / ".env")
 
 app = FastAPI(
@@ -92,17 +137,6 @@ app.add_middleware(
 # Inicializar servicios
 vision_service = VisionService()
 sheets_service = GoogleSheetsService()
-
-# =========================================================================
-# CONTROL DE CONCURRENCIA MULTI-DISPOSITIVO & DEDUPLICACIÓN
-# Garantiza que múltiples teléfonos mandando a cola simultáneamente se encolen
-# ordenadamente sin colapsar cuotas de Gemini ni saturar Google Sheets.
-# =========================================================================
-GEMINI_CONCURRENCY_SEMAPHORE = asyncio.Semaphore(2)  # Máximo 2 llamadas de visión simultáneas
-SHEETS_WRITE_SEMAPHORE = asyncio.Semaphore(1)        # Escritura estrictamente serializada y atómica
-
-IDEMPOTENCY_CACHE: Dict[str, Dict[str, Any]] = {}
-IDEMPOTENCY_CACHE_MAX = 3000
 
 
 @app.on_event("startup")
@@ -328,8 +362,42 @@ def resolver_mime_imagen(f: Optional[UploadFile], fallback: str = "image/jpeg") 
     return fallback
 
 
+async def _tarea_subida_sheets(
+    tipo: str,
+    fila: list,
+    tipo_evaluacion: Optional[str] = None,
+    client_keys: Optional[list] = None
+):
+    """Sube la fila a Google Sheets en segundo plano bajo el semáforo atómico."""
+    try:
+        async with SHEETS_WRITE_SEMAPHORE:
+            if tipo == "ficha":
+                res = await run_in_threadpool(sheets_service.insertar_encuesta, fila)
+            elif tipo == "test":
+                res = await run_in_threadpool(sheets_service.insertar_test, fila, tipo_evaluacion)
+            elif tipo == "anexo17":
+                res = await run_in_threadpool(sheets_service.insertar_anexo17, fila, tipo_evaluacion)
+            else:
+                res = {"success": False, "error": f"Tipo de registro desconocido: {tipo}"}
+
+        logger.info(f"Subida asíncrona a Google Sheets ({tipo}) completada exitosamente: {res}")
+        if client_keys:
+            with _CACHE_LOCK:
+                for ck in client_keys:
+                    if ck and ck in IDEMPOTENCY_CACHE:
+                        IDEMPOTENCY_CACHE[ck]["sheets_result"] = res
+                        if res.get("deduplicated"):
+                            IDEMPOTENCY_CACHE[ck]["deduplicated"] = True
+            guardar_idempotencia_disco()
+
+    except Exception as e:
+        logger.error(f"Error en subida diferida a Google Sheets ({tipo}): {e}")
+        guardar_pendiente_local(tipo, fila, str(e))
+
+
 @app.post("/api/process-survey")
 async def process_survey(
+    background_tasks: BackgroundTasks,
     foto_anverso: UploadFile = File(..., description="Fotografía Página 1 (Anverso)"),
     foto_reverso: UploadFile = File(..., description="Fotografía Página 2 (Reverso)"),
     modo: Optional[str] = Form("inmediato", description="Modo de sincronización ('inmediato' o 'batch')"),
@@ -339,7 +407,7 @@ async def process_survey(
     Recibe las dos fotos obligatorias de la ficha, realiza extracción OCR multimodal con IA
     y registra la fila resultante en Google Sheets con control de concurrencia y deduplicación.
     """
-    # 0. Verificación de Idempotencia en memoria
+    # 0. Verificación inmediata de Idempotencia previa en memoria / disco
     if client_item_id and client_item_id in IDEMPOTENCY_CACHE:
         cached = dict(IDEMPOTENCY_CACHE[client_item_id])
         cached["deduplicated"] = True
@@ -347,9 +415,6 @@ async def process_survey(
         logger.info(f"Idempotencia detectada para ficha client_item_id={client_item_id}. Retornando caché.")
         return cached
 
-    logger.info(f"Procesando encuesta en modo '{modo}' (Client ID={client_item_id}). Archivo 1: {foto_anverso.filename}, Archivo 2: {foto_reverso.filename}")
-
-    # Validar y resolver tipos de archivo con tolerancia para IndexedDB
     mime1 = resolver_mime_imagen(foto_anverso, "image/jpeg")
     mime2 = resolver_mime_imagen(foto_reverso, "image/jpeg")
 
@@ -363,84 +428,124 @@ async def process_survey(
                 detail="Una o ambas imágenes están vacías (0 bytes)."
             )
 
-        # 1. Extracción con IA de Visión bajo semáforo
-        logger.info("Encolando extracción multimodal de Ficha con IA (Semaphore)...")
-        async with GEMINI_CONCURRENCY_SEMAPHORE:
-            datos_dict = await run_in_threadpool(
-                vision_service.extraer_datos_ficha,
-                img_anverso_bytes=anverso_bytes,
-                img_reverso_bytes=reverso_bytes,
-                mime_type_1=mime1,
-                mime_type_2=mime2
+        # 1. Clave secundaria por Hash SHA-256 de las imágenes (cero duplicación física)
+        hash_img = hashlib.sha256(anverso_bytes + reverso_bytes).hexdigest()
+        hash_key = f"hash_ficha_{hash_img}"
+
+        if hash_key in IDEMPOTENCY_CACHE:
+            cached = dict(IDEMPOTENCY_CACHE[hash_key])
+            cached["deduplicated"] = True
+            cached["message"] = f"Ficha ya procesada previamente ({cached.get('participante', '')}). Deduplicado por hash de imagen."
+            logger.info(f"Idempotencia detectada por hash_key={hash_key}. Retornando resultado sin re-procesar.")
+            if client_item_id:
+                with _CACHE_LOCK:
+                    IDEMPOTENCY_CACHE[client_item_id] = cached
+                guardar_idempotencia_disco()
+            return cached
+
+        primary_key = client_item_id or hash_key
+
+        # 2. Control de concurrencia en vuelo (evitar doble llamada mientras se procesa)
+        if primary_key in ACTIVE_TASKS:
+            logger.info(f"Petición concurrente detectada para '{primary_key}'. Esperando a la tarea en vuelo...")
+            event = ACTIVE_TASKS[primary_key]
+            await event.wait()
+            cached = ACTIVE_RESULTS.get(primary_key) or IDEMPOTENCY_CACHE.get(primary_key)
+            if cached:
+                cached_copy = dict(cached)
+                cached_copy["deduplicated"] = True
+                cached_copy["message"] = "Registro procesado concurrentemente. Deduplicado por idempotencia en vuelo."
+                return cached_copy
+
+        active_event = asyncio.Event()
+        ACTIVE_TASKS[primary_key] = active_event
+        if hash_key != primary_key:
+            ACTIVE_TASKS[hash_key] = active_event
+
+        try:
+            logger.info(f"Procesando encuesta en modo '{modo}' (Client ID={client_item_id}, Hash={hash_img[:10]}...).")
+
+            # 3. Extracción con IA de Visión bajo semáforo
+            logger.info("Encolando extracción multimodal de Ficha con IA (Semaphore)...")
+            async with GEMINI_CONCURRENCY_SEMAPHORE:
+                datos_dict = await run_in_threadpool(
+                    vision_service.extraer_datos_ficha,
+                    img_anverso_bytes=anverso_bytes,
+                    img_reverso_bytes=reverso_bytes,
+                    mime_type_1=mime1,
+                    mime_type_2=mime2
+                )
+
+            ficha = FichaCaracterizacion.model_validate(datos_dict)
+            fila_ordenada = [str(x or "").strip().upper() for x in ficha.to_ordered_row()]
+
+            logger.info(
+                f"Fila extraída con IA -> Participante='{fila_ordenada[2]}', "
+                f"Doc='{fila_ordenada[4]}', Municipio='{fila_ordenada[9]}'"
             )
 
-        ficha = FichaCaracterizacion.model_validate(datos_dict)
-        fila_ordenada = [str(x or "").strip().upper() for x in ficha.to_ordered_row()]
+            # 4. Aprendizaje continuo
+            try:
+                await run_in_threadpool(vocabulary_learner.aprender_fila, fila_ordenada)
+                await run_in_threadpool(
+                    participant_cache.aprender_participante,
+                    nombre=fila_ordenada[2],
+                    edad=fila_ordenada[5],
+                    municipio=fila_ordenada[9],
+                    eapb=fila_ordenada[11],
+                    documento=fila_ordenada[4]
+                )
+            except Exception as e:
+                logger.warning(f"Aviso en aprendizaje continuo de ficha: {e}")
 
-        logger.info(
-            f"Fila extraída con IA -> Participante='{fila_ordenada[2]}', "
-            f"Col 22 (Última vez)='{fila_ordenada[21]}', "
-            f"Col 25 (Tiempo)='{fila_ordenada[24]}', "
-            f"Col 38 (Embarazo adolescente)='{fila_ordenada[37]}', "
-            f"Col 43 (Por qué)='{fila_ordenada[42]}'"
-        )
+            # 5. Desacoplamiento de Google Sheets
+            sheets_result = None
+            if modo == "sincrono":
+                async with SHEETS_WRITE_SEMAPHORE:
+                    sheets_result = await run_in_threadpool(sheets_service.insertar_encuesta, fila_ordenada)
+            else:
+                guardar_pendiente_local("ficha_en_cola", fila_ordenada, "Encolado para subida asíncrona")
+                background_tasks.add_task(
+                    _tarea_subida_sheets,
+                    tipo="ficha",
+                    fila=fila_ordenada,
+                    tipo_evaluacion=None,
+                    client_keys=[client_item_id, hash_key]
+                )
+                sheets_result = {
+                    "success": True,
+                    "status": "en_cola_background",
+                    "message": "Ficha procesada y validada exitosamente por IA. Sincronizando con Google Sheets en segundo plano."
+                }
 
-        # 2. Inserción atómica en Google Sheets bajo semáforo
-        logger.info("Encolando escritura de ficha en Google Sheets bajo lock...")
-        sheets_result = None
-        try:
-            async with SHEETS_WRITE_SEMAPHORE:
-                sheets_result = await run_in_threadpool(sheets_service.insertar_encuesta, fila_ordenada)
-        except Exception as sheet_err:
-            logger.error(f"Error escribiendo encuesta en Google Sheets: {sheet_err}")
-            guardar_pendiente_local("ficha", fila_ordenada, str(sheet_err))
-            sheets_result = {
-                "success": False,
-                "error": str(sheet_err),
-                "saved_locally": True,
-                "message": "Ficha procesada correctamente por la IA. Google Sheets tardó en responder; guardada localmente para sincronización."
+            is_dedup = bool(sheets_result and sheets_result.get("deduplicated", False))
+            msg_final = sheets_result.get("message") if (sheets_result and is_dedup) else "Ficha de caracterización procesada exitosamente."
+
+            response_payload = {
+                "success": True,
+                "deduplicated": is_dedup,
+                "message": msg_final,
+                "participante": fila_ordenada[2] or "SIN NOMBRE",
+                "documento": fila_ordenada[4] or "SIN DOCUMENTO",
+                "sheets_result": sheets_result,
+                "datos_extraidos": ficha.to_canonical_dict()
             }
 
-        # 3. Aprendizaje continuo de vocabulario para futuras coincidencias difusas
-        try:
-            await run_in_threadpool(vocabulary_learner.aprender_fila, fila_ordenada)
-            logger.info("Vocabulario adaptativo actualizado a partir de la nueva ficha procesada.")
-        except Exception as e:
-            logger.warning(f"No se pudo actualizar vocabulario adaptativo: {e}")
+            with _CACHE_LOCK:
+                if client_item_id:
+                    IDEMPOTENCY_CACHE[client_item_id] = response_payload
+                IDEMPOTENCY_CACHE[hash_key] = response_payload
+                ACTIVE_RESULTS[primary_key] = response_payload
+            guardar_idempotencia_disco()
 
-        # 4. Aprendizaje continuo en base de participantes
-        try:
-            await run_in_threadpool(
-                participant_cache.aprender_participante,
-                nombre=fila_ordenada[2],
-                edad=fila_ordenada[5],
-                municipio=fila_ordenada[9],
-                eapb=fila_ordenada[11],
-                documento=fila_ordenada[4]
-            )
-            logger.info(f"Participante registrado en caché: {fila_ordenada[2]}")
-        except Exception as e:
-            logger.warning(f"No se pudo registrar participante en caché: {e}")
+            return response_payload
 
-        is_dedup = bool(sheets_result and sheets_result.get("deduplicated", False))
-        msg_final = sheets_result.get("message") if (sheets_result and is_dedup) else "Ficha de caracterización procesada y registrada exitosamente en Google Sheets."
-
-        response_payload = {
-            "success": True,
-            "deduplicated": is_dedup,
-            "message": msg_final,
-            "participante": fila_ordenada[2] or "SIN NOMBRE",
-            "documento": fila_ordenada[4] or "SIN DOCUMENTO",
-            "sheets_result": sheets_result,
-            "datos_extraidos": ficha.to_canonical_dict()
-        }
-
-        if client_item_id:
-            if len(IDEMPOTENCY_CACHE) > IDEMPOTENCY_CACHE_MAX:
-                IDEMPOTENCY_CACHE.clear()
-            IDEMPOTENCY_CACHE[client_item_id] = response_payload
-
-        return response_payload
+        finally:
+            active_event.set()
+            ACTIVE_TASKS.pop(primary_key, None)
+            if hash_key != primary_key:
+                ACTIVE_TASKS.pop(hash_key, None)
+            ACTIVE_RESULTS.pop(primary_key, None)
 
     except HTTPException:
         raise
@@ -458,6 +563,7 @@ async def process_survey(
 
 @app.post("/api/process-test")
 async def process_test(
+    background_tasks: BackgroundTasks,
     foto_test: UploadFile = File(..., description="Fotografía Hoja Única del Test (Pre o Post)"),
     tipo_evaluacion: Optional[str] = Form(None, description="Override opcional ('PRE-TEST', 'POST-TEST' o None para autodetección)"),
     modo: Optional[str] = Form("inmediato", description="Modo de sincronización ('inmediato' o 'batch')"),
@@ -468,15 +574,13 @@ async def process_test(
     realiza extracción OCR multimodal con IA (con reconciliación de participantes)
     y registra la fila resultante en Google Sheets con control de concurrencia y deduplicación atómica.
     """
-    # 0. Verificación de Idempotencia en memoria
+    # 0. Verificación inmediata de Idempotencia previa en memoria / disco
     if client_item_id and client_item_id in IDEMPOTENCY_CACHE:
         cached = dict(IDEMPOTENCY_CACHE[client_item_id])
         cached["deduplicated"] = True
         cached["message"] = f"Test ya procesado previamente ({cached.get('participante', '')}). Deduplicado por idempotencia de dispositivo."
         logger.info(f"Idempotencia detectada para test client_item_id={client_item_id}. Retornando caché.")
         return cached
-
-    logger.info(f"Procesando test en modo '{modo}' (Client ID={client_item_id}). Archivo: {foto_test.filename}, Override: {tipo_evaluacion}")
 
     mime = resolver_mime_imagen(foto_test, "image/jpeg")
 
@@ -488,80 +592,129 @@ async def process_test(
                 detail="La imagen del test está vacía (0 bytes)."
             )
 
-        # 1. Extracción con IA de Visión bajo semáforo
-        logger.info("Encolando extracción con IA para Pre/Post Test Anexo 4 (Semaphore)...")
-        async with GEMINI_CONCURRENCY_SEMAPHORE:
-            datos_dict = await run_in_threadpool(
-                vision_service.extraer_datos_test,
-                img_bytes=test_bytes,
-                mime_type=mime,
-                tipo_evaluacion_override=tipo_evaluacion
+        # 1. Clave secundaria por Hash SHA-256
+        hash_img = hashlib.sha256(test_bytes).hexdigest()
+        hash_key = f"hash_test_{hash_img}"
+
+        if hash_key in IDEMPOTENCY_CACHE:
+            cached = dict(IDEMPOTENCY_CACHE[hash_key])
+            cached["deduplicated"] = True
+            cached["message"] = f"Test ya procesado previamente ({cached.get('participante', '')}). Deduplicado por hash de imagen."
+            logger.info(f"Idempotencia detectada por hash_key={hash_key}. Retornando resultado sin re-procesar.")
+            if client_item_id:
+                with _CACHE_LOCK:
+                    IDEMPOTENCY_CACHE[client_item_id] = cached
+                guardar_idempotencia_disco()
+            return cached
+
+        primary_key = client_item_id or hash_key
+
+        # 2. Control de concurrencia en vuelo
+        if primary_key in ACTIVE_TASKS:
+            logger.info(f"Petición concurrente detectada para test '{primary_key}'. Esperando a la tarea en vuelo...")
+            event = ACTIVE_TASKS[primary_key]
+            await event.wait()
+            cached = ACTIVE_RESULTS.get(primary_key) or IDEMPOTENCY_CACHE.get(primary_key)
+            if cached:
+                cached_copy = dict(cached)
+                cached_copy["deduplicated"] = True
+                cached_copy["message"] = "Test procesado concurrentemente. Deduplicado por idempotencia en vuelo."
+                return cached_copy
+
+        active_event = asyncio.Event()
+        ACTIVE_TASKS[primary_key] = active_event
+        if hash_key != primary_key:
+            ACTIVE_TASKS[hash_key] = active_event
+
+        try:
+            logger.info(f"Procesando test en modo '{modo}' (Client ID={client_item_id}, Override={tipo_evaluacion}).")
+
+            # 3. Extracción con IA de Visión bajo semáforo
+            logger.info("Encolando extracción con IA para Pre/Post Test Anexo 4 (Semaphore)...")
+            async with GEMINI_CONCURRENCY_SEMAPHORE:
+                datos_dict = await run_in_threadpool(
+                    vision_service.extraer_datos_test,
+                    img_bytes=test_bytes,
+                    mime_type=mime,
+                    tipo_evaluacion_override=tipo_evaluacion
+                )
+
+            test_obj = PrePostTest.model_validate(datos_dict)
+            fila_ordenada = [str(x or "").strip().upper() for x in test_obj.to_ordered_row()]
+
+            logger.info(
+                f"Test extraído con IA -> Tipo='{test_obj.tipo_evaluacion}', "
+                f"Participante='{test_obj.nombre}', "
+                f"Municipio='{test_obj.municipio}'"
             )
 
-        test_obj = PrePostTest.model_validate(datos_dict)
-        fila_ordenada = [str(x or "").strip().upper() for x in test_obj.to_ordered_row()]
+            # 4. Auto-aprendizaje continuo en base de participantes
+            try:
+                if test_obj.nombre and len(test_obj.nombre) >= 4:
+                    await run_in_threadpool(
+                        participant_cache.aprender_participante,
+                        nombre=test_obj.nombre,
+                        edad=test_obj.edad or "",
+                        municipio=test_obj.municipio or "",
+                        eapb=test_obj.eps or "",
+                        documento=""
+                    )
+            except Exception as e:
+                logger.warning(f"No se pudo registrar participante de test en caché: {e}")
 
-        logger.info(
-            f"Test extraído con IA -> Tipo='{test_obj.tipo_evaluacion}', "
-            f"Participante='{test_obj.nombre}', "
-            f"Municipio='{test_obj.municipio}', "
-            f"P5='{test_obj.pregunta_5}'"
-        )
-
-        # 2. Inserción en Google Sheets bajo semáforo
-        logger.info(f"Encolando escritura de test en Google Sheets (Pestaña: '{test_obj.tipo_evaluacion}') bajo lock...")
-        sheets_result = None
-        try:
-            async with SHEETS_WRITE_SEMAPHORE:
-                sheets_result = await run_in_threadpool(
-                    sheets_service.insertar_test,
-                    valores_ordenados=fila_ordenada,
-                    tipo_evaluacion=test_obj.tipo_evaluacion
+            # 5. Desacoplamiento de Google Sheets
+            sheets_result = None
+            if modo == "sincrono":
+                async with SHEETS_WRITE_SEMAPHORE:
+                    sheets_result = await run_in_threadpool(
+                        sheets_service.insertar_test,
+                        valores_ordenados=fila_ordenada,
+                        tipo_evaluacion=test_obj.tipo_evaluacion
+                    )
+            else:
+                guardar_pendiente_local(f"test_{test_obj.tipo_evaluacion.lower()}", fila_ordenada, "Encolado para subida asíncrona")
+                background_tasks.add_task(
+                    _tarea_subida_sheets,
+                    tipo="test",
+                    fila=fila_ordenada,
+                    tipo_evaluacion=test_obj.tipo_evaluacion,
+                    client_keys=[client_item_id, hash_key]
                 )
-        except Exception as sheet_err:
-            logger.error(f"Error escribiendo test en Google Sheets: {sheet_err}")
-            guardar_pendiente_local(test_obj.tipo_evaluacion, fila_ordenada, str(sheet_err))
-            sheets_result = {
-                "success": False,
-                "error": str(sheet_err),
-                "saved_locally": True,
-                "message": f"{test_obj.tipo_evaluacion} procesado correctamente por la IA. Google Sheets tardó en responder; guardado localmente para sincronización."
+                sheets_result = {
+                    "success": True,
+                    "status": "en_cola_background",
+                    "message": f"{test_obj.tipo_evaluacion} validado exitosamente. Sincronizando con Google Sheets en segundo plano."
+                }
+
+            is_dedup = bool(sheets_result and sheets_result.get("deduplicated", False))
+            msg_final = sheets_result.get("message") if (sheets_result and is_dedup) else f"{test_obj.tipo_evaluacion} procesado y registrado exitosamente en Google Sheets."
+
+            response_payload = {
+                "success": True,
+                "deduplicated": is_dedup,
+                "message": msg_final,
+                "tipo_evaluacion": test_obj.tipo_evaluacion,
+                "participante": test_obj.nombre or "SIN NOMBRE",
+                "municipio": test_obj.municipio or "SIN MUNICIPIO",
+                "sheets_result": sheets_result,
+                "datos_extraidos": test_obj.to_canonical_dict()
             }
 
-        is_dedup = bool(sheets_result and sheets_result.get("deduplicated", False))
-        msg_final = sheets_result.get("message") if (sheets_result and is_dedup) else f"{test_obj.tipo_evaluacion} procesado y registrado exitosamente en Google Sheets."
+            with _CACHE_LOCK:
+                if client_item_id:
+                    IDEMPOTENCY_CACHE[client_item_id] = response_payload
+                IDEMPOTENCY_CACHE[hash_key] = response_payload
+                ACTIVE_RESULTS[primary_key] = response_payload
+            guardar_idempotencia_disco()
 
-        # 3. Auto-aprendizaje continuo en base de participantes
-        try:
-            if test_obj.nombre and len(test_obj.nombre) >= 4:
-                await run_in_threadpool(
-                    participant_cache.aprender_participante,
-                    nombre=test_obj.nombre,
-                    edad=test_obj.edad or "",
-                    municipio=test_obj.municipio or "",
-                    eapb=test_obj.eps or "",
-                    documento=""
-                )
-        except Exception as e:
-            logger.warning(f"No se pudo registrar participante de test en caché: {e}")
+            return response_payload
 
-        response_payload = {
-            "success": True,
-            "deduplicated": is_dedup,
-            "message": msg_final,
-            "tipo_evaluacion": test_obj.tipo_evaluacion,
-            "participante": test_obj.nombre or "SIN NOMBRE",
-            "municipio": test_obj.municipio or "SIN MUNICIPIO",
-            "sheets_result": sheets_result,
-            "datos_extraidos": test_obj.to_canonical_dict()
-        }
-
-        if client_item_id:
-            if len(IDEMPOTENCY_CACHE) > IDEMPOTENCY_CACHE_MAX:
-                IDEMPOTENCY_CACHE.clear()
-            IDEMPOTENCY_CACHE[client_item_id] = response_payload
-
-        return response_payload
+        finally:
+            active_event.set()
+            ACTIVE_TASKS.pop(primary_key, None)
+            if hash_key != primary_key:
+                ACTIVE_TASKS.pop(hash_key, None)
+            ACTIVE_RESULTS.pop(primary_key, None)
 
     except HTTPException:
         raise
@@ -579,6 +732,7 @@ async def process_test(
 
 @app.post("/api/process-anexo17")
 async def process_anexo17(
+    background_tasks: BackgroundTasks,
     foto_anverso: Optional[UploadFile] = File(None, description="Fotografía Página 1 del Anexo 17 (Datos y preguntas 1 a 5)"),
     foto_reverso: Optional[UploadFile] = File(None, description="Fotografía Página 2 del Anexo 17 (Preguntas 6 a 10)"),
     foto_test: Optional[UploadFile] = File(None, description="Compatibilidad con foto única"),
@@ -625,91 +779,138 @@ async def process_anexo17(
                 bytes2 = None
                 mime2 = None
 
-        logger.info(
-            f"Procesando Anexo 17 en modo '{modo}' (Client ID={client_item_id}). "
-            f"Pág 1={f1.filename} ({len(bytes1)/1024:.1f}KB), "
-            f"Pág 2={'Sí (' + str(len(bytes2)/1024) + 'KB)' if bytes2 else 'No'}, "
-            f"Override={tipo_evaluacion}"
-        )
+        # 1. Clave secundaria por Hash SHA-256
+        hash_img = hashlib.sha256(bytes1 + (bytes2 or b"")).hexdigest()
+        hash_key = f"hash_anexo17_{hash_img}"
 
-        # 1. Extracción con IA de Visión bajo semáforo de concurrencia
-        logger.info("Encolando extracción con IA para Pre/Post Test Anexo 17 (Semaphore)...")
-        async with GEMINI_CONCURRENCY_SEMAPHORE:
-            datos_dict = await run_in_threadpool(
-                vision_service.extraer_datos_anexo17,
-                img_anverso_bytes=bytes1,
-                img_reverso_bytes=bytes2,
-                mime_type_1=mime1,
-                mime_type_2=mime2,
-                tipo_evaluacion_override=tipo_evaluacion
+        if hash_key in IDEMPOTENCY_CACHE:
+            cached = dict(IDEMPOTENCY_CACHE[hash_key])
+            cached["deduplicated"] = True
+            cached["message"] = f"Anexo 17 ya procesado previamente ({cached.get('participante', '')}). Deduplicado por hash de imagen."
+            logger.info(f"Idempotencia detectada por hash_key={hash_key}. Retornando resultado sin re-procesar.")
+            if client_item_id:
+                with _CACHE_LOCK:
+                    IDEMPOTENCY_CACHE[client_item_id] = cached
+                guardar_idempotencia_disco()
+            return cached
+
+        primary_key = client_item_id or hash_key
+
+        # 2. Control de concurrencia en vuelo
+        if primary_key in ACTIVE_TASKS:
+            logger.info(f"Petición concurrente detectada para anexo 17 '{primary_key}'. Esperando a la tarea en vuelo...")
+            event = ACTIVE_TASKS[primary_key]
+            await event.wait()
+            cached = ACTIVE_RESULTS.get(primary_key) or IDEMPOTENCY_CACHE.get(primary_key)
+            if cached:
+                cached_copy = dict(cached)
+                cached_copy["deduplicated"] = True
+                cached_copy["message"] = "Anexo 17 procesado concurrentemente. Deduplicado por idempotencia en vuelo."
+                return cached_copy
+
+        active_event = asyncio.Event()
+        ACTIVE_TASKS[primary_key] = active_event
+        if hash_key != primary_key:
+            ACTIVE_TASKS[hash_key] = active_event
+
+        try:
+            logger.info(
+                f"Procesando Anexo 17 en modo '{modo}' (Client ID={client_item_id}). "
+                f"Pág 1={f1.filename} ({len(bytes1)/1024:.1f}KB), "
+                f"Pág 2={'Sí (' + str(len(bytes2)/1024) + 'KB)' if bytes2 else 'No'}, "
+                f"Override={tipo_evaluacion}"
             )
 
-        test_obj = PrePostTestAnexo17.model_validate(datos_dict)
-        fila_ordenada = [str(x or "").strip().upper() for x in test_obj.to_ordered_row()]
-
-        logger.info(
-            f"Anexo 17 extraído con IA -> Tipo='{test_obj.tipo_evaluacion}', "
-            f"Participante='{test_obj.nombre}', "
-            f"Municipio='{test_obj.municipio}', "
-            f"Fecha='{test_obj.fecha}'"
-        )
-
-        # 2. Inserción atómica en Google Sheets bajo semáforo de escritura serializada
-        logger.info(f"Encolando escritura en Google Sheets (Pestaña: '{test_obj.tipo_evaluacion}') bajo lock...")
-        sheets_result = None
-        try:
-            async with SHEETS_WRITE_SEMAPHORE:
-                sheets_result = await run_in_threadpool(
-                    sheets_service.insertar_anexo17,
-                    valores_ordenados=fila_ordenada,
-                    tipo_evaluacion=test_obj.tipo_evaluacion
+            # 3. Extracción con IA de Visión bajo semáforo de concurrencia
+            logger.info("Encolando extracción con IA para Pre/Post Test Anexo 17 (Semaphore)...")
+            async with GEMINI_CONCURRENCY_SEMAPHORE:
+                datos_dict = await run_in_threadpool(
+                    vision_service.extraer_datos_anexo17,
+                    img_anverso_bytes=bytes1,
+                    img_reverso_bytes=bytes2,
+                    mime_type_1=mime1,
+                    mime_type_2=mime2,
+                    tipo_evaluacion_override=tipo_evaluacion
                 )
-        except Exception as sheet_err:
-            logger.error(f"Error escribiendo Anexo 17 en Google Sheets: {sheet_err}")
-            guardar_pendiente_local(f"anexo17_{test_obj.tipo_evaluacion.lower()}", fila_ordenada, str(sheet_err))
-            sheets_result = {
-                "success": False,
-                "error": str(sheet_err),
-                "saved_locally": True,
-                "message": f"Anexo 17 ({test_obj.tipo_evaluacion}) procesado correctamente por la IA. Google Sheets tardó en responder; guardado localmente para sincronización."
+
+            test_obj = PrePostTestAnexo17.model_validate(datos_dict)
+            fila_ordenada = [str(x or "").strip().upper() for x in test_obj.to_ordered_row()]
+
+            logger.info(
+                f"Anexo 17 extraído con IA -> Tipo='{test_obj.tipo_evaluacion}', "
+                f"Participante='{test_obj.nombre}', "
+                f"Municipio='{test_obj.municipio}', "
+                f"Fecha='{test_obj.fecha}'"
+            )
+
+            # 4. Auto-aprendizaje continuo en base de participantes
+            try:
+                if test_obj.nombre and len(test_obj.nombre) >= 4:
+                    await run_in_threadpool(
+                        participant_cache.aprender_participante,
+                        nombre=test_obj.nombre,
+                        edad=test_obj.edad or "",
+                        municipio=test_obj.municipio or "SANTA CATALINA",
+                        eapb="",
+                        documento=""
+                    )
+            except Exception as e:
+                logger.warning(f"No se pudo registrar participante de Anexo 17 en caché: {e}")
+
+            # 5. Desacoplamiento de Google Sheets
+            sheets_result = None
+            if modo == "sincrono":
+                async with SHEETS_WRITE_SEMAPHORE:
+                    sheets_result = await run_in_threadpool(
+                        sheets_service.insertar_anexo17,
+                        valores_ordenados=fila_ordenada,
+                        tipo_evaluacion=test_obj.tipo_evaluacion
+                    )
+            else:
+                guardar_pendiente_local(f"anexo17_{test_obj.tipo_evaluacion.lower()}", fila_ordenada, "Encolado para subida asíncrona")
+                background_tasks.add_task(
+                    _tarea_subida_sheets,
+                    tipo="anexo17",
+                    fila=fila_ordenada,
+                    tipo_evaluacion=test_obj.tipo_evaluacion,
+                    client_keys=[client_item_id, hash_key]
+                )
+                sheets_result = {
+                    "success": True,
+                    "status": "en_cola_background",
+                    "message": f"Anexo 17 ({test_obj.tipo_evaluacion}) validado exitosamente. Sincronizando con Google Sheets en segundo plano."
+                }
+
+            is_dedup = bool(sheets_result and sheets_result.get("deduplicated", False))
+            msg_final = sheets_result.get("message") if (sheets_result and is_dedup) else f"Anexo 17 ({test_obj.tipo_evaluacion}) procesado y registrado exitosamente."
+
+            response_payload = {
+                "success": True,
+                "deduplicated": is_dedup,
+                "message": msg_final,
+                "tipo_evaluacion": test_obj.tipo_evaluacion,
+                "participante": test_obj.nombre or "SIN NOMBRE",
+                "municipio": test_obj.municipio or "SIN MUNICIPIO",
+                "fecha": test_obj.fecha or "",
+                "sheets_result": sheets_result,
+                "datos_extraidos": test_obj.to_canonical_dict()
             }
 
-        is_dedup = bool(sheets_result and sheets_result.get("deduplicated", False))
-        msg_final = sheets_result.get("message") if (sheets_result and is_dedup) else f"Anexo 17 ({test_obj.tipo_evaluacion}) procesado y registrado exitosamente."
+            with _CACHE_LOCK:
+                if client_item_id:
+                    IDEMPOTENCY_CACHE[client_item_id] = response_payload
+                IDEMPOTENCY_CACHE[hash_key] = response_payload
+                ACTIVE_RESULTS[primary_key] = response_payload
+            guardar_idempotencia_disco()
 
-        # 3. Auto-aprendizaje continuo en base de participantes
-        try:
-            if test_obj.nombre and len(test_obj.nombre) >= 4:
-                await run_in_threadpool(
-                    participant_cache.aprender_participante,
-                    nombre=test_obj.nombre,
-                    edad=test_obj.edad or "",
-                    municipio=test_obj.municipio or "SANTA CATALINA",
-                    eapb="",
-                    documento=""
-                )
-        except Exception as e:
-            logger.warning(f"No se pudo registrar participante de Anexo 17 en caché: {e}")
+            return response_payload
 
-        response_payload = {
-            "success": True,
-            "deduplicated": is_dedup,
-            "message": msg_final,
-            "tipo_evaluacion": test_obj.tipo_evaluacion,
-            "participante": test_obj.nombre or "SIN NOMBRE",
-            "municipio": test_obj.municipio or "SIN MUNICIPIO",
-            "fecha": test_obj.fecha or "",
-            "sheets_result": sheets_result,
-            "datos_extraidos": test_obj.to_canonical_dict()
-        }
-
-        # Guardar en caché de idempotencia para absorber reintentos de red del mismo cliente
-        if client_item_id:
-            if len(IDEMPOTENCY_CACHE) > IDEMPOTENCY_CACHE_MAX:
-                IDEMPOTENCY_CACHE.clear()
-            IDEMPOTENCY_CACHE[client_item_id] = response_payload
-
-        return response_payload
+        finally:
+            active_event.set()
+            ACTIVE_TASKS.pop(primary_key, None)
+            if hash_key != primary_key:
+                ACTIVE_TASKS.pop(hash_key, None)
+            ACTIVE_RESULTS.pop(primary_key, None)
 
     except HTTPException:
         raise

@@ -204,10 +204,11 @@ def test_gemini_models_and_exponential_backoff():
     vision_file = Path(__file__).resolve().parent.parent / "backend" / "vision_service.py"
     contenido = vision_file.read_text(encoding="utf-8")
 
-    # 1. Validación de modelos
-    assert "gemini-2.5-flash" not in contenido, "gemini-2.5-flash no debe estar en la lista de modelos de reserva"
-    assert "gemini-3.8-flash" in contenido, "gemini-3.8-flash debe estar presente como modelo recomendado"
-    assert "gemini-3.5-flash-lite" in contenido, "gemini-3.5-flash-lite debe estar presente"
+    # 1. Validación de modelos reales y vigentes de Google Gemini
+    assert "gemini-2.5-flash" in contenido, "gemini-2.5-flash debe estar presente como modelo recomendado"
+    assert "gemini-2.5-flash-lite" in contenido, "gemini-2.5-flash-lite debe estar presente como respaldo"
+    assert "gemini-3.8-flash" not in contenido, "gemini-3.8-flash (inexistente) no debe estar en vision_service.py"
+    assert "gemini-3.5-flash-lite" not in contenido, "gemini-3.5-flash-lite (inexistente) no debe estar en vision_service.py"
 
     # 2. Validación de detección de errores transitorios
     from vision_service import _es_error_transitorio, VisionService

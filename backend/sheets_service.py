@@ -130,8 +130,49 @@ class GoogleSheetsService:
                         self._tabs_inicializados.add(cache_key)
 
                     # DEDUPLICACIÓN ATÓMICA EN GSPREAD:
-                    # Para Anexo 17 y Anexo 4: Columna C (índice 3 en 1-based, fila[2] en 0-based) es el Nombre del Participante
-                    if "anexo17" in tipo_registro.lower() or "test" in tipo_registro.lower():
+                    if tipo_registro.lower() == "ficha":
+                        col_nombre_idx = 4 if self.skip_first_col else 3
+                        col_doc_idx = 6 if self.skip_first_col else 5
+                        nombre_candidato = str(fila[col_nombre_idx - 1] if len(fila) >= col_nombre_idx else "").strip().upper()
+                        doc_candidato = str(fila[col_doc_idx - 1] if len(fila) >= col_doc_idx else "").strip().upper()
+
+                        # Deduplicar por documento de identidad si es válido
+                        if doc_candidato and doc_candidato not in ("SIN DOCUMENTO", "NONE", "NULL", "0", ""):
+                            try:
+                                col_docs = [str(x or "").strip().upper() for x in worksheet.col_values(col_doc_idx)[1:]]
+                                if doc_candidato in col_docs:
+                                    logger.info(f"Deduplicación gspread activa (ficha): Documento '{doc_candidato}' ya existe en {tab_name}.")
+                                    return {
+                                        "success": True,
+                                        "method": "google_sheets_api",
+                                        "sheet_id": target_sheet_id,
+                                        "tab": tab_name,
+                                        "deduplicated": True,
+                                        "message": f"Ficha con documento '{doc_candidato}' ({nombre_candidato}) ya existe en {tab_name}. Deduplicado exitosamente.",
+                                        "updated_cells": 0
+                                    }
+                            except Exception as e_dedup:
+                                logger.warning(f"No se pudo consultar duplicados por documento en gspread: {e_dedup}")
+
+                        # Deduplicar por nombre completo si es válido
+                        if nombre_candidato and nombre_candidato not in ("SIN NOMBRE", "NONE", "NULL", ""):
+                            try:
+                                col_nombres = [str(x or "").strip().upper() for x in worksheet.col_values(col_nombre_idx)[1:]]
+                                if nombre_candidato in col_nombres:
+                                    logger.info(f"Deduplicación gspread activa (ficha): Nombre '{nombre_candidato}' ya existe en {tab_name}.")
+                                    return {
+                                        "success": True,
+                                        "method": "google_sheets_api",
+                                        "sheet_id": target_sheet_id,
+                                        "tab": tab_name,
+                                        "deduplicated": True,
+                                        "message": f"Ficha para '{nombre_candidato}' ya existe en {tab_name}. Deduplicado exitosamente.",
+                                        "updated_cells": 0
+                                    }
+                            except Exception as e_dedup:
+                                logger.warning(f"No se pudo consultar duplicados por nombre en gspread: {e_dedup}")
+
+                    elif "anexo17" in tipo_registro.lower() or "test" in tipo_registro.lower():
                         nombre_candidato = str(fila[2] if len(fila) > 2 else "").strip().upper()
                         if nombre_candidato and nombre_candidato != "SIN NOMBRE":
                             try:
@@ -176,8 +217,8 @@ class GoogleSheetsService:
                     "row": fila,
                     "data": dict(zip(headers, fila))
                 }
-                max_intentos = 4
-                timeout_segundos = 65
+                max_intentos = 2
+                timeout_segundos = 20
                 for intento in range(1, max_intentos + 1):
                     try:
                         logger.info(f"Enviando webhook Google Apps Script ({tipo_registro}, intento {intento}/{max_intentos})...")

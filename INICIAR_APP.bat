@@ -31,6 +31,33 @@ if "%PYTHON_CMD%"=="" (
     exit /b 1
 )
 
+echo [OK] Verificando IP local y conectividad movil...
+for /f "tokens=4" %%a in ('route print ^| findstr 0.0.0.0 ^| findstr /v "0.0.0.0.*0.0.0.0"') do (
+    set LOCAL_IP=%%a
+)
+
+echo.
+echo =======================================================
+echo   ACCESO DESDE CELULARES EN LA RED WI-FI:
+echo   URL Local:   http://%LOCAL_IP%:8000
+echo.
+echo   * NOTA PWA OFFLINE EN CELULARES (Chrome Android):
+echo     Para habilitar Service Worker e instalacion PWA en IP:
+echo     Visita: chrome://flags/#unsafely-treat-insecure-origin-as-secure
+echo     Escribe: http://%LOCAL_IP%:8000  (y activa 'Enabled')
+echo.
+echo   * TUNNEL HTTPS (OPCIONAL PARA DATOS MOVILES / 4G):
+echo     Si descargas cloudflared.exe en esta carpeta, ejecuta:
+echo     cloudflared tunnel --url http://localhost:8000
+echo =======================================================
+echo.
+
+where cloudflared >nul 2>&1
+if %errorlevel% equ 0 (
+    echo [INFO] cloudflared detectado. Iniciando tunel HTTPS seguro en segundo plano...
+    start "CLOUDFLARED TUNNEL (HTTPS PWA)" cloudflared tunnel --url http://localhost:8000
+)
+
 echo [OK] Iniciando Digitalizador de Fichas PWA con %PYTHON_CMD%...
 "%PYTHON_CMD%" backend/main.py
 
