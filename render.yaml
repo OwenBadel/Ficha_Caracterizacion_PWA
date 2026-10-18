@@ -14,7 +14,7 @@ services:
       - key: VISION_PROVIDER
         value: gemini
       - key: GEMINI_MODEL
-        value: gemini-3.5-flash-lite
+        value: gemini-2.5-flash
       - key: GEMINI_API_KEY
         sync: false
       - key: GOOGLE_SHEET_TAB

@@ -133,6 +133,7 @@ function doPost(e) {
 
     // Insertar la fila al final de la pestaña si no existía
     sheet.appendRow(fila);
+    SpreadsheetApp.flush();
 
     return ContentService.createTextOutput(JSON.stringify({
       status: "success",

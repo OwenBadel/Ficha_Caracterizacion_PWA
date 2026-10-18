@@ -55,6 +55,8 @@ class GoogleSheetsService:
 
         self._gspread_client = None
         self._tabs_inicializados = set()
+        self._documentos_registrados = set()
+        self._nombres_registrados = set()
         self._lock = threading.Lock()
         self._init_gspread()
 
@@ -111,6 +113,46 @@ class GoogleSheetsService:
 
         # Serialización atómica para evitar colisiones concurrentes entre dispositivos
         with self._lock:
+            # 0. Extracción canónica de campos clave para deduplicación transversal
+            col_nombre_idx = 4 if self.skip_first_col else 3
+            col_doc_idx = 6 if self.skip_first_col else 5
+            nombre_candidato = ""
+            doc_candidato = ""
+
+            if tipo_registro.lower() == "ficha":
+                nombre_candidato = str(fila[col_nombre_idx - 1] if len(fila) >= col_nombre_idx else "").strip().upper()
+                doc_candidato = str(fila[col_doc_idx - 1] if len(fila) >= col_doc_idx else "").strip().upper()
+            elif "anexo17" in tipo_registro.lower() or "test" in tipo_registro.lower():
+                nombre_candidato = str(fila[2] if len(fila) > 2 else "").strip().upper()
+
+            # Deduplicación previa inmediata en memoria local de la sesión (para ráfagas o reintentos rápidos)
+            if tipo_registro.lower() == "ficha":
+                if doc_candidato and doc_candidato not in ("SIN DOCUMENTO", "NONE", "NULL", "0", ""):
+                    if (target_sheet_id, tab_name, doc_candidato) in self._documentos_registrados:
+                        logger.info(f"Deduplicación activa en memoria (ficha): Documento '{doc_candidato}' ya registrado en {tab_name}.")
+                        return {
+                            "success": True,
+                            "method": "session_cache",
+                            "sheet_id": target_sheet_id,
+                            "tab": tab_name,
+                            "deduplicated": True,
+                            "message": f"Ficha con documento '{doc_candidato}' ({nombre_candidato}) ya fue procesada previamente. Deduplicado exitosamente.",
+                            "updated_cells": 0
+                        }
+            elif "anexo17" in tipo_registro.lower() or "test" in tipo_registro.lower():
+                if nombre_candidato and nombre_candidato not in ("SIN NOMBRE", "NONE", "NULL", ""):
+                    if (target_sheet_id, tab_name, nombre_candidato) in self._nombres_registrados:
+                        logger.info(f"Deduplicación activa en memoria ({tipo_registro}): Nombre '{nombre_candidato}' ya registrado en {tab_name}.")
+                        return {
+                            "success": True,
+                            "method": "session_cache",
+                            "sheet_id": target_sheet_id,
+                            "tab": tab_name,
+                            "deduplicated": True,
+                            "message": f"Registro para '{nombre_candidato}' ya fue procesado previamente en {tab_name}. Deduplicado exitosamente.",
+                            "updated_cells": 0
+                        }
+
             # 1. Intentar con API Oficial (gspread) si está configurado
             if self._gspread_client and target_sheet_id:
                 try:
@@ -133,16 +175,12 @@ class GoogleSheetsService:
 
                     # DEDUPLICACIÓN ATÓMICA EN GSPREAD:
                     if tipo_registro.lower() == "ficha":
-                        col_nombre_idx = 4 if self.skip_first_col else 3
-                        col_doc_idx = 6 if self.skip_first_col else 5
-                        nombre_candidato = str(fila[col_nombre_idx - 1] if len(fila) >= col_nombre_idx else "").strip().upper()
-                        doc_candidato = str(fila[col_doc_idx - 1] if len(fila) >= col_doc_idx else "").strip().upper()
-
                         # Deduplicar por documento de identidad si es válido
                         if doc_candidato and doc_candidato not in ("SIN DOCUMENTO", "NONE", "NULL", "0", ""):
                             try:
                                 col_docs = [str(x or "").strip().upper() for x in worksheet.col_values(col_doc_idx)[1:]]
                                 if doc_candidato in col_docs:
+                                    self._documentos_registrados.add((target_sheet_id, tab_name, doc_candidato))
                                     logger.info(f"Deduplicación gspread activa (ficha): Documento '{doc_candidato}' ya existe en {tab_name}.")
                                     return {
                                         "success": True,
@@ -161,6 +199,7 @@ class GoogleSheetsService:
                             try:
                                 col_nombres = [str(x or "").strip().upper() for x in worksheet.col_values(col_nombre_idx)[1:]]
                                 if nombre_candidato in col_nombres:
+                                    self._nombres_registrados.add((target_sheet_id, tab_name, nombre_candidato))
                                     logger.info(f"Deduplicación gspread activa (ficha): Nombre '{nombre_candidato}' ya existe en {tab_name}.")
                                     return {
                                         "success": True,
@@ -175,11 +214,11 @@ class GoogleSheetsService:
                                 logger.warning(f"No se pudo consultar duplicados por nombre en gspread: {e_dedup}")
 
                     elif "anexo17" in tipo_registro.lower() or "test" in tipo_registro.lower():
-                        nombre_candidato = str(fila[2] if len(fila) > 2 else "").strip().upper()
                         if nombre_candidato and nombre_candidato != "SIN NOMBRE":
                             try:
                                 col_nombres = [str(x or "").strip().upper() for x in worksheet.col_values(3)[1:]]
                                 if nombre_candidato in col_nombres:
+                                    self._nombres_registrados.add((target_sheet_id, tab_name, nombre_candidato))
                                     logger.info(f"Deduplicación gspread activa ({tipo_registro}): '{nombre_candidato}' ya existe en {tab_name}.")
                                     return {
                                         "success": True,
@@ -195,6 +234,11 @@ class GoogleSheetsService:
 
                     # Insertar los datos si no existe duplicado
                     res = worksheet.append_row(fila, value_input_option="USER_ENTERED")
+                    if doc_candidato and doc_candidato not in ("SIN DOCUMENTO", "NONE", "NULL", "0", ""):
+                        self._documentos_registrados.add((target_sheet_id, tab_name, doc_candidato))
+                    if nombre_candidato and nombre_candidato not in ("SIN NOMBRE", "NONE", "NULL", ""):
+                        self._nombres_registrados.add((target_sheet_id, tab_name, nombre_candidato))
+
                     return {
                         "success": True,
                         "method": "google_sheets_api",
@@ -208,7 +252,65 @@ class GoogleSheetsService:
                     logger.error(err_msg)
                     errores.append(err_msg)
 
-            # 2. Intentar con Webhook de Google Apps Script como alternativa con reintentos
+            # 2. Si no hay gspread o falló, consultar deduplicación remota vía endpoint CSV de Google Sheets antes de Webhook
+            if not self._gspread_client and target_sheet_id:
+                try:
+                    url_gviz = f"https://docs.google.com/spreadsheets/d/{target_sheet_id}/gviz/tq?tqx=out:csv&sheet={requests.utils.quote(tab_name)}"
+                    r_csv = requests.get(url_gviz, timeout=5)
+                    if r_csv.status_code == 200 and "<html" not in r_csv.text.lower():
+                        import csv
+                        import io
+                        reader = csv.reader(io.StringIO(r_csv.text))
+                        rows_csv = list(reader)
+                        if rows_csv:
+                            if tipo_registro.lower() == "ficha":
+                                if doc_candidato and doc_candidato not in ("SIN DOCUMENTO", "NONE", "NULL", "0", ""):
+                                    col_docs = [str(r[col_doc_idx - 1]).strip().upper() for r in rows_csv[1:] if len(r) >= col_doc_idx]
+                                    if doc_candidato in col_docs:
+                                        self._documentos_registrados.add((target_sheet_id, tab_name, doc_candidato))
+                                        logger.info(f"Deduplicación remota GViz activa (ficha): Documento '{doc_candidato}' ya existe en {tab_name}.")
+                                        return {
+                                            "success": True,
+                                            "method": "gviz_csv",
+                                            "sheet_id": target_sheet_id,
+                                            "tab": tab_name,
+                                            "deduplicated": True,
+                                            "message": f"Ficha con documento '{doc_candidato}' ({nombre_candidato}) ya existe en {tab_name}. Deduplicado exitosamente.",
+                                            "updated_cells": 0
+                                        }
+                                if nombre_candidato and nombre_candidato not in ("SIN NOMBRE", "NONE", "NULL", ""):
+                                    col_noms = [str(r[col_nombre_idx - 1]).strip().upper() for r in rows_csv[1:] if len(r) >= col_nombre_idx]
+                                    if nombre_candidato in col_noms:
+                                        self._nombres_registrados.add((target_sheet_id, tab_name, nombre_candidato))
+                                        logger.info(f"Deduplicación remota GViz activa (ficha): Nombre '{nombre_candidato}' ya existe en {tab_name}.")
+                                        return {
+                                            "success": True,
+                                            "method": "gviz_csv",
+                                            "sheet_id": target_sheet_id,
+                                            "tab": tab_name,
+                                            "deduplicated": True,
+                                            "message": f"Ficha para '{nombre_candidato}' ya existe en {tab_name}. Deduplicado exitosamente.",
+                                            "updated_cells": 0
+                                        }
+                            elif "anexo17" in tipo_registro.lower() or "test" in tipo_registro.lower():
+                                if nombre_candidato and nombre_candidato != "SIN NOMBRE":
+                                    col_noms = [str(r[2]).strip().upper() for r in rows_csv[1:] if len(r) >= 3]
+                                    if nombre_candidato in col_noms:
+                                        self._nombres_registrados.add((target_sheet_id, tab_name, nombre_candidato))
+                                        logger.info(f"Deduplicación remota GViz activa ({tipo_registro}): Nombre '{nombre_candidato}' ya existe en {tab_name}.")
+                                        return {
+                                            "success": True,
+                                            "method": "gviz_csv",
+                                            "sheet_id": target_sheet_id,
+                                            "tab": tab_name,
+                                            "deduplicated": True,
+                                            "message": f"Registro para '{nombre_candidato}' ya existe en {tab_name}. Deduplicado exitosamente.",
+                                            "updated_cells": 0
+                                        }
+                except Exception as e_gviz:
+                    logger.debug(f"Consulta remota GViz omitida o privada: {e_gviz}")
+
+            # 3. Intentar con Webhook de Google Apps Script como alternativa con reintentos
             if webhook_url:
                 payload = {
                     "tipo": tipo_registro,
@@ -217,7 +319,12 @@ class GoogleSheetsService:
                     "hoja": tab_name,
                     "headers": headers,
                     "row": fila,
-                    "data": dict(zip(headers, fila))
+                    "data": dict(zip(headers, fila)),
+                    "documento": doc_candidato,
+                    "nombre": nombre_candidato,
+                    "participante": nombre_candidato,
+                    "col_doc_idx": col_doc_idx,
+                    "col_nombre_idx": col_nombre_idx
                 }
                 max_intentos = 2
                 timeout_segundos = 20
@@ -237,6 +344,11 @@ class GoogleSheetsService:
                                     msg = res_json.get("message", "Registro ya existente en Google Sheets. Deduplicado exitosamente.")
                             except Exception:
                                 pass
+
+                            if doc_candidato and doc_candidato not in ("SIN DOCUMENTO", "NONE", "NULL", "0", ""):
+                                self._documentos_registrados.add((target_sheet_id, tab_name, doc_candidato))
+                            if nombre_candidato and nombre_candidato not in ("SIN NOMBRE", "NONE", "NULL", ""):
+                                self._nombres_registrados.add((target_sheet_id, tab_name, nombre_candidato))
 
                             return {
                                 "success": True,
@@ -264,6 +376,7 @@ class GoogleSheetsService:
                             errores.append(err_msg)
                         else:
                             time.sleep(1.5 * intento)
+
 
         if not self._gspread_client and not webhook_url:
             raise ValueError(

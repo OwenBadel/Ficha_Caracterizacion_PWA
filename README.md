@@ -1,14 +1,14 @@
 # 📱 PROJ-006: Digitalizador Móvil de Fichas de Caracterización (PWA + Google Gemini + Google Sheets)
 **Autoría y Diseño:** Owen Badel Hooker — Ingeniero de Sistemas / Software Architect.
 
-Aplicación Web Progresiva (**PWA Mobile-First**) diseñada para digitalizar en campo "Fichas de Caracterización" físicas y evaluaciones "Pre/Post Test (Anexo 4)" mediante fotografías asistidas, extraer variables con IA de Visión de Alta Fidelidad (**Google Gemini `gemini-3.5-flash-lite`** con Rate Limiter de seguridad) con normalización estricta a **MAYÚSCULAS**, auto-orientación vertical inteligente de capturas, reconciliación fonética/caligráfica con **Jaro-Winkler** contra el **PATRÓN MAESTRO**, e inserción automática de cada registro como fila ordenada en **Google Sheets**.
+Aplicación Web Progresiva (**PWA Mobile-First**) diseñada para digitalizar en campo "Fichas de Caracterización" físicas y evaluaciones "Pre/Post Test (Anexo 4)" mediante fotografías asistidas, extraer variables con IA de Visión de Alta Fidelidad (**Google Gemini `gemini-2.5-flash`** con Rate Limiter de seguridad) con normalización estricta a **MAYÚSCULAS**, auto-orientación vertical inteligente de capturas, reconciliación fonética/caligráfica con **Jaro-Winkler** contra el **PATRÓN MAESTRO**, e inserción automática de cada registro como fila ordenada en **Google Sheets**.
 
 ---
 
 ## 🌟 Características Principales
 
 * 📱 **Mobile-First & PWA:** Diseñada para navegador de celular y configurable como app nativa ("Añadir a pantalla de inicio"). Carga ultrarrápida y soporte offline mediante Service Worker.
-* 🧠 **IA de Visión de Alta Precisión (Google Gemini):** Extracción OCR multimodal de máxima fidelidad con `gemini-3.5-flash-lite` y limitador de tasa (`PipelineRateLimiter`) para evitar cuellos de botella y saturación HTTP 429.
+* 🧠 **IA de Visión de Alta Precisión (Google Gemini):** Extracción OCR multimodal de máxima fidelidad con `gemini-2.5-flash` y limitador de tasa (`PipelineRateLimiter`) para evitar cuellos de botella y saturación HTTP 429.
 * 🎯 **Algoritmo Jaro-Winkler con Bonificación Territorial:** Reconcilia nombres escritos a mano con variaciones ortográficas ("MAIKOL PEREZ" -> "MICHAEL STEVEN PEREZ", inversión de apellidos, etc.) comparándolos con el **PATRÓN MAESTRO** de los 10 municipios. Estandariza de forma automática e instantánea: **Nombre del participante, Edad, Municipio y EPS**.
 * 📋 **Ingesta del PATRÓN MAESTRO:** Sincronización automática directa desde la pestaña `PATRON MAESTRO` de Google Sheets o mediante archivo local (`.xlsx` o `.csv`).
 * 📸 **Captura Guiada y Auto-Orientación Vertical:** Disparador ergonómico con corrección inteligente de orientación: si una foto es tomada en horizontal, se transforma automáticamente a vertical con nitidez fotográfica y botones de rotación manual.
@@ -70,7 +70,7 @@ En el archivo `.env` en la raíz del proyecto:
 # Proveedor de Visión OCR de Alta Precisión (Google Gemini)
 VISION_PROVIDER=gemini
 GEMINI_API_KEY=tu_gemini_api_key_aqui
-GEMINI_MODEL=gemini-3.5-flash-lite
+GEMINI_MODEL=gemini-2.5-flash
 GEMINI_MIN_INTERVAL_SECONDS=2.0
 
 # Patrón Maestro (Google Sheets)

@@ -77,6 +77,13 @@ def run():
                 func()
                 print(f"  [PASS] {attr}")
 
+    print("\n--- 8. Ejecutando pruebas de test_webhook_deduplication.py ---")
+    import test_webhook_deduplication
+    suite_webhook = unittest.defaultTestLoader.loadTestsFromModule(test_webhook_deduplication)
+    runner_webhook = unittest.TextTestRunner(verbosity=2)
+    result_webhook = runner_webhook.run(suite_webhook)
+    assert result_webhook.wasSuccessful(), "Las pruebas de test_webhook_deduplication fallaron"
+
     print("\n=========================================")
     print("TODAS LAS PRUEBAS COMPLETADAS CON ÉXITO (VERDE)")
     print("=========================================")
