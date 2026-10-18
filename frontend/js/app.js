@@ -39,6 +39,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const netStatusBadge = document.getElementById('netStatusBadge');
   const netStatusText = document.getElementById('netStatusText');
   const brandSubtitle = document.getElementById('brandSubtitle');
+  const btnToggleTheme = document.getElementById('btnToggleTheme');
 
   // Selector Tipo de Test
   const testTypeBar = document.getElementById('testTypeBar');
@@ -146,21 +147,76 @@ document.addEventListener('DOMContentLoaded', () => {
   const toastContainer = document.getElementById('toastContainer');
 
   // -------------------------------------------------------------
-  // TOASTS DE NOTIFICACIÓN
+  // CONTROLADOR DE TEMA CLARO / OSCURO (ALTO CONTRASTE AL SOL)
+  // -------------------------------------------------------------
+  function aplicarTema(tema) {
+    document.documentElement.setAttribute('data-theme', tema);
+    try {
+      localStorage.setItem('app-theme', tema);
+    } catch (_) {}
+    if (btnToggleTheme) {
+      const sun = btnToggleTheme.querySelector('.icon-theme-sun');
+      const moon = btnToggleTheme.querySelector('.icon-theme-moon');
+      if (sun && moon) {
+        if (tema === 'light') {
+          sun.style.display = 'none';
+          moon.style.display = 'inline-block';
+        } else {
+          sun.style.display = 'inline-block';
+          moon.style.display = 'none';
+        }
+      }
+    }
+  }
+
+  const temaGuardado = (() => {
+    try {
+      return localStorage.getItem('app-theme') || 'dark';
+    } catch (_) {
+      return 'dark';
+    }
+  })();
+  aplicarTema(temaGuardado);
+
+  if (btnToggleTheme) {
+    btnToggleTheme.addEventListener('click', () => {
+      const actual = document.documentElement.getAttribute('data-theme') || 'dark';
+      const nuevo = actual === 'dark' ? 'light' : 'dark';
+      aplicarTema(nuevo);
+      showToast(nuevo === 'light' ? 'Modo Claro activado (Alto Contraste)' : 'Modo Oscuro activado', 'info');
+    });
+  }
+
+  // -------------------------------------------------------------
+  // TOASTS DE NOTIFICACIÓN MONOCROMÁTICOS (SIN EMOJIS)
   // -------------------------------------------------------------
   function showToast(message, type = 'success') {
+    if (!toastContainer) return;
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
+
+    let iconSvg = '';
+    if (type === 'success') {
+      iconSvg = `<svg class="toast-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+    } else if (type === 'error') {
+      iconSvg = `<svg class="toast-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>`;
+    } else {
+      iconSvg = `<svg class="toast-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>`;
+    }
+
+    // Sanitizar cualquier emoji residual de textos heredados
+    const cleanMessage = String(message).replace(/[📋📝🌟🏛️🤖🔄📸⚡📦🗑️⏳✅❌🧹⚠️ℹ️✨📭📁🛡️🕒📍]/g, '').trim();
+
     toast.innerHTML = `
-      <span>${type === 'success' ? '✅' : (type === 'error' ? '❌' : 'ℹ️')}</span>
-      <span>${message}</span>
+      ${iconSvg}
+      <span>${cleanMessage}</span>
     `;
     toastContainer.appendChild(toast);
     setTimeout(() => {
       toast.style.opacity = '0';
-      toast.style.transform = 'translateY(-10px)';
-      setTimeout(() => toast.remove(), 300);
-    }, 4500);
+      toast.style.transform = 'translateY(-8px)';
+      setTimeout(() => toast.remove(), 250);
+    }, 4200);
   }
 
   // -------------------------------------------------------------
@@ -608,7 +664,7 @@ document.addEventListener('DOMContentLoaded', () => {
       stepTitle.textContent = esAnexo17 ? `Anexo 17 Completo (${state.tipoEvaluacion})` : 'Encuesta Completa (2/2 Fotos)';
       stepDesc.textContent = esAnexo17 ? 'Verifica las 2 páginas y elige cómo registrarla.' : 'Verifica las fotos y elige cómo registrarla.';
       stepBadge.textContent = '✔';
-      readyIcon.textContent = esAnexo17 ? '🌟' : '📋';
+      readyIcon.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
       readyTitle.textContent = esAnexo17 ? 'Fotos Listas (2/2) — Anexo 17' : 'Fotos Listas (2/2)';
       readySubtitle.textContent = esAnexo17 ? 'Página 1 y Página 2 listas para procesar con IA:' : 'Selecciona la acción para esta ficha:';
       cameraTriggerSection.style.display = 'none';
@@ -683,7 +739,7 @@ document.addEventListener('DOMContentLoaded', () => {
     stepDesc.textContent = 'Verifica la nitidez y selecciona una acción.';
     stepBadge.textContent = '✔';
 
-    readyIcon.textContent = state.mode === 'anexo17' ? '🌟' : '📝';
+    readyIcon.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
     readyTitle.textContent = `${anexoLabel} Listo (1/1 Foto)`;
     readySubtitle.textContent = `Evaluación: ${state.tipoEvaluacion}. Elige la acción:`;
 
@@ -796,7 +852,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!itemGuardado) return;
 
     // 3. Sincronizar inmediatamente el registro con su ID único permanente
-    showToast('⚡ Registro asegurado localmente. Sincronizando con el servidor...', 'info');
+    showToast('Registro asegurado localmente. Sincronizando con el servidor...', 'info');
     await sincronizarItemIndividual(itemGuardado.id, true);
   }
 
@@ -848,9 +904,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const count = await window.surveyDB.contarPendientes();
 
       if (state.isSyncing) {
-        showToast(`📦 Registro agregado al final de la cola activa (${count} en proceso).`, 'success');
+        showToast(`Registro agregado al final de la cola activa (${count} en proceso).`, 'success');
       } else {
-        showToast(`📦 Registro guardado en cola (${count} pendientes).`, 'success');
+        showToast(`Registro guardado en cola (${count} pendientes).`, 'success');
         if (navigator.onLine) {
           // Iniciar sincronización en segundo plano automáticamente de forma no bloqueante
           iniciarSincronizacionSegundoPlano(false);
@@ -934,7 +990,7 @@ document.addEventListener('DOMContentLoaded', () => {
     await solicitarWakeLock();
     actualizarBarraSincronizacionUI(true, `Iniciando sincronización (${iniciales.length} pendientes)...`);
     if (iniciadoManualmente) {
-      showToast(`⚡ Sincronización en segundo plano activa (${iniciales.length} registros). Puedes seguir capturando fotos libremente.`, 'info');
+      showToast(`Sincronización en segundo plano activa (${iniciales.length} registros). Puedes seguir capturando fotos libremente.`, 'info');
     }
 
     let exitosas = 0;
@@ -944,7 +1000,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       while (state.isSyncing) {
         if (!navigator.onLine) {
-          showToast('⚠️ Conexión perdida. Pausando sincronización en segundo plano.', 'error');
+          showToast('Conexión perdida. Pausando sincronización en segundo plano.', 'error');
           break;
         }
 
@@ -1032,7 +1088,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (esDedup) {
               showToast(`🛡️ ${labelTipo} sincronizada (Deduplicada en servidor)`, 'info');
             } else {
-              showToast(`✅ ${labelTipo} sincronizada (${restantes - 1} restantes)`, 'success');
+              showToast(`${labelTipo} sincronizada (${restantes - 1} restantes)`, 'success');
             }
           } else {
             throw new Error(resData.detail || resData.error || 'Error de servidor');
@@ -1042,7 +1098,7 @@ document.addEventListener('DOMContentLoaded', () => {
           fallidosEnEstaSesion.add(item.id);
           await window.surveyDB.actualizarEstado(item.id, 'error', { errorMsg: err.message });
           fallidas++;
-          showToast(`❌ Error sincronizando ${labelTipo}: ${err.message}`, 'error');
+          showToast(`Error sincronizando ${labelTipo}: ${err.message}`, 'error');
         }
 
         await actualizarContadorCola();
@@ -1158,7 +1214,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (conModal) {
       mostrarModalProcesamiento(`Digitalizando ${labelTipo} con IA`, 'Extrayendo datos forenses y sincronizando con el servidor...');
     } else {
-      showToast(`🔄 Sincronizando ${labelTipo} individualmente...`, 'info');
+      showToast(`Sincronizando ${labelTipo} individualmente...`, 'info');
     }
 
     try {
@@ -1221,7 +1277,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (esDedup) {
           showToast(`🛡️ ${labelTipo} sincronizado (Deduplicado: ya existía registro en Sheets)`, 'info');
         } else {
-          showToast(`✅ ${labelTipo} sincronizado con éxito (${resData.participante || 'Participante'})`, 'success');
+          showToast(`${labelTipo} sincronizado con éxito (${resData.participante || 'Participante'})`, 'success');
         }
       } else {
         throw new Error(resData.detail || resData.error || 'Error al procesar en el servidor');
@@ -1229,7 +1285,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (err) {
       console.error(`Error en sincronización individual de item ${item.id}:`, err);
       await window.surveyDB.actualizarEstado(item.id, 'error', { errorMsg: err.message });
-      showToast(`❌ Error al sincronizar ${labelTipo}: ${err.message}`, 'error');
+      showToast(`Error al sincronizar ${labelTipo}: ${err.message}`, 'error');
     } finally {
       if (conModal) ocultarModalProcesamiento();
       await liberarWakeLock();
@@ -1284,18 +1340,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const totalSynced = items.filter(it => it.status === 'synced').length;
     const totalError = items.filter(it => it.status === 'error').length;
 
-    if (chipPending) chipPending.textContent = `⏳ ${totalPending} pendientes`;
-    if (chipSynced) chipSynced.textContent = `✅ ${totalSynced} listos`;
+    if (chipPending) chipPending.textContent = `${totalPending} pendientes`;
+    if (chipSynced) chipSynced.textContent = `${totalSynced} listos`;
     if (chipError) {
-      chipError.textContent = `❌ ${totalError} errores`;
+      chipError.textContent = `${totalError} errores`;
       chipError.style.display = totalError > 0 ? 'inline-flex' : 'none';
     }
 
     // Actualizar números en los botones de filtro
     if (filterAll) filterAll.textContent = `Todos (${items.length})`;
-    if (filterPending) filterPending.textContent = `⏳ Pendientes (${totalPending})`;
-    if (filterError) filterError.textContent = `❌ Errores (${totalError})`;
-    if (filterSynced) filterSynced.textContent = `✅ Sincronizados (${totalSynced})`;
+    if (filterPending) filterPending.textContent = `Pendientes (${totalPending})`;
+    if (filterError) filterError.textContent = `Errores (${totalError})`;
+    if (filterSynced) filterSynced.textContent = `Sincronizados (${totalSynced})`;
 
     if (btnSyncAllFromDrawer) {
       if (state.isSyncing) {
@@ -1304,11 +1360,10 @@ document.addEventListener('DOMContentLoaded', () => {
       } else {
         btnSyncAllFromDrawer.disabled = (totalPending === 0 || !navigator.onLine);
         btnSyncAllFromDrawer.innerHTML = `
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M4 12v-3a3 3 0 0 1 3 -3h13m-3 -3l3 3l-3 3" />
-            <path d="M20 12v3a3 3 0 0 1 -3 3h-13m3 3l-3 -3l3 -3" />
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
           </svg>
-          Sincronizar Todo (${totalPending})
+          <span>Sincronizar Cola (${totalPending})</span>
         `;
       }
     }
@@ -1326,14 +1381,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (itemsFiltrados.length === 0) {
       let emptyMsg = 'No tienes registros en la cola local.';
       if (state.queueFilter === 'pending') emptyMsg = 'No hay registros pendientes por sincronizar.';
-      else if (state.queueFilter === 'error') emptyMsg = '¡Excelente! No hay registros con error.';
-      else if (state.queueFilter === 'synced') emptyMsg = 'Aún no se han sincronizado registros en esta sesión.';
+      else if (state.queueFilter === 'error') emptyMsg = 'No hay registros con error.';
+      else if (state.queueFilter === 'synced') emptyMsg = 'Aún no se han sincronizado registros.';
 
       drawerQueueList.innerHTML = `
-        <div class="queue-empty-state">
-          <div class="queue-empty-icon">${state.queueFilter === 'error' ? '✨' : '📭'}</div>
-          <div class="queue-empty-text">${emptyMsg}</div>
-          <div class="queue-empty-sub">Las capturas tomadas se almacenan aquí de forma segura.</div>
+        <div class="queue-empty-state" style="text-align: center; padding: 32px 16px; color: var(--text-tertiary);">
+          <div style="font-size: 0.85rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 4px;">${emptyMsg}</div>
+          <div style="font-size: 0.72rem;">Las capturas se almacenan de forma segura en el almacenamiento local.</div>
         </div>
       `;
       return;
@@ -1347,33 +1401,33 @@ document.addEventListener('DOMContentLoaded', () => {
       const esAnexo4 = item.tipo === 'anexo4' || item.tipo === 'test';
       const fecha = new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-      // Badges de tipo
+      // Badges de tipo sobrios sin emojis
       let typeBadge = '';
       if (esAnexo17) {
-        typeBadge = `<span class="badge-item-type badge-type-anexo17">🌟 Anexo 17 (${item.tipoEvaluacion || 'AUTO'})</span>`;
+        typeBadge = `<span class="badge-item-type badge-type-anexo17">Anexo 17 · ${item.tipoEvaluacion || 'AUTO'}</span>`;
       } else if (esAnexo4) {
-        typeBadge = `<span class="badge-item-type badge-type-test">📝 Anexo 4 (${item.tipoEvaluacion || 'AUTO'})</span>`;
+        typeBadge = `<span class="badge-item-type badge-type-test">Anexo 4 · ${item.tipoEvaluacion || 'AUTO'}</span>`;
       } else {
-        typeBadge = `<span class="badge-item-type badge-type-ficha">📋 Ficha de Caracterización</span>`;
+        typeBadge = `<span class="badge-item-type badge-type-ficha">Anexo 10 · Ficha</span>`;
       }
 
-      // Píldora de estado
+      // Píldora de estado funcional
       let statusPill = '';
       if (item.status === 'pending') {
-        statusPill = `<span class="status-pill status-pending">⏳ Pendiente</span>`;
+        statusPill = `<span class="status-pill status-pending">Pendiente</span>`;
       } else if (item.status === 'syncing') {
         statusPill = `<span class="status-pill status-pending"><span class="spinner-inline"></span> Sincronizando</span>`;
       } else if (item.status === 'synced') {
         if (item.deduplicated) {
-          statusPill = `<span class="status-pill status-synced" style="background: rgba(6, 182, 212, 0.18); color: #38bdf8; border: 1px solid rgba(6, 182, 212, 0.45);">🛡️ Sincronizado (Deduplicado)</span>`;
+          statusPill = `<span class="status-pill status-synced" style="background-color: var(--color-info); color: #ffffff;">Deduplicado</span>`;
         } else {
-          statusPill = `<span class="status-pill status-synced">✅ Sincronizado</span>`;
+          statusPill = `<span class="status-pill status-synced">Sincronizado</span>`;
         }
       } else if (item.status === 'error') {
-        statusPill = `<span class="status-pill status-error">❌ Con Error</span>`;
+        statusPill = `<span class="status-pill status-error">Error</span>`;
       }
 
-      // Generar miniaturas seguras con etiquetas legibles
+      // Miniaturas de documentos
       let thumbsHtml = '';
       if (item.anversoBlob || item.fotoBlob) {
         const u1 = URL.createObjectURL(item.anversoBlob || item.fotoBlob);
@@ -1412,26 +1466,48 @@ document.addEventListener('DOMContentLoaded', () => {
         metaDocumento = ed['Numero de documento identidad'] || ed['numero_documento'] || ed.documento || '';
       }
 
-      // Caja de error visible (sin tooltips inaccesibles en táctil)
+      // Caja de error
       let errorBoxHtml = '';
       if (item.status === 'error' && item.errorMsg) {
         errorBoxHtml = `
-          <div class="rich-error-box">
-            <div class="rich-error-header">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="9" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
-              </svg>
-              <span>Error al procesar:</span>
-            </div>
-            <div class="rich-error-msg">${item.errorMsg}</div>
+          <div class="rich-error-box" style="padding: 6px 8px; background-color: var(--color-danger-subtle); border-radius: var(--radius-sm); border: 1px solid rgba(239, 68, 68, 0.2); font-size: 0.68rem; color: var(--color-danger);">
+            <strong>Fallo:</strong> ${item.errorMsg}
           </div>
         `;
+      }
+
+      // Generar vista expandible con datos de IA para auditoría
+      let extractedDataHtml = '';
+      if (item.extractedData && typeof item.extractedData === 'object') {
+        const entries = Object.entries(item.extractedData).filter(([k, v]) => v !== null && v !== '' && v !== undefined);
+        if (entries.length > 0) {
+          const rows = entries.slice(0, 16).map(([k, v]) => {
+            const valStr = typeof v === 'object' ? JSON.stringify(v) : String(v);
+            return `
+              <div class="rich-extracted-row">
+                <span class="rich-extracted-key">${k}</span>
+                <span class="rich-extracted-val" title="${valStr}">${valStr}</span>
+              </div>
+            `;
+          }).join('');
+          extractedDataHtml = `
+            <button class="btn-toggle-extracted" type="button" data-id="${item.id}">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+              <span>Ver datos extraídos (${entries.length})</span>
+            </button>
+            <div id="extractedBox-${item.id}" class="rich-extracted-table" style="display: none;">
+              ${rows}
+            </div>
+          `;
+        }
       }
 
       // Botón de sincronización individual
       let btnSyncHtml = '';
       if (item.status !== 'synced') {
-        const btnText = item.status === 'error' ? '🔄 Reintentar' : '⚡ Sincronizar';
+        const btnText = item.status === 'error' ? 'Reintentar' : 'Sincronizar';
         const isThisSyncing = item.status === 'syncing';
         btnSyncHtml = `
           <button class="btn-card-sync" data-id="${item.id}" ${isThisSyncing ? 'disabled' : ''}>
@@ -1452,32 +1528,47 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="rich-details">
             <div class="rich-meta-title">${metaTitulo}</div>
             <div class="rich-meta-sub">
-              <span>🕒 ${fecha}</span>
-              ${metaMunicipio ? `<span>• 📍 ${metaMunicipio}</span>` : ''}
+              <span>${fecha}</span>
+              ${metaMunicipio ? `<span>· ${metaMunicipio}</span>` : ''}
             </div>
             ${metaDocumento ? `
               <div class="rich-meta-detail">Doc: ${metaDocumento}</div>
             ` : ''}
             ${item.deduplicated ? `
-              <div class="rich-meta-detail" style="color: #38bdf8; font-weight: 600; font-size: 0.7rem; margin-top: 2px;">
-                🛡️ Ya existía en Sheets (Deduplicado sin repetir fila)
+              <div class="rich-meta-detail" style="color: var(--color-info); font-weight: 500; font-size: 0.68rem; margin-top: 2px;">
+                Existía previamente (Deduplicado)
               </div>
             ` : ''}
+            ${extractedDataHtml}
           </div>
         </div>
         ${errorBoxHtml}
         <div class="rich-card-actions">
           ${btnSyncHtml}
           <button class="btn-card-delete" data-id="${item.id}" title="Eliminar de la cola">
-            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M4 7l16 0" /><path d="M10 11l0 6" /><path d="M14 11l0 6" />
-              <path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12" />
-              <path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3" />
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
             </svg>
-            Eliminar
+            <span>Eliminar</span>
           </button>
         </div>
       `;
+
+      // Evento alternar datos extraídos
+      const toggleBtn = card.querySelector('.btn-toggle-extracted');
+      if (toggleBtn) {
+        toggleBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const targetBox = card.querySelector(`#extractedBox-${item.id}`);
+          if (targetBox) {
+            const isHidden = targetBox.style.display === 'none';
+            targetBox.style.display = isHidden ? 'flex' : 'none';
+            const numKeys = Object.keys(item.extractedData || {}).length;
+            toggleBtn.querySelector('span').textContent = isHidden ? 'Ocultar datos extraídos' : `Ver datos extraídos (${numKeys})`;
+          }
+        });
+      }
 
       // Evento reintentar / sincronizar individual
       const syncBtn = card.querySelector('.btn-card-sync');
@@ -1505,6 +1596,7 @@ document.addEventListener('DOMContentLoaded', () => {
       drawerQueueList.appendChild(card);
     });
   }
+
 
   btnLimpiarCompletadas.addEventListener('click', async () => {
     const borradas = await window.surveyDB.limpiarSincronizadas();
@@ -1534,7 +1626,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // Reanudar sincronización de la cola automáticamente en segundo plano si hay pendientes
       iniciarSincronizacionSegundoPlano(false);
     } else {
-      showToast('⚠️ Estás sin conexión. Las capturas se guardarán en cola local.', 'error');
+      showToast('Estás sin conexión. Las capturas se guardarán en cola local.', 'error');
     }
   }
   window.addEventListener('online', updateNetworkStatus);
@@ -1657,7 +1749,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         const result = await res.json();
         if (result.success) {
-          showToast(`🏛️ Sincronizados ${result.total_cargados} participantes exitosamente.`, 'success');
+          showToast(`Sincronizados ${result.total_cargados} participantes exitosamente.`, 'success');
           actualizarEstadisticasPatronMaestro();
           cargarResumenParticipantes();
         } else {
@@ -1667,7 +1759,7 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast('Error conectando al servidor: ' + err.message, 'error');
       } finally {
         btnSyncMasterSheet.disabled = false;
-        btnSyncMasterSheet.textContent = '🔄 Sincronizar';
+        btnSyncMasterSheet.textContent = 'Sincronizar desde Sheets';
       }
     });
   }
@@ -1691,7 +1783,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         const result = await res.json();
         if (result.success) {
-          showToast(`📁 Ingestados ${result.total_cargados} participantes del archivo.`, 'success');
+          showToast(`Ingestados ${result.total_cargados} participantes del archivo.`, 'success');
           actualizarEstadisticasPatronMaestro();
           cargarResumenParticipantes();
           inputMasterExcel.value = '';
@@ -1702,7 +1794,7 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast('Error al subir archivo: ' + err.message, 'error');
       } finally {
         btnUploadMasterExcel.disabled = false;
-        btnUploadMasterExcel.textContent = '📁 Subir Archivo Local';
+        btnUploadMasterExcel.textContent = 'Subir Archivo Local';
       }
     });
   }
@@ -1719,7 +1811,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const res = await fetch('/api/participants/clear', { method: 'POST' });
         const result = await res.json();
         if (result.success) {
-          showToast('🗑️ Memoria de participantes reiniciada a 0.', 'info');
+          showToast('Memoria de participantes reiniciada a 0.', 'info');
           actualizarEstadisticasPatronMaestro();
           cargarResumenParticipantes();
         } else {
@@ -1729,7 +1821,7 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast('Error de conexión: ' + err.message, 'error');
       } finally {
         btnResetMaster.disabled = false;
-        btnResetMaster.textContent = '🗑️ Vaciar Memoria (Reiniciar a 0 Registros)';
+        btnResetMaster.textContent = 'Vaciar Memoria (Reiniciar Catálogo)';
       }
     });
   }

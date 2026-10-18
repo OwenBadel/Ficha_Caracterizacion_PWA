@@ -1,239 +1,312 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>Digitalizador Móvil de Fichas y Tests — Gobernación</title>
-  <meta name="description" content="PWA Mobile-First para captura de Fichas de Caracterización y Pre/Post Test SSR ITS con IA de Visión y sincronización en Google Sheets.">
-  <meta name="theme-color" content="#10b981">
+  <title>Ficha Digital — Captura y Auditoría de Campo</title>
+  <meta name="description" content="PWA profesional para captura y digitalización de Fichas de Caracterización y Pre/Post Test con IA y sincronización de campo.">
+  <meta name="theme-color" content="#09090b">
   <link rel="manifest" href="/manifest.json">
-  <link rel="stylesheet" href="/static/css/styles.css?v=20">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/styles.css?v=21">
   <link rel="icon" href="/static/img/icon.svg" type="image/svg+xml">
 </head>
 <body>
 
   <div class="app-container">
     
-    <!-- ENCABEZADO FIJO CON SELECTOR DE MODOS -->
+    <!-- ENCABEZADO COMPACTO DE 52PX CON STATUS, THEME TOGGLE Y BASE MAESTRA -->
     <header class="app-header">
-      <div class="header-top">
-        <div class="brand">
-          <div class="brand-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2" />
-              <path d="M9 3m0 2a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v0a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2z" />
-              <path d="M12 11l0 6" />
-              <path d="M9 14l6 0" />
-            </svg>
-          </div>
-          <div class="brand-info">
-            <h1>Ficha Digital</h1>
-            <span id="brandSubtitle">Salud Sexual & Tests</span>
-          </div>
+      <div class="header-left">
+        <div class="brand-title-wrap">
+          <h1 class="brand-title">Ficha Digital</h1>
+          <span id="brandSubtitle" class="brand-subtitle">Anexo 10 · 2 Págs</span>
         </div>
-
-        <div class="header-actions">
-          <button id="btnOpenMasterModal" class="badge-master" type="button" title="Sincronizar Catálogo Maestro de Participantes">
-            <span class="master-icon">🏛️</span>
-            <span id="masterCacheCount" class="master-count">...</span>
-          </button>
-          <div id="netStatusBadge" class="badge-network">
-            <span class="dot-indicator"></span>
-            <span id="netStatusText">Online</span>
-          </div>
+        <div id="netStatusBadge" class="badge-network" title="Estado de conectividad">
+          <span class="dot-indicator"></span>
+          <span id="netStatusText">Online</span>
         </div>
       </div>
 
-      <!-- SELECTOR PRINCIPAL DE MODO (3 TABS ERGONÓMICOS) -->
-      <nav class="mode-tabs" aria-label="Selector de módulo de digitalización">
-        <button id="tabModoFicha" class="tab-btn active" type="button">
-          <span class="tab-icon">📋</span>
-          <span>Anexo 10</span>
+      <div class="header-actions">
+        <!-- Toggle Modo Claro / Oscuro -->
+        <button id="btnToggleTheme" class="btn-icon-header" type="button" aria-label="Cambiar tema de color" title="Alternar Modo Claro / Oscuro">
+          <svg class="icon-theme-sun" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <svg class="icon-theme-moon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
         </button>
-        <button id="tabModoAnexo4" class="tab-btn" type="button">
-          <span class="tab-icon">📝</span>
-          <span>Anexo 4</span>
+
+        <!-- Botón Base Maestra con icono SVG de Base de Datos -->
+        <button id="btnOpenMasterModal" class="badge-master" type="button" title="Sincronizar Catálogo Maestro de Participantes">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+            <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+          </svg>
+          <span class="master-label-text">Base Maestra ·</span>
+          <span id="masterCacheCount" class="master-count">...</span>
         </button>
-        <button id="tabModoAnexo17" class="tab-btn" type="button">
-          <span class="tab-icon">🌟</span>
-          <span>Anexo 17</span>
-        </button>
-      </nav>
+      </div>
     </header>
 
-    <!-- CUERPO PRINCIPAL -->
+    <!-- SELECTOR DE MODO TIPO SEGMENTED CONTROL ESTILO IOS -->
+    <nav class="mode-tabs" aria-label="Selector de módulo de digitalización">
+      <button id="tabModoFicha" class="tab-btn active" type="button">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+          <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+        </svg>
+        <span>Anexo 10</span>
+      </button>
+      <button id="tabModoAnexo4" class="tab-btn" type="button">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+          <line x1="16" y1="13" x2="8" y2="13"></line>
+          <line x1="16" y1="17" x2="8" y2="17"></line>
+        </svg>
+        <span>Anexo 4</span>
+      </button>
+      <button id="tabModoAnexo17" class="tab-btn" type="button">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+        </svg>
+        <span>Anexo 17</span>
+      </button>
+    </nav>
+
+    <!-- SELECTOR DE TIPO COMPACTO DE UNA LÍNEA PARA MODO TEST (AUTO / PRE / POST) -->
+    <section id="testTypeBar" class="test-type-bar" style="display: none;">
+      <span class="type-bar-label">Evaluación</span>
+      <div class="pill-group">
+        <button id="pillAuto" class="pill-btn active" type="button" data-type="AUTO">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+          </svg>
+          <span>Auto IA</span>
+        </button>
+        <button id="pillPre" class="pill-btn" type="button" data-type="PRE-TEST">Pre-Test</button>
+        <button id="pillPost" class="pill-btn" type="button" data-type="POST-TEST">Post-Test</button>
+      </div>
+    </section>
+
+    <!-- MICRO-INDICADOR DE PASO (Reemplaza la tarjeta de 80px para arquitectura Zero-Scroll) -->
+    <div class="step-micro-bar">
+      <div class="step-micro-content">
+        <span id="stepTag" class="step-micro-tag">Paso 1 de 2</span>
+        <span id="stepTitle" class="step-micro-title">Página 1 (Anverso)</span>
+        <span id="stepDesc" class="step-micro-desc">Enfoca con iluminación clara</span>
+      </div>
+      <span id="stepCounterBadge" class="step-micro-badge">1/2</span>
+    </div>
+
+    <!-- ÁREA DE CAPTURA Y VISORES -->
     <main class="main-content">
 
-      <!-- SELECTOR DE TIPO PARA MODO TEST (AUTO / PRE-TEST / POST-TEST) -->
-      <section id="testTypeBar" class="test-type-bar" style="display: none;">
-        <span class="type-bar-label">Evaluación:</span>
-        <div class="pill-group">
-          <button id="pillAuto" class="pill-btn active" type="button" data-type="AUTO">🤖 Auto (IA)</button>
-          <button id="pillPre" class="pill-btn" type="button" data-type="PRE-TEST">PRE-TEST</button>
-          <button id="pillPost" class="pill-btn" type="button" data-type="POST-TEST">POST-TEST</button>
-        </div>
-      </section>
-
-      <!-- BANNER DE PASO ACTUAL (ADAPTABLE) -->
-      <section class="step-banner">
-        <div class="step-info">
-          <span id="stepTag" class="step-tag">Paso 1 de 2</span>
-          <h2 id="stepTitle" class="step-title">Tomar Foto 1 (Anverso)</h2>
-          <p id="stepDesc" class="step-desc">Enfoca la cara frontal de la ficha con buena iluminación.</p>
-        </div>
-        <div id="stepCounterBadge" class="step-badge">1/2</div>
-      </section>
-
-      <!-- VISOR DUAL DE FOTOS (MODO FICHA: ANVERSO Y REVERSO) -->
+      <!-- VISOR DUAL DE FOTOS (MODO FICHA / ANEXO 17: ANVERSO Y REVERSO) -->
       <section id="photosGridFicha" class="photos-grid">
         <!-- Slot Foto 1 -->
         <div id="slotFoto1" class="photo-slot active-slot">
           <div id="placeholderFoto1" class="slot-placeholder">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M15 8h.01" />
-              <path d="M3 6a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v12a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3v-12z" />
-              <path d="M3 16l5 -5c.928 -.893 2.072 -.893 3 0l5 5" />
-              <path d="M14 14l1 -1c.928 -.893 2.072 -.893 3 0l3 3" />
+            <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="12" y1="18" x2="12" y2="12"></line>
+              <line x1="9" y1="15" x2="15" y2="15"></line>
             </svg>
-            <span id="labelPlaceholder1">Página 1<br>(Anverso)</span>
+            <span id="labelPlaceholder1">Página 1 · Anverso<br><small>Toca para capturar</small></span>
           </div>
           <img id="imgPreview1" class="slot-image" alt="Vista previa Anverso">
           <div id="badgeCheck1" class="slot-badge-completed">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-              <path d="M5 12l5 5l10 -10" />
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"></polyline>
             </svg>
           </div>
           <div id="slotActions1" class="slot-actions">
-            <button id="btnRotate1" class="slot-action-btn" type="button" title="Girar 90°">🔄 Rotar</button>
-            <button id="btnRetake1" class="slot-action-btn" type="button" title="Tomar de nuevo">📸 Repetir</button>
+            <button id="btnRotate1" class="slot-action-btn" type="button" title="Girar 90°">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+              </svg>
+              <span>Rotar</span>
+            </button>
+            <button id="btnRetake1" class="slot-action-btn" type="button" title="Tomar de nuevo">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                <circle cx="12" cy="13" r="4"></circle>
+              </svg>
+              <span>Repetir</span>
+            </button>
           </div>
         </div>
 
         <!-- Slot Foto 2 -->
         <div id="slotFoto2" class="photo-slot">
           <div id="placeholderFoto2" class="slot-placeholder">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M15 8h.01" />
-              <path d="M3 6a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v12a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3v-12z" />
-              <path d="M3 16l5 -5c.928 -.893 2.072 -.893 3 0l5 5" />
-              <path d="M14 14l1 -1c.928 -.893 2.072 -.893 3 0l3 3" />
+            <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="12" y1="18" x2="12" y2="12"></line>
+              <line x1="9" y1="15" x2="15" y2="15"></line>
             </svg>
-            <span id="labelPlaceholder2">Página 2<br>(Reverso)</span>
+            <span id="labelPlaceholder2">Página 2 · Reverso<br><small>Toca para capturar</small></span>
           </div>
           <img id="imgPreview2" class="slot-image" alt="Vista previa Reverso">
           <div id="badgeCheck2" class="slot-badge-completed">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-              <path d="M5 12l5 5l10 -10" />
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"></polyline>
             </svg>
           </div>
           <div id="slotActions2" class="slot-actions">
-            <button id="btnRotate2" class="slot-action-btn" type="button" title="Girar 90°">🔄 Rotar</button>
-            <button id="btnRetake2" class="slot-action-btn" type="button" title="Tomar de nuevo">📸 Repetir</button>
+            <button id="btnRotate2" class="slot-action-btn" type="button" title="Girar 90°">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+              </svg>
+              <span>Rotar</span>
+            </button>
+            <button id="btnRetake2" class="slot-action-btn" type="button" title="Tomar de nuevo">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                <circle cx="12" cy="13" r="4"></circle>
+              </svg>
+              <span>Repetir</span>
+            </button>
           </div>
         </div>
       </section>
 
-      <!-- VISOR ÚNICO DE FOTO (MODO TEST: PRE O POST) -->
+      <!-- VISOR ÚNICO DE FOTO (MODO TEST: ANEXO 4 SSR ITS) -->
       <section id="photosSingleTest" class="test-photo-section" style="display: none;">
         <div id="slotFotoTest" class="photo-slot photo-slot-single active-slot">
           <div id="placeholderFotoTest" class="slot-placeholder">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M14 3v4a1 1 0 0 0 1 1h4" />
-              <path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z" />
-              <path d="M9 15l2 2l4 -4" />
+            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+              <polyline points="10 9 9 9 8 9"></polyline>
             </svg>
-            <span id="testPlaceholderSpan"><strong id="testPlaceholderMain">Pre o Post Test</strong><br><small id="testPlaceholderSub" style="color:var(--text-dim);font-size:0.72rem;">(Anexo 4 SSR ITS)</small></span>
+            <span id="testPlaceholderSpan">
+              <strong id="testPlaceholderMain">Pre o Post Test</strong><br>
+              <small id="testPlaceholderSub">Anexo 4 SSR ITS · 9 Preguntas</small>
+            </span>
           </div>
           <img id="imgPreviewTest" class="slot-image" alt="Vista previa Test">
           <div id="badgeCheckTest" class="slot-badge-completed">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-              <path d="M5 12l5 5l10 -10" />
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"></polyline>
             </svg>
           </div>
           <div id="slotActionsTest" class="slot-actions">
-            <button id="btnRotateTest" class="slot-action-btn" type="button" title="Girar 90°">🔄 Rotar</button>
-            <button id="btnRetakeTest" class="slot-action-btn" type="button" title="Tomar de nuevo">📸 Repetir</button>
+            <button id="btnRotateTest" class="slot-action-btn" type="button" title="Girar 90°">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+              </svg>
+              <span>Rotar</span>
+            </button>
+            <button id="btnRetakeTest" class="slot-action-btn" type="button" title="Tomar de nuevo">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                <circle cx="12" cy="13" r="4"></circle>
+              </svg>
+              <span>Repetir</span>
+            </button>
           </div>
         </div>
       </section>
 
-      <!-- BOTÓN DE DISPARO DE CÁMARA (SHUTTER ERGONÓMICO GIGANTE) -->
+      <!-- BOTÓN DE DISPARO DE CÁMARA (OBTURADOR SOBRIO SIN ANILLOS NEÓN) -->
       <section id="cameraTriggerSection" class="camera-trigger-section">
         <div class="shutter-wrapper">
-          <div class="shutter-glow-ring"></div>
-          <button id="btnMainCamera" class="btn-shutter" type="button" aria-label="Abrir Cámara">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M5 7h1a2 2 0 0 0 2 -2a1 1 0 0 1 1 -1h6a1 1 0 0 1 1 1a2 2 0 0 0 2 2h1a2 2 0 0 1 2 2v9a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2" />
-              <path d="M9 13a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" />
+          <button id="btnMainCamera" class="btn-shutter" type="button" aria-label="Capturar fotografía">
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+              <circle cx="12" cy="13" r="4"></circle>
             </svg>
           </button>
         </div>
-        <div id="shutterLabel" class="shutter-label">Tomar Foto 1 (Anverso)</div>
-        <p class="shutter-sublabel">Toca el botón circular para abrir la cámara de tu celular.</p>
+        <div id="shutterLabel" class="shutter-label">Capturar Página 1 (Anverso)</div>
 
-        <!-- Inputs de archivo con captura de cámara del celular -->
+        <!-- Inputs de archivo invisibles con captura directa de cámara -->
         <input id="cameraInput1" class="hidden-input" type="file" accept="image/*" capture="environment">
         <input id="cameraInput2" class="hidden-input" type="file" accept="image/*" capture="environment">
         <input id="cameraInputTest" class="hidden-input" type="file" accept="image/*" capture="environment">
       </section>
 
-      <!-- CAJA DE ACCIÓN CUANDO LAS FOTOS ESTÁN LISTAS (SINCRONIZAR O MANDAR A LA COLA) -->
-      <section id="readyActionBox" class="ready-action-box">
+      <!-- BARRA DE ACCIÓN CUANDO LAS FOTOS ESTÁN LISTAS (FIJA E INTEGRADA) -->
+      <section id="readyActionBox" class="ready-action-box" style="display: none;">
         <div class="ready-header">
-          <span id="readyIcon" class="ready-icon">📋</span>
-          <div>
-            <h3 id="readyTitle" class="ready-title">Fotos Listas (2/2)</h3>
-            <p id="readySubtitle" class="ready-subtitle">Selecciona la acción para este registro:</p>
+          <div class="ready-title-group">
+            <span id="readyIcon" class="ready-icon-container">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+            </span>
+            <div>
+              <h3 id="readyTitle" class="ready-title">Captura Completada</h3>
+              <p id="readySubtitle" class="ready-subtitle">Selecciona acción para este registro</p>
+            </div>
           </div>
         </div>
 
         <div class="ready-buttons-group">
           <button id="btnEnviarAhora" class="btn-action-main" type="button">
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M13 3l0 7l6 0l-8 11l0 -7l-6 0z" />
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
             </svg>
-            <div class="btn-text-col">
-              <span class="btn-main-title">⚡ Sincronizar Ahora</span>
-              <small class="btn-main-sub">Extrae con IA y envía directamente a Google Sheets</small>
-            </div>
+            <span>Procesar Ahora (IA + Sheets)</span>
           </button>
 
           <button id="btnGuardarEnCola" class="btn-action-queue" type="button">
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M4 4m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z" />
-              <path d="M4 12h16" />
-              <path d="M12 4v16" />
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="22 12 16 12 14 15 10 15 8 12 2 12"></polyline>
+              <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path>
             </svg>
-            <div class="btn-text-col">
-              <span class="btn-main-title">📦 Mandar a la Cola de Espera</span>
-              <small class="btn-main-sub">Guarda offline en el celular y continúa capturando</small>
-            </div>
+            <span>Guardar en Cola Offline</span>
           </button>
 
           <button id="btnCancelarEncuesta" class="btn-secondary" type="button">
-            🗑️ Descartar Fotos y Repetir
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+            <span>Descartar y Repetir</span>
           </button>
         </div>
       </section>
 
     </main>
 
-    <!-- BARRA FLOTANTE DE COLA (MODO BATCH Y SEGUNDO PLANO) -->
+    <!-- BARRA INFERIOR DE COLA (COMPACTA Y ERGONÓMICA) -->
     <footer id="bottomQueueBar" class="bottom-queue-bar">
       <div id="syncProgressBar" class="sync-progress-bar" style="display: none;"></div>
       <div class="queue-bar-content">
-        <div id="btnOpenDrawer" class="queue-info">
+        <div id="btnOpenDrawer" class="queue-info" role="button" tabindex="0" title="Abrir bandeja de cola local">
           <span id="queueCountBadge" class="queue-counter-badge">0</span>
           <div class="queue-label-text">
-            <span id="queueLabel">0 registros pendientes</span>
-            <small id="queueSubLabel">Toca para gestionar la cola</small>
+            <span id="queueLabel">0 registros en cola</span>
+            <small id="queueSubLabel">Toca para gestionar o auditar</small>
           </div>
         </div>
         <button id="btnSyncAllNow" class="btn-sync-all" type="button" disabled>
           <span id="btnSyncIcon">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M4 12v-3a3 3 0 0 1 3 -3h13m-3 -3l3 3l-3 3" />
-              <path d="M20 12v3a3 3 0 0 1 -3 3h-13m3 3l-3 -3l3 -3" />
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
             </svg>
           </span>
           <span id="btnSyncText">Sincronizar</span>
@@ -241,60 +314,84 @@
       </div>
     </footer>
 
-    <!-- DRAWER / MODAL DE GESTIÓN DE COLA LOCAL MEJORADO -->
+    <!-- DRAWER / BANDEJA DE COLA Y AUDITORÍA DE DATOS IA -->
     <div id="drawerBackdrop" class="drawer-backdrop"></div>
     <div id="drawerContainer" class="drawer-container">
       <div class="drawer-header">
-        <div class="drawer-header-left drawer-header-title">
-          <span style="font-size: 1.3rem;">📦</span>
-          <div>
+        <div class="drawer-header-left">
+          <div class="drawer-title-row">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="22 12 16 12 14 15 10 15 8 12 2 12"></polyline>
+              <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path>
+            </svg>
             <h2>Cola de Registros</h2>
-            <div class="drawer-stats-row">
-              <span id="chipPending" class="stat-chip stat-chip-pending">⏳ 0 pendientes</span>
-              <span id="chipSynced" class="stat-chip stat-chip-synced">✅ 0 listos</span>
-              <span id="chipError" class="stat-chip stat-chip-error" style="display: none;">❌ 0 errores</span>
-            </div>
+          </div>
+          <div class="drawer-stats-row">
+            <span id="chipPending" class="stat-chip stat-chip-pending">0 pendientes</span>
+            <span id="chipSynced" class="stat-chip stat-chip-synced">0 listos</span>
+            <span id="chipError" class="stat-chip stat-chip-error" style="display: none;">0 errores</span>
           </div>
         </div>
-        <button id="btnCloseDrawer" class="drawer-close" type="button" aria-label="Cerrar cola">✕</button>
+        <button id="btnCloseDrawer" class="drawer-close" type="button" aria-label="Cerrar panel">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
       </div>
 
-      <!-- Barra de Acciones Globales del Drawer -->
+      <!-- Acciones Globales del Drawer -->
       <div class="drawer-actions-bar">
-        <button id="btnSyncAllFromDrawer" class="btn-sync-drawer btn-drawer-sync-all" type="button" disabled>
-          <span>⚡ Sincronizar Cola Completa</span>
+        <button id="btnSyncAllFromDrawer" class="btn-sync-drawer" type="button" disabled>
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+          </svg>
+          <span>Sincronizar Cola Completa</span>
         </button>
-        <button id="btnLimpiarCompletadas" class="btn-clean-drawer btn-drawer-clean" type="button">
-          🧹 Limpiar
+        <button id="btnLimpiarCompletadas" class="btn-clean-drawer" type="button" title="Eliminar registros ya sincronizados">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+          <span>Limpiar</span>
         </button>
       </div>
 
-      <!-- Filtros Rápidos de la Cola -->
+      <!-- Segmented Tabs de Filtros Rápidos -->
       <div class="drawer-filters">
-        <button id="filterAll" class="filter-tab drawer-filter-btn active" type="button" data-filter="all">Todos (0)</button>
-        <button id="filterPending" class="filter-tab drawer-filter-btn" type="button" data-filter="pending">⏳ Pendientes (0)</button>
-        <button id="filterError" class="filter-tab drawer-filter-btn" type="button" data-filter="error">❌ Errores (0)</button>
-        <button id="filterSynced" class="filter-tab drawer-filter-btn" type="button" data-filter="synced">✅ Sincronizados (0)</button>
+        <button id="filterAll" class="filter-tab active" type="button" data-filter="all">Todos (0)</button>
+        <button id="filterPending" class="filter-tab" type="button" data-filter="pending">Pendientes (0)</button>
+        <button id="filterError" class="filter-tab" type="button" data-filter="error">Errores (0)</button>
+        <button id="filterSynced" class="filter-tab" type="button" data-filter="synced">Sincronizados (0)</button>
       </div>
 
-      <!-- Lista Enriquecida de Registros -->
+      <!-- Lista Enriquecida de Registros con Vista Expandible de Auditoría -->
       <div id="drawerQueueList" class="drawer-list">
-        <!-- Renderizado dinámico de tarjetas ricas -->
+        <!-- Renderizado dinámico de tarjetas -->
       </div>
     </div>
 
-    <!-- BACKDROP & MODAL PATRÓN MAESTRO -->
+    <!-- MODAL PATRÓN MAESTRO DE PARTICIPANTES -->
     <div id="masterBackdrop" class="drawer-backdrop" style="display: none;"></div>
     <div id="masterModal" class="modal-card-dialog">
       <div class="modal-header">
         <div class="modal-title-group">
-          <span class="modal-icon">🏛️</span>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+            <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+          </svg>
           <div>
             <h2>Patrón Maestro de Participantes</h2>
             <p>Reconciliación fonética Jaro-Winkler de Nombres, Edades y EPS</p>
           </div>
         </div>
-        <button id="btnCloseMasterModal" class="drawer-close" type="button">✕</button>
+        <button id="btnCloseMasterModal" class="drawer-close" type="button" aria-label="Cerrar modal">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
       </div>
       <div class="modal-body">
         <div class="stats-grid">
@@ -311,34 +408,46 @@
         <div class="import-box">
           <div class="import-label">
             <strong>Sincronizar desde Google Sheets</strong>
-            <span>Importa la pestaña <code>PATRON MAESTRO</code> de tu hoja conectada</span>
+            <span>Importa la pestaña <code>PATRON MAESTRO</code> conectada</span>
           </div>
           <div class="master-form-col">
-            <input type="text" id="inputMasterSheetId" class="master-input-field" placeholder="ID o URL (opcional si ya está en .env)" />
+            <input type="text" id="inputMasterSheetId" class="master-input-field" placeholder="ID o URL de la Hoja (opcional)" />
             <button id="btnSyncMasterSheet" class="btn-master-action" type="button">
-              🔄 Sincronizar desde Google Sheets
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+              </svg>
+              <span>Sincronizar desde Sheets</span>
             </button>
           </div>
         </div>
 
         <div class="import-box">
           <div class="import-label">
-            <strong>O Importar Archivo Excel / CSV</strong>
+            <strong>Importar Archivo Excel o CSV</strong>
             <span>Columnas: Nombre, Edad, Municipio, EPS</span>
           </div>
           <div class="master-form-col">
             <input type="file" id="inputMasterExcel" class="master-file-field" accept=".xlsx,.xls,.csv" />
             <button id="btnUploadMasterExcel" class="btn-master-sub" type="button">
-              📁 Subir Archivo Local
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+              <span>Subir Archivo Local</span>
             </button>
           </div>
         </div>
 
         <button id="btnResetMaster" class="btn-master-reset" type="button">
-          🗑️ Vaciar Memoria (Reiniciar a 0 Registros)
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+          <span>Vaciar Memoria (Reiniciar Catálogo)</span>
         </button>
 
-        <div class="import-label" style="margin-top: 6px;">
+        <div class="import-label" style="margin-top: 10px;">
           <strong>Distribución por Municipio:</strong>
         </div>
         <div id="participantsBreakdown" class="participants-breakdown">
@@ -347,12 +456,12 @@
       </div>
     </div>
 
-    <!-- MODAL DE PROCESAMIENTO / CARGA -->
+    <!-- MODAL DE PROCESAMIENTO / CARGA LIMPIO -->
     <div id="processingModal" class="processing-modal">
       <div class="processing-card">
         <div class="spinner-ring"></div>
         <h3 id="procTitle" class="processing-status-title">Extrayendo Datos con IA</h3>
-        <p id="procDesc" class="processing-status-desc">Analizando checkboxes, campos manuscritos y convirtiendo a MAYÚSCULAS...</p>
+        <p id="procDesc" class="processing-status-desc">Analizando casillas manuscritas y estructurando campos...</p>
       </div>
     </div>
 
@@ -361,7 +470,7 @@
 
   </div>
 
-  <script src="/static/js/db.js?v=20"></script>
-  <script src="/static/js/app.js?v=20"></script>
+  <script src="/static/js/db.js?v=21"></script>
+  <script src="/static/js/app.js?v=21"></script>
 </body>
 </html>
