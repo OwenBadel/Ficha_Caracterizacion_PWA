@@ -437,6 +437,41 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // -------------------------------------------------------------
+  // GESTIÓN DE CICLO DE VIDA DE MEMORIA Y OBJECT URLS (ANTI-LEAKS)
+  // -------------------------------------------------------------
+  const activePreviewUrls = new Map();
+  let activeDrawerObjectUrls = [];
+
+  function setPreviewBlob(imgElement, blob) {
+    if (!imgElement) return '';
+    if (activePreviewUrls.has(imgElement)) {
+      try {
+        URL.revokeObjectURL(activePreviewUrls.get(imgElement));
+      } catch (_) {}
+    }
+    if (!blob) {
+      activePreviewUrls.delete(imgElement);
+      imgElement.src = '';
+      return '';
+    }
+    const url = URL.createObjectURL(blob);
+    activePreviewUrls.set(imgElement, url);
+    imgElement.src = url;
+    return url;
+  }
+
+  function revokePreviewBlob(imgElement) {
+    if (!imgElement) return;
+    if (activePreviewUrls.has(imgElement)) {
+      try {
+        URL.revokeObjectURL(activePreviewUrls.get(imgElement));
+      } catch (_) {}
+      activePreviewUrls.delete(imgElement);
+    }
+    imgElement.src = '';
+  }
+
   // Rotación manual asistida de 90° en cualquier ranura
   async function rotarFoto(tipo) {
     let currentBlob = null;
@@ -458,12 +493,20 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       showToast('Rotando 90°...', 'info');
       const rotatedBlob = await procesarYOrientarImagen(currentBlob, 1600, 0.82, true);
-      const newUrl = URL.createObjectURL(rotatedBlob);
-      previewEl.src = newUrl;
+      setPreviewBlob(previewEl, rotatedBlob);
 
-      if (tipo === 1) state.foto1Blob = rotatedBlob;
-      else if (tipo === 2) state.foto2Blob = rotatedBlob;
-      else if (tipo === 'test') state.fotoTestBlob = rotatedBlob;
+      if (tipo === 1) {
+        state.foto1Blob = rotatedBlob;
+        if (window.surveyDB && typeof window.surveyDB.guardarBorradorActivo === 'function') {
+          window.surveyDB.guardarBorradorActivo(state.mode, rotatedBlob, 'image/jpeg', {
+            tipoEvaluacion: state.tipoEvaluacion
+          }).catch(() => {});
+        }
+      } else if (tipo === 2) {
+        state.foto2Blob = rotatedBlob;
+      } else if (tipo === 'test') {
+        state.fotoTestBlob = rotatedBlob;
+      }
 
       showToast('Foto rotada 90° exitosamente.', 'success');
     } catch (err) {
@@ -482,9 +525,8 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       showToast('Procesando foto 1...', 'info');
       const verticalBlob = await procesarYOrientarImagen(file, 1600, 0.82, false);
-      const previewUrl = URL.createObjectURL(verticalBlob);
+      setPreviewBlob(imgPreview1, verticalBlob);
 
-      imgPreview1.src = previewUrl;
       imgPreview1.style.display = 'block';
       placeholderFoto1.style.display = 'none';
       badgeCheck1.style.display = 'flex';
@@ -494,6 +536,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
       state.foto1Blob = verticalBlob;
       state.foto1Mime = 'image/jpeg';
+
+      // Persistir de inmediato en IndexedDB para blindar contra suspensión de RAM al abrir la cámara de Foto 2
+      if (window.surveyDB && typeof window.surveyDB.guardarBorradorActivo === 'function') {
+        window.surveyDB.guardarBorradorActivo(state.mode, verticalBlob, 'image/jpeg', {
+          tipoEvaluacion: state.tipoEvaluacion
+        }).catch(err => console.warn('Aviso guardando borrador activo:', err));
+      }
 
       if (!state.foto2Blob) setStepFicha(2);
       else setStepFicha(3);
@@ -510,9 +559,8 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       showToast('Procesando foto 2...', 'info');
       const verticalBlob = await procesarYOrientarImagen(file, 1600, 0.82, false);
-      const previewUrl = URL.createObjectURL(verticalBlob);
+      setPreviewBlob(imgPreview2, verticalBlob);
 
-      imgPreview2.src = previewUrl;
       imgPreview2.style.display = 'block';
       placeholderFoto2.style.display = 'none';
       badgeCheck2.style.display = 'flex';
@@ -575,19 +623,23 @@ document.addEventListener('DOMContentLoaded', () => {
     cameraInput1.value = '';
     cameraInput2.value = '';
 
-    imgPreview1.src = '';
+    revokePreviewBlob(imgPreview1);
     imgPreview1.style.display = 'none';
     placeholderFoto1.style.display = 'flex';
     badgeCheck1.style.display = 'none';
     if (slotActions1) slotActions1.style.display = 'none';
     slotFoto1.className = 'photo-slot active-slot';
 
-    imgPreview2.src = '';
+    revokePreviewBlob(imgPreview2);
     imgPreview2.style.display = 'none';
     placeholderFoto2.style.display = 'flex';
     badgeCheck2.style.display = 'none';
     if (slotActions2) slotActions2.style.display = 'none';
     slotFoto2.className = 'photo-slot';
+
+    if (window.surveyDB && typeof window.surveyDB.limpiarBorradorActivo === 'function') {
+      window.surveyDB.limpiarBorradorActivo().catch(() => {});
+    }
 
     cameraTriggerSection.style.display = 'flex';
     readyActionBox.style.display = 'none';
@@ -604,9 +656,8 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       showToast('Procesando test...', 'info');
       const verticalBlob = await procesarYOrientarImagen(file, 1600, 0.82, false);
-      const previewUrl = URL.createObjectURL(verticalBlob);
+      setPreviewBlob(imgPreviewTest, verticalBlob);
 
-      imgPreviewTest.src = previewUrl;
       imgPreviewTest.style.display = 'block';
       placeholderFotoTest.style.display = 'none';
       badgeCheckTest.style.display = 'flex';
@@ -645,7 +696,7 @@ document.addEventListener('DOMContentLoaded', () => {
     state.fotoTestBlob = null;
     cameraInputTest.value = '';
 
-    imgPreviewTest.src = '';
+    revokePreviewBlob(imgPreviewTest);
     imgPreviewTest.style.display = 'none';
     placeholderFotoTest.style.display = 'flex';
     badgeCheckTest.style.display = 'none';
@@ -1212,6 +1263,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // RENDERIZADO VISUAL ENRIQUECIDO DE LA COLA LOCAL
   // -------------------------------------------------------------
   async function renderizarListaDrawer() {
+    activeDrawerObjectUrls.forEach(u => {
+      try {
+        URL.revokeObjectURL(u);
+      } catch (_) {}
+    });
+    activeDrawerObjectUrls = [];
+
     drawerQueueList.innerHTML = '';
     const items = await window.surveyDB.obtenerTodas();
 
@@ -1313,6 +1371,7 @@ document.addEventListener('DOMContentLoaded', () => {
       let thumbsHtml = '';
       if (item.anversoBlob || item.fotoBlob) {
         const u1 = URL.createObjectURL(item.anversoBlob || item.fotoBlob);
+        activeDrawerObjectUrls.push(u1);
         const lbl1 = esAnexo17 ? 'Pág 1' : (esAnexo4 ? 'Test' : 'Anverso');
         thumbsHtml += `
           <div class="rich-thumb-box">
@@ -1323,6 +1382,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       if (item.reversoBlob) {
         const u2 = URL.createObjectURL(item.reversoBlob);
+        activeDrawerObjectUrls.push(u2);
         const lbl2 = esAnexo17 ? 'Pág 2' : 'Reverso';
         thumbsHtml += `
           <div class="rich-thumb-box">
@@ -1672,6 +1732,39 @@ document.addEventListener('DOMContentLoaded', () => {
   cargarResumenParticipantes();
   actualizarEstadisticasPatronMaestro();
 
+  // Auto-recuperación de Foto 1 si Android/iOS recargó la pestaña al usar la cámara
+  async function restaurarBorradorActivoSiExiste() {
+    try {
+      if (!window.surveyDB || typeof window.surveyDB.obtenerBorradorActivo !== 'function') return;
+      const draft = await window.surveyDB.obtenerBorradorActivo();
+      if (draft && draft.foto1Blob && !state.foto1Blob) {
+        console.log('[Auto-Recovery] Restaurando borrador de Foto 1 desde IndexedDB...');
+        state.foto1Blob = draft.foto1Blob;
+        state.foto1Mime = draft.foto1Mime || 'image/jpeg';
+        if (draft.tipo && (draft.tipo === 'ficha' || draft.tipo === 'anexo17')) {
+          setMode(draft.tipo);
+        }
+        if (draft.extra && draft.extra.tipoEvaluacion) {
+          state.tipoEvaluacion = draft.extra.tipoEvaluacion;
+        }
+
+        setPreviewBlob(imgPreview1, draft.foto1Blob);
+        imgPreview1.style.display = 'block';
+        placeholderFoto1.style.display = 'none';
+        badgeCheck1.style.display = 'flex';
+        if (slotActions1) slotActions1.style.display = 'flex';
+        slotFoto1.classList.remove('active-slot');
+        slotFoto1.classList.add('completed');
+
+        setStepFicha(2);
+        showToast('Foto 1 recuperada automáticamente tras recarga de memoria.', 'info');
+      }
+    } catch (err) {
+      console.warn('Aviso al verificar borrador activo en inicio:', err);
+    }
+  }
+
+  restaurarBorradorActivoSiExiste();
 
   // -------------------------------------------------------------
   // MODAL DE PROCESAMIENTO

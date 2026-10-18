@@ -270,13 +270,18 @@ class VocabularyLearner:
         if not dict_col:
             return s
 
-        # 1. Si coincide exactamente con un término conocido
-        if s in dict_col:
+        semilla_col = SEMILLA_INICIAL.get(columna, {})
+
+        # 1. Si coincide exactamente con un término consolidado (frecuencia >= 3 o semilla oficial)
+        if (s in dict_col and dict_col[s] >= 3) or (s in semilla_col):
             return s
 
-        # 2. Coincidencia difusa de la frase completa
-        terminos_conocidos = list(dict_col.keys())
-        terminos_conocidos.sort(key=lambda k: dict_col[k], reverse=True)
+        # 2. Coincidencia difusa de la frase completa con términos canónicos consolidados
+        terminos_conocidos = [k for k, peso in dict_col.items() if peso >= 3 or k in semilla_col]
+        if not terminos_conocidos:
+            terminos_conocidos = list(dict_col.keys())
+
+        terminos_conocidos.sort(key=lambda k: dict_col.get(k, 0), reverse=True)
 
         mejor_match = None
         mejor_score = 0.0

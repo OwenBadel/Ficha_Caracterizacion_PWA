@@ -232,7 +232,7 @@ def normalizar_territorio(val: Optional[Any]) -> str:
         return "ARENAL"
     if "SOPLAVIENTO" in s or "SOPLA VIENTO" in s or "SOPLA" in s:
         return "SOPLAVIENTO"
-    if "CATALINA" in s:
+    if "CATALINA" in s or "CAROLINA" in s:
         return "SANTA CATALINA"
     return s
 
@@ -1032,43 +1032,11 @@ class FichaCaracterizacion(BaseModel):
         return data
 
     def to_ordered_row(self) -> List[str]:
-        """Convierte los valores a una lista ordenada de strings para Google Sheets asegurando MAYÚSCULAS y estandarización."""
+        """Convierte los valores a una lista ordenada de strings para Google Sheets asegurando MAYÚSCULAS sin re-procesamiento redundante."""
         dump = self.model_dump(by_alias=True)
-        dump = aplicar_reglas_coherencia(dump)
-        terr = normalizar_territorio(dump.get("TERRITORIO") or dump.get("Municipio", ""))
-        tipo_doc = normalizar_tipo_documento_segun_edad(
-            dump.get("Tipo de documento identidad", ""),
-            dump.get("Edad", "")
-        )
-
-        fila = []
-        for col in COLUMNAS_FICHA:
-            if col in ["Municipio", "TERRITORIO"] and terr:
-                val = terr
-            elif col == "Tipo de documento identidad":
-                val = tipo_doc
-            else:
-                val = normalizar_campo_por_columna(col, dump.get(col, ""))
-            fila.append(val)
-        return fila
+        return [str(dump.get(col, "") or "").strip().upper() for col in COLUMNAS_FICHA]
 
     def to_canonical_dict(self) -> Dict[str, str]:
-        """Devuelve un diccionario exacto con las 43 claves en mayúsculas y estandarizadas."""
+        """Devuelve un diccionario exacto con las 43 claves canónicas en mayúsculas sin re-procesamiento redundante."""
         dump = self.model_dump(by_alias=True)
-        dump = aplicar_reglas_coherencia(dump)
-        terr = normalizar_territorio(dump.get("TERRITORIO") or dump.get("Municipio", ""))
-        tipo_doc = normalizar_tipo_documento_segun_edad(
-            dump.get("Tipo de documento identidad", ""),
-            dump.get("Edad", "")
-        )
-
-        res = {}
-        for col in COLUMNAS_FICHA:
-            if col in ["Municipio", "TERRITORIO"] and terr:
-                val = terr
-            elif col == "Tipo de documento identidad":
-                val = tipo_doc
-            else:
-                val = normalizar_campo_por_columna(col, dump.get(col, ""))
-            res[col] = val
-        return res
+        return {col: str(dump.get(col, "") or "").strip().upper() for col in COLUMNAS_FICHA}

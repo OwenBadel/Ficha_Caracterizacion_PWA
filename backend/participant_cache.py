@@ -20,6 +20,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Dict, Any, List, Optional
+from schema import normalizar_territorio, normalizar_eps
 
 logger = logging.getLogger("participant_cache")
 
@@ -202,11 +203,18 @@ class ParticipantCache:
         if not nom or len(nom) < 4:
             return
 
+        muni = limpiar_texto(municipio)
+        if muni:
+            muni = normalizar_territorio(muni)
+        eps_norm = limpiar_texto(eapb)
+        if eps_norm:
+            eps_norm = normalizar_eps(eps_norm)
+
         item = {
             "nombre": nom,
             "edad": limpiar_texto(edad),
-            "municipio": limpiar_texto(municipio),
-            "eapb": limpiar_texto(eapb),
+            "municipio": muni,
+            "eapb": eps_norm,
             "documento": limpiar_texto(documento)
         }
 
@@ -224,11 +232,18 @@ class ParticipantCache:
                 nom = limpiar_texto(r.get("nombre"))
                 if not nom or len(nom) < 4:
                     continue
+                muni = limpiar_texto(r.get("municipio"))
+                if muni:
+                    muni = normalizar_territorio(muni)
+                eps_norm = limpiar_texto(r.get("eapb"))
+                if eps_norm:
+                    eps_norm = normalizar_eps(eps_norm)
+
                 self.participantes[nom] = {
                     "nombre": nom,
                     "edad": limpiar_texto(r.get("edad")),
-                    "municipio": limpiar_texto(r.get("municipio")),
-                    "eapb": limpiar_texto(r.get("eapb")),
+                    "municipio": muni,
+                    "eapb": eps_norm,
                     "documento": limpiar_texto(r.get("documento"))
                 }
                 insertados += 1

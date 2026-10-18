@@ -23,14 +23,14 @@ from dotenv import load_dotenv
 logger = logging.getLogger("vision_service")
 
 try:
-    from .schema import FichaCaracterizacion, COLUMNAS_FICHA
+    from .schema import FichaCaracterizacion, COLUMNAS_FICHA, normalizar_territorio, normalizar_eps
     from .schema_test import PrePostTest
-    from .schema_anexo17 import PrePostTestAnexo17
+    from .schema_anexo17 import PrePostTestAnexo17, normalizar_municipio as normalizar_municipio_anexo17
     from .participant_cache import participant_cache
 except (ImportError, ValueError):
-    from schema import FichaCaracterizacion, COLUMNAS_FICHA
+    from schema import FichaCaracterizacion, COLUMNAS_FICHA, normalizar_territorio, normalizar_eps
     from schema_test import PrePostTest
-    from schema_anexo17 import PrePostTestAnexo17
+    from schema_anexo17 import PrePostTestAnexo17, normalizar_municipio as normalizar_municipio_anexo17
     from participant_cache import participant_cache
 
 load_dotenv()
@@ -124,13 +124,40 @@ Tu única misión es transcribir con EXACTITUD Y FIDELIDAD VISUAL ABSOLUTA la in
 43. "¿Por que?": Motivo manuscrito.
 """
 
-PROMPT_JSON_TEMPLATE = json.dumps({col: "" for col in COLUMNAS_FICHA}, indent=2, ensure_ascii=False)
+PROMPT_JSON_TEMPLATE = json.dumps({f"c{i}": col for i, col in enumerate(COLUMNAS_FICHA, 1)}, indent=2, ensure_ascii=False)
 
 USER_PROMPT = f"""Analiza minuciosamente el anverso (Página 1) y reverso (Página 2) adjuntos.
 Aplica fidelidad visual estricta y dependencias condicionales (si una casilla está vacía o su pregunta principal es NO, devuelve "").
-Devuelve ÚNICAMENTE un objeto JSON válido con las siguientes 43 claves canónicas:
+Devuelve ÚNICAMENTE un objeto JSON ultracompacto con las 43 claves indexadas ("c1" a "c43") correspondientes a cada columna:
 {PROMPT_JSON_TEMPLATE}
 """
+
+
+def deserializar_json_ficha(parsed: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Estandariza respuestas de Gemini mapeando claves indexadas ('c1' a 'c43')
+    o claves canónicas completas hacia el diccionario de 43 columnas canónicas.
+    """
+    resultado = {}
+    for i, col in enumerate(COLUMNAS_FICHA, 1):
+        clave_idx = f"c{i}"
+        if clave_idx in parsed:
+            resultado[col] = parsed[clave_idx]
+        elif col in parsed:
+            resultado[col] = parsed[col]
+        else:
+            val = None
+            for pk, pv in parsed.items():
+                if pk.strip().lower() == col.strip().lower():
+                    val = pv
+                    break
+            resultado[col] = val if val is not None else ""
+
+    for k, v in parsed.items():
+        if not (k.startswith("c") and k[1:].isdigit()) and k not in resultado:
+            resultado[k] = v
+
+    return resultado
 
 # ======================================================================
 # PROMPTS CANÓNICOS DE EVALUACIONES PRE-TEST Y POST-TEST (ANEXO 4)
@@ -481,7 +508,8 @@ class VisionService:
         except Exception as e:
             raise ValueError(f"La respuesta de la IA no fue un JSON válido: {e}\nRespuesta recibida: {raw_json[:300]}")
 
-        ficha = FichaCaracterizacion.model_validate(parsed)
+        parsed_estandarizado = deserializar_json_ficha(parsed)
+        ficha = FichaCaracterizacion.model_validate(parsed_estandarizado)
         datos_canonicos = ficha.to_canonical_dict()
 
         # Reconciliación con Patrón Maestro (Jaro-Winkler) para homogeneizar caligrafía
@@ -498,9 +526,9 @@ class VisionService:
             if coincidencia.get("edad") and not datos_canonicos.get("Edad"):
                 datos_canonicos["Edad"] = coincidencia["edad"]
             if coincidencia.get("municipio"):
-                datos_canonicos["Municipio"] = coincidencia["municipio"]
+                datos_canonicos["Municipio"] = normalizar_territorio(coincidencia["municipio"])
             if coincidencia.get("eapb") and not datos_canonicos.get("EPS (si tienes)"):
-                datos_canonicos["EPS (si tienes)"] = coincidencia["eapb"]
+                datos_canonicos["EPS (si tienes)"] = normalizar_eps(coincidencia["eapb"])
             if coincidencia.get("documento") and not datos_canonicos.get("Numero de documento identidad"):
                 datos_canonicos["Numero de documento identidad"] = coincidencia["documento"]
 
@@ -584,9 +612,9 @@ class VisionService:
             if coincidencia.get("edad"):
                 datos["EDAD"] = coincidencia["edad"]
             if coincidencia.get("municipio"):
-                datos["MUNICIPIO"] = coincidencia["municipio"]
+                datos["MUNICIPIO"] = normalizar_territorio(coincidencia["municipio"])
             if coincidencia.get("eapb"):
-                datos["EAPB (EPS)"] = coincidencia["eapb"]
+                datos["EAPB (EPS)"] = normalizar_eps(coincidencia["eapb"])
 
         return datos
 
@@ -665,7 +693,7 @@ class VisionService:
             if coincidencia.get("edad"):
                 datos["EDAD"] = coincidencia["edad"]
             if coincidencia.get("municipio"):
-                datos["MUNICIPIO"] = coincidencia["municipio"]
+                datos["MUNICIPIO"] = normalizar_municipio_anexo17(coincidencia["municipio"])
 
         return datos
 

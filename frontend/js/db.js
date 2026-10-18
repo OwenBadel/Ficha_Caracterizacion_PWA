@@ -156,7 +156,7 @@ class LocalSurveyDB {
 
       req.onsuccess = () => {
         const items = req.result || [];
-        const pendientes = items.filter(it => it.status === 'pending' || it.status === 'error');
+        const pendientes = items.filter(it => it.id !== 'draft_activo' && (it.status === 'pending' || it.status === 'error'));
         pendientes.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
         resolve(pendientes);
       };
@@ -175,7 +175,7 @@ class LocalSurveyDB {
       const req = store.getAll();
 
       req.onsuccess = () => {
-        const items = req.result || [];
+        const items = (req.result || []).filter(it => it.id !== 'draft_activo');
         items.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
         resolve(items);
       };
@@ -248,6 +248,59 @@ class LocalSurveyDB {
       await this.eliminarEncuesta(item.id);
     }
     return sincronizadas.length;
+  }
+
+  /**
+   * Guarda un borrador de sesión activa para evitar pérdida de Foto 1 si Android recarga el navegador
+   */
+  async guardarBorradorActivo(tipo, foto1Blob, foto1Mime = 'image/jpeg', extra = {}) {
+    await this.init();
+    const item = {
+      id: 'draft_activo',
+      tipo,
+      foto1Blob,
+      foto1Mime,
+      extra,
+      timestamp: Date.now()
+    };
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction([STORE_NAME], 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.put(item);
+      req.onsuccess = () => resolve(item);
+      req.onerror = (e) => reject(e.target.error);
+    });
+  }
+
+  /**
+   * Recupera el borrador de sesión activa si no ha caducado (< 2 horas)
+   */
+  async obtenerBorradorActivo() {
+    await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction([STORE_NAME], 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.get('draft_activo');
+      req.onsuccess = () => {
+        const res = req.result;
+        if (!res) return resolve(null);
+        if (Date.now() - (res.timestamp || 0) > 2 * 60 * 60 * 1000) {
+          resolve(null);
+        } else {
+          resolve(res);
+        }
+      };
+      req.onerror = (e) => reject(e.target.error);
+    });
+  }
+
+  /**
+   * Elimina el borrador de sesión activa
+   */
+  async limpiarBorradorActivo() {
+    try {
+      await this.eliminarEncuesta('draft_activo');
+    } catch (_) {}
   }
 }
 

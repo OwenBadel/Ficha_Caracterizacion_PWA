@@ -139,9 +139,73 @@ vision_service = VisionService()
 sheets_service = GoogleSheetsService()
 
 
+async def sincronizar_pendientes_sheets() -> Dict[str, Any]:
+    """Vacía registros de la cola local de contingencia hacia Google Sheets bajo SHEETS_WRITE_SEMAPHORE."""
+    if not PENDIENTES_FILE.exists():
+        return {"success": True, "total_sincronizados": 0, "total_restantes": 0, "message": "No hay registros en cola."}
+    try:
+        data = json.loads(PENDIENTES_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {"success": True, "total_sincronizados": 0, "total_restantes": 0, "message": "Cola vacía o inválida."}
+
+    if not data:
+        return {"success": True, "total_sincronizados": 0, "total_restantes": 0, "message": "No hay registros en cola."}
+
+    exitosos = []
+    fallidos = []
+
+    async with SHEETS_WRITE_SEMAPHORE:
+        for item in data:
+            tipo = item.get("tipo", "ficha")
+            fila = item.get("fila", [])
+            try:
+                if "anexo17" in str(tipo).lower():
+                    vals = fila[1:] if len(fila) == 16 else fila
+                    await run_in_threadpool(sheets_service.insertar_anexo17, valores_ordenados=vals, tipo_evaluacion=tipo)
+                elif tipo in ["PRE-TEST", "POST-TEST", "pre_test", "post_test", "test_pre-test", "test_post-test"]:
+                    vals = fila[1:] if len(fila) == 15 else fila
+                    await run_in_threadpool(sheets_service.insertar_test, valores_ordenados=vals, tipo_evaluacion=tipo)
+                else:
+                    vals = fila[1:] if len(fila) == 44 else fila
+                    await run_in_threadpool(sheets_service.insertar_encuesta, valores_ordenados=vals)
+                exitosos.append(item)
+            except Exception as e:
+                item["error"] = str(e)
+                fallidos.append(item)
+
+        try:
+            PENDIENTES_FILE.write_text(json.dumps(fallidos, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception as e:
+            logger.error(f"Error actualizando PENDIENTES_FILE tras sincronización diferida: {e}")
+
+    if exitosos:
+        logger.info(f"[Worker Contingencia] {len(exitosos)} registros sincronizados con éxito. Restantes en cola: {len(fallidos)}.")
+
+    return {
+        "success": True,
+        "total_sincronizados": len(exitosos),
+        "total_restantes": len(fallidos),
+        "message": f"Sincronizados {len(exitosos)} registros exitosamente en Google Sheets."
+    }
+
+
+async def _bucle_sincronizador_pendientes():
+    """Worker en segundo plano que revisa periódicamente la cola de contingencia local."""
+    logger.info("Iniciando bucle sincronizador de contingencia local (intervalo: 60s)...")
+    while True:
+        try:
+            await asyncio.sleep(60)
+            if PENDIENTES_FILE.exists():
+                await sincronizar_pendientes_sheets()
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.warning(f"Aviso en sincronizador periódico de contingencia: {e}")
+
+
 @app.on_event("startup")
 async def startup_event():
-    """Inicialización desatendida y verificación de estado."""
+    """Inicialización desatendida, verificación de estado y arranque de workers."""
     auto_sync = os.getenv("AUTO_SYNC_ON_STARTUP", "false").lower() == "true"
     sheet_id = os.getenv("GOOGLE_SHEET_ID", "").strip()
     if auto_sync and sheet_id:
@@ -166,6 +230,9 @@ async def startup_event():
                 break
             except Exception as e:
                 logger.warning(f"Error cargando archivo local '{candidata.name}': {e}")
+
+    # Iniciar worker periódico de contingencia en segundo plano
+    asyncio.create_task(_bucle_sincronizador_pendientes())
 
 
 @app.api_route("/api/health", methods=["GET", "HEAD"])
@@ -476,27 +543,18 @@ async def process_survey(
                     mime_type_2=mime2
                 )
 
-            ficha = FichaCaracterizacion.model_validate(datos_dict)
-            fila_ordenada = [str(x or "").strip().upper() for x in ficha.to_ordered_row()]
+            fila_ordenada = [str(datos_dict.get(c, "") or "").strip().upper() for c in COLUMNAS_FICHA]
 
             logger.info(
                 f"Fila extraída con IA -> Participante='{fila_ordenada[2]}', "
                 f"Doc='{fila_ordenada[4]}', Municipio='{fila_ordenada[9]}'"
             )
 
-            # 4. Aprendizaje continuo
+            # 4. Aprendizaje continuo de vocabulario adaptativo
             try:
                 await run_in_threadpool(vocabulary_learner.aprender_fila, fila_ordenada)
-                await run_in_threadpool(
-                    participant_cache.aprender_participante,
-                    nombre=fila_ordenada[2],
-                    edad=fila_ordenada[5],
-                    municipio=fila_ordenada[9],
-                    eapb=fila_ordenada[11],
-                    documento=fila_ordenada[4]
-                )
             except Exception as e:
-                logger.warning(f"Aviso en aprendizaje continuo de ficha: {e}")
+                logger.warning(f"Aviso en aprendizaje de vocabulario: {e}")
 
             # 5. Desacoplamiento de Google Sheets
             sheets_result = None
@@ -528,7 +586,7 @@ async def process_survey(
                 "participante": fila_ordenada[2] or "SIN NOMBRE",
                 "documento": fila_ordenada[4] or "SIN DOCUMENTO",
                 "sheets_result": sheets_result,
-                "datos_extraidos": ficha.to_canonical_dict()
+                "datos_extraidos": datos_dict
             }
 
             with _CACHE_LOCK:
@@ -656,7 +714,7 @@ async def process_test(
                         nombre=test_obj.nombre,
                         edad=test_obj.edad or "",
                         municipio=test_obj.municipio or "",
-                        eapb=test_obj.eps or "",
+                        eapb=test_obj.eapb or "",
                         documento=""
                     )
             except Exception as e:
@@ -1060,48 +1118,7 @@ async def get_pending_sync_count():
 @app.post("/api/sync-pending")
 async def sync_pending_records():
     """Reintenta la inserción en Google Sheets de todos los registros encolados por timeout."""
-    if not PENDIENTES_FILE.exists():
-        return {"success": True, "total_sincronizados": 0, "message": "No hay registros en cola."}
-    try:
-        data = json.loads(PENDIENTES_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return {"success": True, "total_sincronizados": 0, "message": "Cola vacía o inválida."}
-
-    if not data:
-        return {"success": True, "total_sincronizados": 0, "message": "No hay registros en cola."}
-
-    exitosos = []
-    fallidos = []
-
-    for item in data:
-        tipo = item.get("tipo", "ficha")
-        fila = item.get("fila", [])
-        try:
-            if "anexo17" in str(tipo).lower():
-                # La fila guardada para Anexo 17 contiene 16 columnas con timestamp o 15 valores
-                vals = fila[1:] if len(fila) == 16 else fila
-                await run_in_threadpool(sheets_service.insertar_anexo17, valores_ordenados=vals, tipo_evaluacion=tipo)
-            elif tipo in ["PRE-TEST", "POST-TEST", "pre_test", "post_test"]:
-                # La fila guardada para test contiene: [timestamp, tipo, nombre, ...] (15 columnas)
-                # insertar_test espera los 14 valores ordenados sin timestamp (lo agrega automáticamente)
-                vals = fila[1:] if len(fila) == 15 else fila
-                await run_in_threadpool(sheets_service.insertar_test, valores_ordenados=vals, tipo_evaluacion=tipo)
-            else:
-                # insertar_encuesta espera los 43 valores sin timestamp
-                vals = fila[1:] if len(fila) == 44 else fila
-                await run_in_threadpool(sheets_service.insertar_encuesta, valores_ordenados=vals)
-            exitosos.append(item)
-        except Exception as e:
-            item["error"] = str(e)
-            fallidos.append(item)
-
-    PENDIENTES_FILE.write_text(json.dumps(fallidos, ensure_ascii=False, indent=2), encoding="utf-8")
-    return {
-        "success": True,
-        "total_sincronizados": len(exitosos),
-        "total_restantes": len(fallidos),
-        "message": f"Sincronizados {len(exitosos)} registros exitosamente en Google Sheets."
-    }
+    return await sincronizar_pendientes_sheets()
 
 
 # Servir Frontend PWA estático

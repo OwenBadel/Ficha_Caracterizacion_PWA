@@ -61,6 +61,13 @@ def run():
     result = runner.run(suite)
     assert result.wasSuccessful(), "Las pruebas de test_anexo17_schema fallaron"
 
+    print("\n--- 6. Ejecutando pruebas de test_audit_part2_fixes.py (Auditoría Profunda Parte 2) ---")
+    import test_audit_part2_fixes
+    suite_part2 = unittest.defaultTestLoader.loadTestsFromModule(test_audit_part2_fixes)
+    runner_part2 = unittest.TextTestRunner(verbosity=2)
+    result_part2 = runner_part2.run(suite_part2)
+    assert result_part2.wasSuccessful(), "Las pruebas de test_audit_part2_fixes fallaron"
+
     print("\n=========================================")
     print("TODAS LAS PRUEBAS COMPLETADAS CON ÉXITO (VERDE)")
     print("=========================================")
