@@ -84,6 +84,13 @@ def run():
     result_webhook = runner_webhook.run(suite_webhook)
     assert result_webhook.wasSuccessful(), "Las pruebas de test_webhook_deduplication fallaron"
 
+    print("\n--- 9. Ejecutando pruebas de test_patron_maestro_decoupling.py ---")
+    import test_patron_maestro_decoupling
+    suite_decoupling = unittest.defaultTestLoader.loadTestsFromModule(test_patron_maestro_decoupling)
+    runner_decoupling = unittest.TextTestRunner(verbosity=2)
+    result_decoupling = runner_decoupling.run(suite_decoupling)
+    assert result_decoupling.wasSuccessful(), "Las pruebas de test_patron_maestro_decoupling fallaron"
+
     print("\n=========================================")
     print("TODAS LAS PRUEBAS COMPLETADAS CON ÉXITO (VERDE)")
     print("=========================================")

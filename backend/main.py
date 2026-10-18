@@ -206,16 +206,7 @@ async def _bucle_sincronizador_pendientes():
 @app.on_event("startup")
 async def startup_event():
     """Inicialización desatendida, verificación de estado y arranque de workers."""
-    auto_sync = os.getenv("AUTO_SYNC_ON_STARTUP", "false").lower() == "true"
-    sheet_id = os.getenv("GOOGLE_SHEET_ID", "").strip()
-    if auto_sync and sheet_id:
-        try:
-            logger.info(f"Auto-sincronizando PATRON MAESTRO desde Google Sheet ID: {sheet_id}...")
-            total = participant_cache.sincronizar_desde_google_sheets(sheet_id)
-            logger.info(f"PATRON MAESTRO cargado en arranque: {total} registros.")
-        except Exception as e:
-            logger.warning(f"No se pudo sincronizar automáticamente con Google Sheets al arrancar: {e}")
-
+    # El Patrón Maestro se gestiona exclusivamente por archivo Excel (.xlsx / .csv)
     # Verificar si existe archivo local patron_maestro en el proyecto
     for candidata in [
         PROJECT_DIR / "patron_maestro.xlsx",
@@ -273,13 +264,11 @@ def get_participants_summary() -> Dict[str, Any]:
 
 @app.post("/api/participants/sync-master")
 async def sync_master_pattern(
-    sheet_id: Optional[str] = Form(None),
-    tab_name: Optional[str] = Form("PATRON MAESTRO"),
     file: Optional[UploadFile] = File(None)
 ) -> Dict[str, Any]:
     """
-    Sincroniza la base canónica del PATRÓN MAESTRO.
-    Permite subir un archivo Excel/CSV o proporcionar un Google Sheet ID.
+    Sincroniza la base canónica del PATRÓN MAESTRO desde archivo Excel/CSV.
+    Exclusivo para reconciliación en Pre y Post Test (Anexo 4 y Anexo 17).
     """
     try:
         total_cargados = 0
@@ -291,7 +280,6 @@ async def sync_master_pattern(
             if sufijo == ".csv":
                 total_cargados = participant_cache.sincronizar_desde_csv_texto(contenido.decode("utf-8", errors="replace"))
             elif sufijo in [".xlsx", ".xls"]:
-                # Guardar temporalmente para parsear con pandas
                 import tempfile
                 with tempfile.NamedTemporaryFile(suffix=sufijo, delete=False) as tmp:
                     tmp.write(contenido)
@@ -302,34 +290,25 @@ async def sync_master_pattern(
                     if tmp_path.exists():
                         tmp_path.unlink()
             else:
-                raise HTTPException(status_code=400, detail="Formato de archivo no soportado. Debe ser .csv o .xlsx")
+                raise HTTPException(status_code=400, detail="Formato no soportado. Debe adjuntar un archivo .xlsx, .xls o .csv.")
 
-        # Caso 2: Google Sheet ID
+        # Caso 2: Carga desde archivo local preexistente en disco
         else:
-            id_hoja = (sheet_id or os.getenv("GOOGLE_SHEET_ID", "")).strip()
-            if not id_hoja:
-                # Intentar buscar archivo local por defecto
-                encontrado = False
-                for c in [PROJECT_DIR / "patron_maestro.xlsx", PROJECT_DIR / "patron_maestro.csv"]:
-                    if c.exists():
-                        total_cargados = participant_cache.sincronizar_desde_archivo_local(c)
-                        encontrado = True
-                        break
-                if not encontrado:
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Debe proporcionar un 'sheet_id' de Google Sheets o subir un archivo Excel/CSV."
-                    )
-            else:
-                total_cargados = await run_in_threadpool(
-                    participant_cache.sincronizar_desde_google_sheets,
-                    sheet_id=id_hoja,
-                    tab_name=tab_name or "PATRON MAESTRO"
+            encontrado = False
+            for c in [PROJECT_DIR / "patron_maestro.xlsx", PROJECT_DIR / "patron_maestro.csv"]:
+                if c.exists():
+                    total_cargados = participant_cache.sincronizar_desde_archivo_local(c)
+                    encontrado = True
+                    break
+            if not encontrado:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Debe adjuntar un archivo Excel (.xlsx/.xls) o CSV con el Patrón Maestro."
                 )
 
         return {
             "success": True,
-            "message": f"PATRÓN MAESTRO sincronizado exitosamente con {total_cargados} registros.",
+            "message": f"PATRÓN MAESTRO cargado exitosamente con {total_cargados} registros.",
             "total_participantes": participant_cache.contar()
         }
 
@@ -1014,39 +993,13 @@ async def get_participant_stats():
 @app.post("/api/participants/sync-sheet")
 async def sync_participants_from_sheet(sheet_id: Optional[str] = Form(None)):
     """
-    Descarga y sincroniza la pestaña 'PATRON MAESTRO' de Google Sheets.
-    Si sheet_id no se proporciona, usa el GOOGLE_SHEET_ID configurado en el entorno.
+    Endpoint obsoleto / deshabilitado.
+    El Patrón Maestro ahora se carga exclusivamente mediante archivo Excel (.xlsx / .csv).
     """
-    target_id = sheet_id or os.getenv("GOOGLE_SHEET_ID")
-    if not target_id:
-        raise HTTPException(
-            status_code=400,
-            detail="No se proporcionó un ID ni URL de Google Sheets y GOOGLE_SHEET_ID no está configurado en .env."
-        )
-
-    try:
-        total = await run_in_threadpool(
-            participant_cache.sincronizar_desde_google_sheets,
-            sheet_id=target_id,
-            tab_name="PATRON MAESTRO"
-        )
-        resumen = await run_in_threadpool(participant_cache.obtener_resumen)
-        return {
-            "success": True,
-            "message": f"Sincronización exitosa: {total} participantes registrados en la memoria de la IA.",
-            "total_cargados": total,
-            "stats": resumen
-        }
-    except Exception as e:
-        logger.error(f"Error sincronizando PATRON MAESTRO desde Google Sheets: {e}", exc_info=True)
-        return JSONResponse(
-            status_code=500,
-            content={
-                "success": False,
-                "error": str(e),
-                "detail": "Error al conectar con Google Sheets. Asegúrese de que la hoja tenga permisos de lectura y la pestaña se llame 'PATRON MAESTRO'."
-            }
-        )
+    raise HTTPException(
+        status_code=400,
+        detail="La sincronización por Google Sheets para el Patrón Maestro ha sido deshabilitada. Adjunte su archivo Excel (.xlsx/.xls/.csv) directamente en la plataforma."
+    )
 
 
 @app.post("/api/participants/upload-file")

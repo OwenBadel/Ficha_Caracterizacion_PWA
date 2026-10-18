@@ -234,6 +234,7 @@ document.addEventListener('DOMContentLoaded', () => {
       tabModoFicha.classList.add('active');
       if (tabModoAnexo4) tabModoAnexo4.classList.remove('active');
       if (tabModoAnexo17) tabModoAnexo17.classList.remove('active');
+      if (btnOpenMasterModal) btnOpenMasterModal.style.display = 'none';
       testTypeBar.style.display = 'none';
       photosGridFicha.style.display = 'grid';
       photosSingleTest.style.display = 'none';
@@ -245,6 +246,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (tabModoAnexo4) tabModoAnexo4.classList.add('active');
       tabModoFicha.classList.remove('active');
       if (tabModoAnexo17) tabModoAnexo17.classList.remove('active');
+      if (btnOpenMasterModal) btnOpenMasterModal.style.display = 'inline-flex';
       testTypeBar.style.display = 'flex';
       photosGridFicha.style.display = 'none';
       photosSingleTest.style.display = 'flex';
@@ -257,6 +259,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (tabModoAnexo17) tabModoAnexo17.classList.add('active');
       tabModoFicha.classList.remove('active');
       if (tabModoAnexo4) tabModoAnexo4.classList.remove('active');
+      if (btnOpenMasterModal) btnOpenMasterModal.style.display = 'inline-flex';
       testTypeBar.style.display = 'flex';
       photosGridFicha.style.display = 'grid'; // ¡Anexo 17 utiliza 2 páginas físicas!
       photosSingleTest.style.display = 'none';
@@ -1670,6 +1673,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // -------------------------------------------------------------
   // GESTIÓN DEL PATRÓN MAESTRO DE PARTICIPANTES (JARO-WINKLER)
+  // EXCLUSIVO PARA PRE Y POST TEST (ANEXO 4 Y ANEXO 17) VIA EXCEL
   // -------------------------------------------------------------
   const btnOpenMasterModal = document.getElementById('btnOpenMasterModal');
   const btnCloseMasterModal = document.getElementById('btnCloseMasterModal');
@@ -1679,8 +1683,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const statTotalParticipantes = document.getElementById('statTotalParticipantes');
   const statTotalMunicipios = document.getElementById('statTotalMunicipios');
   const participantsBreakdown = document.getElementById('participantsBreakdown');
-  const inputMasterSheetId = document.getElementById('inputMasterSheetId');
-  const btnSyncMasterSheet = document.getElementById('btnSyncMasterSheet');
   const inputMasterExcel = document.getElementById('inputMasterExcel');
   const btnUploadMasterExcel = document.getElementById('btnUploadMasterExcel');
 
@@ -1704,7 +1706,7 @@ document.addEventListener('DOMContentLoaded', () => {
         participantsBreakdown.innerHTML = '';
         const sortedMuns = Object.entries(porMun).sort((a, b) => b[1] - a[1]);
         if (sortedMuns.length === 0) {
-          participantsBreakdown.innerHTML = '<span style="font-size:0.75rem; color:var(--text-muted); display:block; padding:8px 4px;">Sin participantes en memoria aún. Sincroniza desde Sheets o sube un archivo.</span>';
+          participantsBreakdown.innerHTML = '<span style="font-size:0.75rem; color:var(--text-muted); display:block; padding:8px 4px;">Sin participantes en memoria aún. Adjunta un archivo Excel (.xlsx o .csv).</span>';
         } else {
           sortedMuns.forEach(([mun, count]) => {
             const row = document.createElement('div');
@@ -1733,36 +1735,6 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnOpenMasterModal) btnOpenMasterModal.addEventListener('click', abrirModalPatronMaestro);
   if (btnCloseMasterModal) btnCloseMasterModal.addEventListener('click', cerrarModalPatronMaestro);
   if (masterBackdrop) masterBackdrop.addEventListener('click', cerrarModalPatronMaestro);
-
-  if (btnSyncMasterSheet) {
-    btnSyncMasterSheet.addEventListener('click', async () => {
-      const sheetIdVal = inputMasterSheetId ? inputMasterSheetId.value.trim() : '';
-      btnSyncMasterSheet.disabled = true;
-      btnSyncMasterSheet.textContent = 'Sincronizando...';
-      try {
-        const formData = new FormData();
-        if (sheetIdVal) formData.append('sheet_id', sheetIdVal);
-
-        const res = await fetch('/api/participants/sync-sheet', {
-          method: 'POST',
-          body: formData
-        });
-        const result = await res.json();
-        if (result.success) {
-          showToast(`Sincronizados ${result.total_cargados} participantes exitosamente.`, 'success');
-          actualizarEstadisticasPatronMaestro();
-          cargarResumenParticipantes();
-        } else {
-          showToast(result.detail || result.error || 'Error en sincronización con Sheets.', 'error');
-        }
-      } catch (err) {
-        showToast('Error conectando al servidor: ' + err.message, 'error');
-      } finally {
-        btnSyncMasterSheet.disabled = false;
-        btnSyncMasterSheet.textContent = 'Sincronizar desde Sheets';
-      }
-    });
-  }
 
   if (btnUploadMasterExcel) {
     btnUploadMasterExcel.addEventListener('click', async () => {
@@ -1794,7 +1766,7 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast('Error al subir archivo: ' + err.message, 'error');
       } finally {
         btnUploadMasterExcel.disabled = false;
-        btnUploadMasterExcel.textContent = 'Subir Archivo Local';
+        btnUploadMasterExcel.textContent = 'Cargar Archivo Excel';
       }
     });
   }
