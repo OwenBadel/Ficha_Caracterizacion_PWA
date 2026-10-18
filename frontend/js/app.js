@@ -1155,8 +1155,14 @@ document.addEventListener('DOMContentLoaded', () => {
   btnOpenDrawer.addEventListener('click', async () => {
     state.drawerOpen = true;
     await renderizarListaDrawer();
-    drawerBackdrop.style.display = 'block';
-    drawerContainer.style.display = 'flex';
+    if (drawerBackdrop) {
+      drawerBackdrop.style.display = 'block';
+      drawerBackdrop.classList.add('active');
+    }
+    if (drawerContainer) {
+      drawerContainer.style.display = 'flex';
+      drawerContainer.classList.add('open');
+    }
   });
 
   btnCloseDrawer.addEventListener('click', cerrarDrawer);
@@ -1164,8 +1170,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function cerrarDrawer() {
     state.drawerOpen = false;
-    drawerBackdrop.style.display = 'none';
-    drawerContainer.style.display = 'none';
+    if (drawerBackdrop) {
+      drawerBackdrop.style.display = 'none';
+      drawerBackdrop.classList.remove('active');
+    }
+    if (drawerContainer) {
+      drawerContainer.style.display = 'none';
+      drawerContainer.classList.remove('open');
+    }
   }
 
   // -------------------------------------------------------------
@@ -1723,13 +1735,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function abrirModalPatronMaestro() {
     actualizarEstadisticasPatronMaestro();
-    if (masterBackdrop) masterBackdrop.style.display = 'block';
-    if (masterModal) masterModal.classList.add('open');
+    if (masterBackdrop) {
+      masterBackdrop.style.display = 'block';
+      masterBackdrop.classList.add('active');
+    }
+    if (masterModal) {
+      masterModal.style.display = 'flex';
+      masterModal.classList.add('open');
+    }
   }
 
   function cerrarModalPatronMaestro() {
-    if (masterBackdrop) masterBackdrop.style.display = 'none';
-    if (masterModal) masterModal.classList.remove('open');
+    if (masterBackdrop) {
+      masterBackdrop.style.display = 'none';
+      masterBackdrop.classList.remove('active');
+    }
+    if (masterModal) {
+      masterModal.style.display = 'none';
+      masterModal.classList.remove('open');
+    }
   }
 
   if (btnOpenMasterModal) btnOpenMasterModal.addEventListener('click', abrirModalPatronMaestro);
