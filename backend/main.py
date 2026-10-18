@@ -468,7 +468,8 @@ async def process_survey(
     foto_anverso: UploadFile = File(..., description="Fotografía Página 1 (Anverso)"),
     foto_reverso: UploadFile = File(..., description="Fotografía Página 2 (Reverso)"),
     modo: Optional[str] = Form("inmediato", description="Modo de sincronización ('inmediato' o 'batch')"),
-    client_item_id: Optional[str] = Form(None, description="Identificador único del registro en el cliente (idempotencia)")
+    client_item_id: Optional[str] = Form(None, description="Identificador único del registro en el cliente (idempotencia)"),
+    ya_orientada: Optional[str] = Form("false", description="Indica si la imagen ya fue orientada en el cliente")
 ) -> Dict[str, Any]:
     """
     Recibe las dos fotos obligatorias de la ficha, realiza extracción OCR multimodal con IA
@@ -533,14 +534,16 @@ async def process_survey(
             logger.info(f"Procesando encuesta en modo '{modo}' (Client ID={client_item_id}, Hash={hash_img[:10]}...).")
 
             # 3. Extracción con IA de Visión bajo semáforo
-            logger.info("Encolando extracción multimodal de Ficha con IA (Semaphore)...")
+            auto_rotar = not ((ya_orientada or "").lower() in ("true", "1", "yes"))
+            logger.info(f"Encolando extracción multimodal de Ficha con IA (Semaphore, AutoRotar={auto_rotar})...")
             async with GEMINI_CONCURRENCY_SEMAPHORE:
                 datos_dict = await run_in_threadpool(
                     vision_service.extraer_datos_ficha,
                     img_anverso_bytes=anverso_bytes,
                     img_reverso_bytes=reverso_bytes,
                     mime_type_1=mime1,
-                    mime_type_2=mime2
+                    mime_type_2=mime2,
+                    auto_rotar=auto_rotar
                 )
 
             fila_ordenada = [str(datos_dict.get(c, "") or "").strip().upper() for c in COLUMNAS_FICHA]
@@ -625,7 +628,8 @@ async def process_test(
     foto_test: UploadFile = File(..., description="Fotografía Hoja Única del Test (Pre o Post)"),
     tipo_evaluacion: Optional[str] = Form(None, description="Override opcional ('PRE-TEST', 'POST-TEST' o None para autodetección)"),
     modo: Optional[str] = Form("inmediato", description="Modo de sincronización ('inmediato' o 'batch')"),
-    client_item_id: Optional[str] = Form(None, description="Identificador único del registro en el cliente (idempotencia)")
+    client_item_id: Optional[str] = Form(None, description="Identificador único del registro en el cliente (idempotencia)"),
+    ya_orientada: Optional[str] = Form("false", description="Indica si la imagen ya fue orientada en el cliente")
 ) -> Dict[str, Any]:
     """
     Recibe la fotografía única del Pre-Test o Post-Test (Anexo 4),
@@ -688,13 +692,15 @@ async def process_test(
             logger.info(f"Procesando test en modo '{modo}' (Client ID={client_item_id}, Override={tipo_evaluacion}).")
 
             # 3. Extracción con IA de Visión bajo semáforo
-            logger.info("Encolando extracción con IA para Pre/Post Test Anexo 4 (Semaphore)...")
+            auto_rotar = not ((ya_orientada or "").lower() in ("true", "1", "yes"))
+            logger.info(f"Encolando extracción con IA para Pre/Post Test Anexo 4 (Semaphore, AutoRotar={auto_rotar})...")
             async with GEMINI_CONCURRENCY_SEMAPHORE:
                 datos_dict = await run_in_threadpool(
                     vision_service.extraer_datos_test,
                     img_bytes=test_bytes,
                     mime_type=mime,
-                    tipo_evaluacion_override=tipo_evaluacion
+                    tipo_evaluacion_override=tipo_evaluacion,
+                    auto_rotar=auto_rotar
                 )
 
             test_obj = PrePostTest.model_validate(datos_dict)
@@ -796,7 +802,8 @@ async def process_anexo17(
     foto_test: Optional[UploadFile] = File(None, description="Compatibilidad con foto única"),
     tipo_evaluacion: Optional[str] = Form(None, description="Override opcional ('PRE-TEST', 'POST-TEST' o None para autodetección)"),
     modo: Optional[str] = Form("inmediato", description="Modo de sincronización ('inmediato' o 'batch')"),
-    client_item_id: Optional[str] = Form(None, description="Identificador único del registro en el cliente (idempotencia)")
+    client_item_id: Optional[str] = Form(None, description="Identificador único del registro en el cliente (idempotencia)"),
+    ya_orientada: Optional[str] = Form("false", description="Indica si la imagen ya fue orientada en el cliente")
 ) -> Dict[str, Any]:
     """
     Recibe las dos fotografías (Página 1 y Página 2) del Pre-Test o Post-Test (Anexo 17 Pellízcate con Generación B+),
@@ -880,7 +887,8 @@ async def process_anexo17(
             )
 
             # 3. Extracción con IA de Visión bajo semáforo de concurrencia
-            logger.info("Encolando extracción con IA para Pre/Post Test Anexo 17 (Semaphore)...")
+            auto_rotar = not ((ya_orientada or "").lower() in ("true", "1", "yes"))
+            logger.info(f"Encolando extracción con IA para Pre/Post Test Anexo 17 (Semaphore, AutoRotar={auto_rotar})...")
             async with GEMINI_CONCURRENCY_SEMAPHORE:
                 datos_dict = await run_in_threadpool(
                     vision_service.extraer_datos_anexo17,
@@ -888,7 +896,8 @@ async def process_anexo17(
                     img_reverso_bytes=bytes2,
                     mime_type_1=mime1,
                     mime_type_2=mime2,
-                    tipo_evaluacion_override=tipo_evaluacion
+                    tipo_evaluacion_override=tipo_evaluacion,
+                    auto_rotar=auto_rotar
                 )
 
             test_obj = PrePostTestAnexo17.model_validate(datos_dict)

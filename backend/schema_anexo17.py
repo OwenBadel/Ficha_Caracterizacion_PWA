@@ -230,7 +230,7 @@ def normalizar_opcion_anexo17(num_pregunta: int, val: Any) -> str:
     o cadena vacía "" si no hubo marca.
     """
     txt = normalizar_texto_base(val)
-    if not txt:
+    if not txt or txt in ["NO", "NO MARCO", "NO MARCADA", "NO RESPONDE", "NO RESPONDIO", "NO APLICA", "NINGUNA", "VACIO", "EN BLANCO", "SIN RESPUESTA", "N/A"]:
         return ""
 
     opciones = OPCIONES_CANONICAS_ANEXO17.get(num_pregunta, {})
@@ -260,7 +260,7 @@ def normalizar_opcion_anexo17(num_pregunta: int, val: Any) -> str:
     elif num_pregunta == 2:
         if "CALLADO" in txt or "QUEDARTE" in txt:
             return opciones["A"]
-        if "DECIR NO" in txt or "ALEJARTE" in txt or "BUSCAR AYUDA" in txt or "NO" in txt:
+        if 'DECIR "NO"' in txt or "DECIR “NO”" in txt or "DECIR NO" in txt or "ALEJARTE" in txt or "BUSCAR AYUDA" in txt:
             return opciones["B"]
         if "ACEPTAR" in txt or "PROBLEMAS" in txt:
             return opciones["C"]
@@ -380,11 +380,15 @@ class PrePostTestAnexo17(BaseModel):
         def buscar_valor(*posibles_claves: str) -> Any:
             for p in posibles_claves:
                 p_norm = normalizar_texto_base(p)
+                if not p_norm:
+                    continue
                 if p_norm in dict_norm:
                     return dict_norm[p_norm]
-                for k, v in dict_norm.items():
-                    if p_norm in k or k in p_norm:
-                        return v
+                # Coincidencia por subcadena exigiendo al menos 4 caracteres sin coincidencia inversa indiscriminada
+                if len(p_norm) >= 4:
+                    for k, v in dict_norm.items():
+                        if p_norm in k:
+                            return v
             return ""
 
         # 1. Tipo de Evaluación
@@ -414,17 +418,17 @@ class PrePostTestAnexo17(BaseModel):
         edad_digits = re.sub(r"\D", "", str(raw_edad or ""))
         edad_final = edad_digits if edad_digits else normalizar_texto_base(raw_edad)
 
-        # Preguntas 1 a 10
-        p1 = normalizar_opcion_anexo17(1, buscar_valor("1. ¿QUÉ ES UN PROYECTO DE VIDA?", "PROYECTO DE VIDA", "PREGUNTA_1", "1", "1."))
-        p2 = normalizar_opcion_anexo17(2, buscar_valor("2. SI ALGUIEN QUIERE TOCAR TU CUERPO", "TOCAR TU CUERPO", "PREGUNTA_2", "2", "2."))
-        p3 = normalizar_opcion_anexo17(3, buscar_valor("3. ¿CUÁL AYUDA A PREVENIR UN EMBARAZO", "PREVENIR UN EMBARAZO", "PREGUNTA_3", "3", "3."))
-        p4 = normalizar_opcion_anexo17(4, buscar_valor("4. ¿QUÉ DEBES HACER SI SUFRES BULLYING", "BULLYING", "CIBERACOSO", "PREGUNTA_4", "4", "4."))
-        p5 = normalizar_opcion_anexo17(5, buscar_valor("5. ¿CUÁL ES UNA FORMA SALUDABLE DE MANEJAR", "EMOCIÓN DIFÍCIL", "EMOCION DIFICIL", "PREGUNTA_5", "5", "5."))
-        p6 = normalizar_opcion_anexo17(6, buscar_valor("6. SI UN AMIGO DICE QUE NO QUIERE SEGUIR VIVIENDO", "NO QUIERE SEGUIR VIVIENDO", "PREGUNTA_6", "6", "6."))
-        p7 = normalizar_opcion_anexo17(7, buscar_valor("7. ¿QUÉ SIGNIFICA COMUNICARSE DE MANERA ASERTIVA?", "COMUNICARSE DE MANERA ASERTIVA", "PREGUNTA_7", "7", "7."))
-        p8 = normalizar_opcion_anexo17(8, buscar_valor("8. ¿QUÉ ES UNA RED DE APOYO?", "RED DE APOYO", "PREGUNTA_8", "8", "8."))
-        p9 = normalizar_opcion_anexo17(9, buscar_valor("9. ¿CUÁL DE ESTAS SITUACIONES PUEDE AFECTAR LOS DERECHOS", "DERECHOS DE UN ADOLESCENTE", "PREGUNTA_9", "9", "9."))
-        p10 = normalizar_opcion_anexo17(10, buscar_valor("10. ANTES DE TOMAR UNA DECISIÓN IMPORTANTE", "DECISIÓN IMPORTANTE", "DECISION IMPORTANTE", "PREGUNTA_10", "10", "10."))
+        # Preguntas 1 a 10 (sin alias de un solo dígito para evitar colisión entre 1 y 10)
+        p1 = normalizar_opcion_anexo17(1, buscar_valor("1. ¿QUÉ ES UN PROYECTO DE VIDA?", "PROYECTO DE VIDA", "PREGUNTA_1", "PREGUNTA 1", "P1"))
+        p2 = normalizar_opcion_anexo17(2, buscar_valor("2. SI ALGUIEN QUIERE TOCAR TU CUERPO", "TOCAR TU CUERPO", "PREGUNTA_2", "PREGUNTA 2", "P2"))
+        p3 = normalizar_opcion_anexo17(3, buscar_valor("3. ¿CUÁL AYUDA A PREVENIR UN EMBARAZO", "PREVENIR UN EMBARAZO", "PREGUNTA_3", "PREGUNTA 3", "P3"))
+        p4 = normalizar_opcion_anexo17(4, buscar_valor("4. ¿QUÉ DEBES HACER SI SUFRES BULLYING", "BULLYING", "CIBERACOSO", "PREGUNTA_4", "PREGUNTA 4", "P4"))
+        p5 = normalizar_opcion_anexo17(5, buscar_valor("5. ¿CUÁL ES UNA FORMA SALUDABLE DE MANEJAR", "EMOCIÓN DIFÍCIL", "EMOCION DIFICIL", "PREGUNTA_5", "PREGUNTA 5", "P5"))
+        p6 = normalizar_opcion_anexo17(6, buscar_valor("6. SI UN AMIGO DICE QUE NO QUIERE SEGUIR VIVIENDO", "NO QUIERE SEGUIR VIVIENDO", "PREGUNTA_6", "PREGUNTA 6", "P6"))
+        p7 = normalizar_opcion_anexo17(7, buscar_valor("7. ¿QUÉ SIGNIFICA COMUNICARSE DE MANERA ASERTIVA?", "COMUNICARSE DE MANERA ASERTIVA", "PREGUNTA_7", "PREGUNTA 7", "P7"))
+        p8 = normalizar_opcion_anexo17(8, buscar_valor("8. ¿QUÉ ES UNA RED DE APOYO?", "RED DE APOYO", "PREGUNTA_8", "PREGUNTA 8", "P8"))
+        p9 = normalizar_opcion_anexo17(9, buscar_valor("9. ¿CUÁL DE ESTAS SITUACIONES PUEDE AFECTAR LOS DERECHOS", "DERECHOS DE UN ADOLESCENTE", "PREGUNTA_9", "PREGUNTA 9", "P9"))
+        p10 = normalizar_opcion_anexo17(10, buscar_valor("10. ANTES DE TOMAR UNA DECISIÓN IMPORTANTE", "DECISIÓN IMPORTANTE", "DECISION IMPORTANTE", "PREGUNTA_10", "PREGUNTA 10", "P10"))
 
         return {
             "TIPO DE EVALUACIÓN": tipo_final,

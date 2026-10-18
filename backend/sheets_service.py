@@ -39,6 +39,8 @@ class GoogleSheetsService:
         self.webhook_url = os.getenv("GOOGLE_APPS_SCRIPT_URL", "").strip()
         self.sheet_tab_tests = os.getenv("GOOGLE_SHEET_TAB_TESTS", "Respuestas de formulario 1").strip()
         self.webhook_url_tests = os.getenv("GOOGLE_APPS_SCRIPT_URL_TESTS", "").strip() or self.webhook_url
+        self.sheet_tab_pre_test = os.getenv("GOOGLE_SHEET_TAB_PRE_TEST", "PRE-TEST").strip()
+        self.sheet_tab_post_test = os.getenv("GOOGLE_SHEET_TAB_POST_TEST", "POST-TEST").strip()
 
         # Configuración específica para Anexo 17 (Pellízcate con Generación B+)
         self.sheet_id_anexo17 = os.getenv("GOOGLE_SHEET_ID_ANEXO17", "").strip() or self.sheet_id
@@ -279,7 +281,7 @@ class GoogleSheetsService:
         valores_upper = [str(v or "").strip().upper() for v in valores_ordenados]
         fila_final = ([""] + valores_upper) if self.skip_first_col else valores_upper
         headers_final = ENCABEZADOS_FICHA_SHEETS if self.skip_first_col else COLUMNAS_FICHA
-        tab_destino = self.sheet_tab if self.sheet_tab and self.sheet_tab != "Respuestas" else "Respuestas de formulario 1"
+        tab_destino = self.sheet_tab or "Respuestas de formulario 1"
 
         return self._ejecutar_insercion(
             tab_name=tab_destino,
@@ -306,10 +308,10 @@ class GoogleSheetsService:
         # Determinar pestaña exacta: PRE-TEST o POST-TEST
         tipo_candidato = (tipo_evaluacion or (valores_upper[0] if valores_upper else "")).strip().upper()
         if "POST" in tipo_candidato:
-            tab_destino = "POST-TEST"
+            tab_destino = self.sheet_tab_post_test or "POST-TEST"
             tipo_reg = "post_test"
         else:
-            tab_destino = "PRE-TEST"
+            tab_destino = self.sheet_tab_pre_test or "PRE-TEST"
             tipo_reg = "pre_test"
 
         url_destino = self.webhook_url_tests or self.webhook_url

@@ -355,10 +355,15 @@ def _limpiar_bloque_json(texto: str) -> str:
     return _reparar_json_truncado(texto)
 
 
-def optimizar_imagen_bytes(img_bytes: bytes, max_dim: int = 1280, calidad: int = 90) -> tuple[bytes, str]:
+def optimizar_imagen_bytes(
+    img_bytes: bytes,
+    max_dim: int = 1280,
+    calidad: int = 90,
+    auto_rotar: bool = True
+) -> tuple[bytes, str]:
     """
     Optimiza la imagen manteniendo alta resolución y nitidez para el modelo de visión (1400px).
-    Garantiza orientación vertical si fue capturada rotada.
+    Garantiza orientación vertical si fue capturada rotada solo si auto_rotar es True.
     """
     try:
         from PIL import Image, ImageOps
@@ -367,8 +372,8 @@ def optimizar_imagen_bytes(img_bytes: bytes, max_dim: int = 1280, calidad: int =
         img = Image.open(io.BytesIO(img_bytes))
         img = ImageOps.exif_transpose(img)
 
-        # Rotar a vertical si el ancho supera el alto
-        if img.width > img.height:
+        # Rotar a vertical si el ancho supera el alto únicamente si auto_rotar está activo
+        if auto_rotar and img.width > img.height:
             img = img.rotate(270, expand=True)
 
         # Redimensionar suavemente si excede max_dim
@@ -472,14 +477,15 @@ class VisionService:
         img_anverso_bytes: bytes,
         img_reverso_bytes: bytes,
         mime_type_1: str = "image/jpeg",
-        mime_type_2: str = "image/jpeg"
+        mime_type_2: str = "image/jpeg",
+        auto_rotar: bool = True
     ) -> Dict[str, str]:
         """
         Extrae los 43 campos canónicos a partir de las fotografías del Anverso y Reverso.
         Aprende automáticamente los datos del participante en el caché local.
         """
-        img1_opt, mime1_opt = optimizar_imagen_bytes(img_anverso_bytes)
-        img2_opt, mime2_opt = optimizar_imagen_bytes(img_reverso_bytes)
+        img1_opt, mime1_opt = optimizar_imagen_bytes(img_anverso_bytes, auto_rotar=auto_rotar)
+        img2_opt, mime2_opt = optimizar_imagen_bytes(img_reverso_bytes, auto_rotar=auto_rotar)
         logger.info(
             f"Imágenes de Ficha optimizadas: Anverso={len(img1_opt)/1024:.1f}KB, "
             f"Reverso={len(img2_opt)/1024:.1f}KB"
@@ -553,7 +559,8 @@ class VisionService:
         self,
         img_bytes: bytes,
         mime_type: str = "image/jpeg",
-        tipo_evaluacion_override: Optional[str] = None
+        tipo_evaluacion_override: Optional[str] = None,
+        auto_rotar: bool = True
     ) -> Dict[str, Any]:
         """
         Extrae datos de 1 fotografía correspondiente a Pre-Test o Post-Test.
@@ -561,7 +568,7 @@ class VisionService:
         mediante Jaro-Winkler tokenizado para garantizar coincidencia del 100% en:
         NOMBRE, EDAD, MUNICIPIO y EPS (EAPB).
         """
-        img_opt, mime_opt = optimizar_imagen_bytes(img_bytes)
+        img_opt, mime_opt = optimizar_imagen_bytes(img_bytes, auto_rotar=auto_rotar)
         logger.info(f"Imagen de Test optimizada: {len(img_opt)/1024:.1f}KB ({mime_opt})")
 
         raw_json = None
@@ -628,7 +635,8 @@ class VisionService:
         img_reverso_bytes: Optional[bytes] = None,
         mime_type_1: str = "image/jpeg",
         mime_type_2: Optional[str] = None,
-        tipo_evaluacion_override: Optional[str] = None
+        tipo_evaluacion_override: Optional[str] = None,
+        auto_rotar: bool = True
     ) -> Dict[str, Any]:
         """
         Extrae datos de 1 o 2 fotografías correspondientes a Pre-Test o Post-Test (Anexo 17 Pellízcate con Generación B+).
@@ -638,10 +646,10 @@ class VisionService:
         mediante Jaro-Winkler tokenizado para garantizar coincidencia del 100% en:
         NOMBRE, EDAD y MUNICIPIO.
         """
-        img1_opt, mime1_opt = optimizar_imagen_bytes(img_anverso_bytes)
+        img1_opt, mime1_opt = optimizar_imagen_bytes(img_anverso_bytes, auto_rotar=auto_rotar)
         img2_opt, mime2_opt = None, None
         if img_reverso_bytes and len(img_reverso_bytes) > 0:
-            img2_opt, mime2_opt = optimizar_imagen_bytes(img_reverso_bytes)
+            img2_opt, mime2_opt = optimizar_imagen_bytes(img_reverso_bytes, auto_rotar=auto_rotar)
             logger.info(f"Imágenes Anexo 17 optimizadas: Pág 1={len(img1_opt)/1024:.1f}KB, Pág 2={len(img2_opt)/1024:.1f}KB")
         else:
             logger.info(f"Imagen única Anexo 17 optimizada: {len(img1_opt)/1024:.1f}KB ({mime1_opt})")

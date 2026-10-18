@@ -88,20 +88,27 @@ def normalizar_pregunta_5(val: Any) -> str:
     if not txt:
         return ""
     
-    # Comprobar "TODAS LAS ANTERIORES"
+    # Comprobar "TODAS LAS ANTERIORES" explícito
     if "TODAS" in txt or "ANTERIORES" in txt:
         return "TODAS LAS ANTERIORES"
     
-    # Comprobar "USAR PRESERVATIVO"
-    if "PRESERVATIVO" in txt or "CONDON" in txt or "CONDÓN" in txt:
+    # Contar cuántas opciones individuales están presentes si marcó varias en papel
+    tiene_preservativo = bool("PRESERVATIVO" in txt or "CONDON" in txt or "CONDÓN" in txt)
+    tiene_informacion = bool("INFORMACION" in txt or "INFORMACIÓN" in txt or "SEXUAL" in txt)
+    tiene_agujas = bool("AGUJA" in txt or "CORTOPUNZANTE" in txt or "ELEMENTOS" in txt)
+
+    opciones_marcadas = sum([tiene_preservativo, tiene_informacion, tiene_agujas])
+    if opciones_marcadas >= 2:
+        return "TODAS LAS ANTERIORES"
+
+    # Opción individual única
+    if tiene_preservativo:
         return "USAR PRESERVATIVO"
         
-    # Comprobar "INFORMACION" / "SALUD SEXUAL"
-    if "INFORMACION" in txt or "INFORMACIÓN" in txt or "SEXUAL" in txt:
+    if tiene_informacion:
         return "TENER INFORMACIÓN CLARA SOBRE SALUD SEXUAL"
         
-    # Comprobar "AGUJAS" / "CORTOPUNZANTES"
-    if "AGUJA" in txt or "CORTOPUNZANTE" in txt or "ELEMENTOS" in txt:
+    if tiene_agujas:
         return "EVITAR COMPARTIR AGUJAS O ELEMENTOS CORTOPUNZANTES"
         
     coincidencias = difflib.get_close_matches(txt, OPCIONES_PREGUNTA_5, n=1, cutoff=0.55)
@@ -190,11 +197,15 @@ class PrePostTest(BaseModel):
         def buscar_valor(*posibles_claves: str) -> Any:
             for p in posibles_claves:
                 p_norm = normalizar_texto_base(p)
+                if not p_norm:
+                    continue
                 if p_norm in dict_norm:
                     return dict_norm[p_norm]
-                for k, v in dict_norm.items():
-                    if p_norm in k or k in p_norm:
-                        return v
+                # Coincidencia por subcadena exigiendo al menos 4 caracteres sin coincidencia inversa indiscriminada
+                if len(p_norm) >= 4:
+                    for k, v in dict_norm.items():
+                        if p_norm in k:
+                            return v
             return ""
 
         # 1. Tipo de Evaluación
@@ -224,16 +235,16 @@ class PrePostTest(BaseModel):
         raw_eapb = buscar_valor("EAPB (EPS)", "EAPB", "EPS")
         eapb_final = normalizar_eps(raw_eapb)
 
-        # Preguntas 1 a 9
-        p1 = normalizar_dicotomica(buscar_valor("1. EL USO CORRECTO DEL PRESERVATIVO", "PREGUNTA_1", "1", "1."))
-        p2 = normalizar_dicotomica(buscar_valor("2. LAS ITS PUEDEN TRANSMITIRSE", "PREGUNTA_2", "2", "2."))
-        p3 = normalizar_dicotomica(buscar_valor("3. UNA PERSONA CON VIH SIEMPRE SE VE ENFERMA", "PREGUNTA_3", "3", "3."))
-        p4 = normalizar_dicotomica(buscar_valor("4. LOS ANTICONCEPTIVOS ORALES PREVIENEN", "PREGUNTA_4", "4", "4."))
-        p5 = normalizar_pregunta_5(buscar_valor("5. ¿CUÁL DE LAS SIGUIENTES ACCIONES AYUDA A PREVENIR EL VIH?", "PREGUNTA_5", "5", "5."))
-        p6 = normalizar_dicotomica(buscar_valor("6. LA PREP ES UN MEDICAMENTO", "PREGUNTA_6", "6", "6."))
-        p7 = normalizar_dicotomica(buscar_valor("7. EXISTE VACUNA PARA PREVENIR LA HEPATITIS B", "PREGUNTA_7", "7", "7."))
-        p8 = normalizar_dicotomica(buscar_valor("8. LA SÍFILIS TIENE TRATAMIENTO Y PUEDE PREVENIRSE", "PREGUNTA_8", "8", "8."))
-        p9 = normalizar_dicotomica(buscar_valor("9. RESPETAR LAS DIFERENCIAS Y EVITAR LA DISCRIMINACIÓN", "PREGUNTA_9", "9", "9."))
+        # Preguntas 1 a 9 (sin alias numéricos simples para evitar colisión)
+        p1 = normalizar_dicotomica(buscar_valor("1. EL USO CORRECTO DEL PRESERVATIVO", "PRESERVATIVO DISMINUYE", "PREGUNTA_1", "PREGUNTA 1", "P1"))
+        p2 = normalizar_dicotomica(buscar_valor("2. LAS ITS PUEDEN TRANSMITIRSE", "TRANSMITIRSE DE UNA PERSONA", "PREGUNTA_2", "PREGUNTA 2", "P2"))
+        p3 = normalizar_dicotomica(buscar_valor("3. UNA PERSONA CON VIH SIEMPRE SE VE ENFERMA", "VIH SIEMPRE SE VE ENFERMA", "PREGUNTA_3", "PREGUNTA 3", "P3"))
+        p4 = normalizar_dicotomica(buscar_valor("4. LOS ANTICONCEPTIVOS ORALES PREVIENEN", "ANTICONCEPTIVOS ORALES PREVIENEN", "PREGUNTA_4", "PREGUNTA 4", "P4"))
+        p5 = normalizar_pregunta_5(buscar_valor("5. ¿CUÁL DE LAS SIGUIENTES ACCIONES AYUDA A PREVENIR EL VIH?", "ACCIONES AYUDA A PREVENIR EL VIH", "PREGUNTA_5", "PREGUNTA 5", "P5"))
+        p6 = normalizar_dicotomica(buscar_valor("6. LA PREP ES UN MEDICAMENTO", "PREP ES UN MEDICAMENTO", "PREGUNTA_6", "PREGUNTA 6", "P6"))
+        p7 = normalizar_dicotomica(buscar_valor("7. EXISTE VACUNA PARA PREVENIR LA HEPATITIS B", "VACUNA PARA PREVENIR LA HEPATITIS B", "PREGUNTA_7", "PREGUNTA 7", "P7"))
+        p8 = normalizar_dicotomica(buscar_valor("8. LA SÍFILIS TIENE TRATAMIENTO Y PUEDE PREVENIRSE", "SIFILIS TIENE TRATAMIENTO", "PREGUNTA_8", "PREGUNTA 8", "P8"))
+        p9 = normalizar_dicotomica(buscar_valor("9. RESPETAR LAS DIFERENCIAS Y EVITAR LA DISCRIMINACIÓN", "EVITAR LA DISCRIMINACION", "PREGUNTA_9", "PREGUNTA 9", "P9"))
 
         return {
             "TIPO DE EVALUACIÓN": tipo_final,

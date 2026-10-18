@@ -68,6 +68,15 @@ def run():
     result_part2 = runner_part2.run(suite_part2)
     assert result_part2.wasSuccessful(), "Las pruebas de test_audit_part2_fixes fallaron"
 
+    print("\n--- 7. Ejecutando pruebas de test_audit_part3_fixes.py (Auditoría Profunda Parte 3) ---")
+    import test_audit_part3_fixes
+    for attr in dir(test_audit_part3_fixes):
+        if attr.startswith("test_"):
+            func = getattr(test_audit_part3_fixes, attr)
+            if callable(func):
+                func()
+                print(f"  [PASS] {attr}")
+
     print("\n=========================================")
     print("TODAS LAS PRUEBAS COMPLETADAS CON ÉXITO (VERDE)")
     print("=========================================")

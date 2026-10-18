@@ -245,7 +245,7 @@
     <div id="drawerBackdrop" class="drawer-backdrop"></div>
     <div id="drawerContainer" class="drawer-container">
       <div class="drawer-header">
-        <div class="drawer-header-title">
+        <div class="drawer-header-left drawer-header-title">
           <span style="font-size: 1.3rem;">📦</span>
           <div>
             <h2>Cola de Registros</h2>
@@ -261,20 +261,20 @@
 
       <!-- Barra de Acciones Globales del Drawer -->
       <div class="drawer-actions-bar">
-        <button id="btnSyncAllFromDrawer" class="btn-drawer-sync-all" type="button" disabled>
+        <button id="btnSyncAllFromDrawer" class="btn-sync-drawer btn-drawer-sync-all" type="button" disabled>
           <span>⚡ Sincronizar Cola Completa</span>
         </button>
-        <button id="btnLimpiarCompletadas" class="btn-drawer-clean" type="button">
+        <button id="btnLimpiarCompletadas" class="btn-clean-drawer btn-drawer-clean" type="button">
           🧹 Limpiar
         </button>
       </div>
 
       <!-- Filtros Rápidos de la Cola -->
       <div class="drawer-filters">
-        <button id="filterAll" class="drawer-filter-btn active" type="button" data-filter="all">Todos (0)</button>
-        <button id="filterPending" class="drawer-filter-btn" type="button" data-filter="pending">⏳ Pendientes (0)</button>
-        <button id="filterError" class="drawer-filter-btn" type="button" data-filter="error">❌ Errores (0)</button>
-        <button id="filterSynced" class="drawer-filter-btn" type="button" data-filter="synced">✅ Sincronizados (0)</button>
+        <button id="filterAll" class="filter-tab drawer-filter-btn active" type="button" data-filter="all">Todos (0)</button>
+        <button id="filterPending" class="filter-tab drawer-filter-btn" type="button" data-filter="pending">⏳ Pendientes (0)</button>
+        <button id="filterError" class="filter-tab drawer-filter-btn" type="button" data-filter="error">❌ Errores (0)</button>
+        <button id="filterSynced" class="filter-tab drawer-filter-btn" type="button" data-filter="synced">✅ Sincronizados (0)</button>
       </div>
 
       <!-- Lista Enriquecida de Registros -->

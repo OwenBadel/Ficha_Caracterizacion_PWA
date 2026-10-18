@@ -379,7 +379,8 @@ body {
 .slot-image {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  background: rgba(0, 0, 0, 0.45);
   display: none;
 }
 
@@ -901,13 +902,15 @@ body {
   padding-bottom: 4px;
 }
 
-.drawer-header-left {
+.drawer-header-left,
+.drawer-header-title {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.drawer-header-left h2 {
+.drawer-header-left h2,
+.drawer-header-title h2 {
   font-family: var(--font-heading);
   font-size: 1.15rem;
   font-weight: 700;
@@ -987,7 +990,8 @@ body {
   gap: 8px;
 }
 
-.btn-sync-drawer {
+.btn-sync-drawer,
+.btn-drawer-sync-all {
   flex: 1.4;
   background: linear-gradient(135deg, #10b981, #059669);
   color: #fff;
@@ -1006,18 +1010,21 @@ body {
   transition: all 0.2s ease;
 }
 
-.btn-sync-drawer:hover {
+.btn-sync-drawer:hover,
+.btn-drawer-sync-all:hover {
   filter: brightness(1.1);
   transform: translateY(-1px);
 }
 
-.btn-sync-drawer:disabled {
+.btn-sync-drawer:disabled,
+.btn-drawer-sync-all:disabled {
   opacity: 0.5;
   cursor: not-allowed;
   transform: none;
 }
 
-.btn-clean-drawer {
+.btn-clean-drawer,
+.btn-drawer-clean {
   flex: 1;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -1035,7 +1042,8 @@ body {
   transition: all 0.2s ease;
 }
 
-.btn-clean-drawer:hover {
+.btn-clean-drawer:hover,
+.btn-drawer-clean:hover {
   background: rgba(255, 255, 255, 0.1);
   color: #fff;
 }
@@ -1050,7 +1058,8 @@ body {
   gap: 3px;
 }
 
-.filter-tab {
+.filter-tab,
+.drawer-filter-btn {
   flex: 1;
   background: transparent;
   border: none;
@@ -1064,7 +1073,8 @@ body {
   transition: all 0.2s ease;
 }
 
-.filter-tab.active {
+.filter-tab.active,
+.drawer-filter-btn.active {
   background: rgba(255, 255, 255, 0.14);
   color: #fff;
   font-weight: 700;

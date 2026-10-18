@@ -984,6 +984,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             formData.append('modo', 'batch');
             formData.append('client_item_id', item.id);
+            formData.append('ya_orientada', 'true');
 
             resp = await fetch('/api/process-anexo17', {
               method: 'POST',
@@ -997,6 +998,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             formData.append('modo', 'batch');
             formData.append('client_item_id', item.id);
+            formData.append('ya_orientada', 'true');
 
             resp = await fetch('/api/process-test', {
               method: 'POST',
@@ -1008,6 +1010,7 @@ document.addEventListener('DOMContentLoaded', () => {
             formData.append('foto_reverso', normalizarBlobParaEnvio(item.reversoBlob, 'reverso.jpg'), 'reverso.jpg');
             formData.append('modo', 'batch');
             formData.append('client_item_id', item.id);
+            formData.append('ya_orientada', 'true');
 
             resp = await fetch('/api/process-survey', {
               method: 'POST',
@@ -1171,6 +1174,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         formData.append('modo', 'inmediato');
         formData.append('client_item_id', item.id);
+        formData.append('ya_orientada', 'true');
 
         resp = await fetch('/api/process-anexo17', {
           method: 'POST',
@@ -1184,6 +1188,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         formData.append('modo', 'inmediato');
         formData.append('client_item_id', item.id);
+        formData.append('ya_orientada', 'true');
 
         resp = await fetch('/api/process-test', {
           method: 'POST',
@@ -1195,6 +1200,7 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.append('foto_reverso', normalizarBlobParaEnvio(item.reversoBlob, 'reverso.jpg'), 'reverso.jpg');
         formData.append('modo', 'inmediato');
         formData.append('client_item_id', item.id);
+        formData.append('ya_orientada', 'true');
 
         resp = await fetch('/api/process-survey', {
           method: 'POST',

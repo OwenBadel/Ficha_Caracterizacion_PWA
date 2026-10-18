@@ -115,6 +115,46 @@ def jaro_winkler_similarity(s1: str, s2: str, prefix_weight: float = 0.1) -> flo
     return j_sim + (prefix_len * prefix_weight * (1.0 - j_sim))
 
 
+# Variaciones fonéticas comunes de nombres de pila en campo colombiano
+EQUIVALENCIAS_NOMBRES: Dict[str, str] = {
+    "MAIKOL": "MICHAEL",
+    "MAYCOL": "MICHAEL",
+    "MAICOL": "MICHAEL",
+    "MICHEL": "MICHAEL",
+    "MICOL": "MICHAEL",
+    "YEISON": "JEYSON",
+    "JEISON": "JEYSON",
+    "YEYSON": "JEYSON",
+    "BRAYAN": "BRYAN",
+    "BRAIAN": "BRYAN",
+    "BRIAN": "BRYAN",
+    "JONATAN": "JONATHAN",
+    "YONATAN": "JONATHAN",
+    "DUBAN": "DUVAN",
+    "ESTID": "STEVEN",
+    "ESTIVEN": "STEVEN",
+    "STIVEN": "STEVEN",
+    "DEIBID": "DAVID",
+    "DAYANA": "DAIANA",
+    "YULIETH": "JULIETH",
+    "YULI": "JULIE",
+    "KATERIN": "KATHERINE",
+    "CATERIN": "KATHERINE",
+    "MAYRA": "MAIRA"
+}
+
+
+def similitud_nombre_pila(t1: str, t2: str) -> float:
+    """Calcula similitud de primer nombre integrando equivalencias fonéticas regionales."""
+    if t1 == t2:
+        return 1.0
+    c1 = EQUIVALENCIAS_NOMBRES.get(t1, t1)
+    c2 = EQUIVALENCIAS_NOMBRES.get(t2, t2)
+    if c1 == c2:
+        return 1.0
+    return jaro_winkler_similarity(t1, t2)
+
+
 def token_jaro_winkler_similarity(s1: str, s2: str) -> float:
     """
     Calcula la similitud Jaro-Winkler a nivel de tokens (palabras individuales).
@@ -136,9 +176,44 @@ def token_jaro_winkler_similarity(s1: str, s2: str) -> float:
     if not tokens1 or not tokens2:
         return global_jw
 
-    # Cobertura cruzada simétrica de tokens
-    score_1_to_2 = sum(max(jaro_winkler_similarity(t1, t2) for t2 in tokens2) for t1 in tokens1) / len(tokens1)
-    score_2_to_1 = sum(max(jaro_winkler_similarity(t2, t1) for t1 in tokens1) for t2 in tokens2) / len(tokens2)
+    # Inversión de nombre/apellido (ej. "PEREZ MICHAEL" vs "MICHAEL PEREZ")
+    if len(tokens1) >= 2 and len(tokens2) >= 2:
+        if (
+            similitud_nombre_pila(tokens1[0], tokens2[-1]) >= 0.82
+            and jaro_winkler_similarity(tokens1[-1], tokens2[0]) >= 0.82
+        ):
+            tokens1 = list(reversed(tokens1))
+
+    # 1. Validación estricta de primer nombre (nombre de pila)
+    if len(tokens1) >= 1 and len(tokens2) >= 1:
+        sim_primer = similitud_nombre_pila(tokens1[0], tokens2[0])
+        if sim_primer < 0.82:
+            return 0.0
+
+    # 2. Validación estricta de apellidos (últimos tokens)
+    # El último token de la cadena más corta debe coincidir con al menos un token de apellido (índice >= 1)
+    if len(tokens1) >= 2 and len(tokens2) >= 2:
+        corta = tokens1 if len(tokens1) <= len(tokens2) else tokens2
+        larga = tokens2 if len(tokens1) <= len(tokens2) else tokens1
+        ultimo_corta = corta[-1]
+        max_sim_apellido = max(jaro_winkler_similarity(ultimo_corta, t_larga) for t_larga in larga[1:])
+        if max_sim_apellido < 0.82:
+            return 0.0
+
+    # 3. Validación de apellidos discordantes en nombres de 3 o más palabras:
+    # Evita que 'MARIA JOSE PEREZ' se cruce con 'MARIA JOSE GOMEZ'
+    if len(tokens1) >= 3 and len(tokens2) >= 3:
+        for t1 in tokens1[1:]:
+            max_t1_en_t2 = max(jaro_winkler_similarity(t1, t2) for t2 in tokens2[1:])
+            if max_t1_en_t2 < 0.70:
+                return 0.0
+
+    # Cobertura cruzada simétrica de tokens con soporte de equivalencias
+    def match_token(t_a, t_b):
+        return similitud_nombre_pila(t_a, t_b)
+
+    score_1_to_2 = sum(max(match_token(t1, t2) for t2 in tokens2) for t1 in tokens1) / len(tokens1)
+    score_2_to_1 = sum(max(match_token(t2, t1) for t1 in tokens1) for t2 in tokens2) / len(tokens2)
 
     token_score = (score_1_to_2 + score_2_to_1) / 2.0
     return max(global_jw, token_score)
@@ -154,22 +229,45 @@ class ParticipantCache:
     def __init__(self, cache_file: Optional[Path] = None):
         self.cache_file = cache_file or CACHE_FILE_DEFAULT
         self.participantes: Dict[str, Dict[str, str]] = {}
+        self.indice_por_nombre: Dict[str, List[Dict[str, str]]] = {}
         self._lock = threading.Lock()
         self.cargar()
 
+    def _generar_clave(self, nom: str, doc: str = "", muni: str = "") -> str:
+        """Genera una clave compuesta única para evitar colisiones entre homónimos."""
+        doc_limpio = limpiar_texto(doc)
+        mun_limpio = limpiar_texto(muni)
+        if doc_limpio:
+            return f"{nom}|{doc_limpio}"
+        if mun_limpio:
+            return f"{nom}|{mun_limpio}"
+        return nom
+
+    def _reconstruir_indice_nombres_locked(self):
+        """Reconstruye el índice secundario por nombre para consultas O(1) de homónimos."""
+        self.indice_por_nombre = {}
+        for k, v in self.participantes.items():
+            nom = v.get("nombre") or k.split("|")[0]
+            nom = limpiar_texto(nom)
+            if nom:
+                self.indice_por_nombre.setdefault(nom, []).append(v)
+
     def cargar(self):
-        """Carga la base de participantes desde el archivo JSON local."""
+        """Carga la base de participantes desde el archivo JSON local y reconstruye el índice."""
         with self._lock:
             if self.cache_file.exists():
                 try:
                     with open(self.cache_file, "r", encoding="utf-8") as f:
                         self.participantes = json.load(f)
+                    self._reconstruir_indice_nombres_locked()
                     logger.info(f"Caché de participantes cargado: {len(self.participantes)} registros.")
                 except Exception as e:
                     logger.warning(f"Error cargando caché de participantes: {e}")
                     self.participantes = {}
+                    self.indice_por_nombre = {}
             else:
                 self.participantes = {}
+                self.indice_por_nombre = {}
 
     def guardar(self):
         """Guarda la base de participantes a disco de manera atómica con archivo temporal."""
@@ -186,6 +284,7 @@ class ParticipantCache:
         """Vacía por completo la base de participantes en memoria y en disco."""
         with self._lock:
             self.participantes = {}
+            self.indice_por_nombre = {}
         self.guardar()
         logger.info("Memoria viva de participantes reiniciada a 0 registros.")
 
@@ -198,7 +297,7 @@ class ParticipantCache:
         documento: str = "",
         guardar_inmediato: bool = True
     ):
-        """Agrega o actualiza un participante en la base."""
+        """Agrega o actualiza un participante en la base usando clave compuesta."""
         nom = limpiar_texto(nombre)
         if not nom or len(nom) < 4:
             return
@@ -209,23 +308,35 @@ class ParticipantCache:
         eps_norm = limpiar_texto(eapb)
         if eps_norm:
             eps_norm = normalizar_eps(eps_norm)
+        doc_norm = limpiar_texto(documento)
 
         item = {
             "nombre": nom,
             "edad": limpiar_texto(edad),
             "municipio": muni,
             "eapb": eps_norm,
-            "documento": limpiar_texto(documento)
+            "documento": doc_norm
         }
 
+        clave = self._generar_clave(nom, doc_norm, muni)
+
         with self._lock:
-            self.participantes[nom] = item
+            self.participantes[clave] = item
+            lista = self.indice_por_nombre.setdefault(nom, [])
+            idx_existente = next(
+                (i for i, x in enumerate(lista) if (doc_norm and x.get("documento") == doc_norm) or (not doc_norm and x.get("municipio") == muni)),
+                None
+            )
+            if idx_existente is not None:
+                lista[idx_existente] = item
+            else:
+                lista.append(item)
 
         if guardar_inmediato:
             self.guardar()
 
     def aprender_lote(self, registros: List[Dict[str, str]]) -> int:
-        """Incorpora un lote de registros maestros y persiste a disco."""
+        """Incorpora un lote de registros maestros con claves compuestas y persiste a disco."""
         insertados = 0
         with self._lock:
             for r in registros:
@@ -238,14 +349,28 @@ class ParticipantCache:
                 eps_norm = limpiar_texto(r.get("eapb"))
                 if eps_norm:
                     eps_norm = normalizar_eps(eps_norm)
+                doc_norm = limpiar_texto(r.get("documento"))
 
-                self.participantes[nom] = {
+                item = {
                     "nombre": nom,
                     "edad": limpiar_texto(r.get("edad")),
                     "municipio": muni,
                     "eapb": eps_norm,
-                    "documento": limpiar_texto(r.get("documento"))
+                    "documento": doc_norm
                 }
+                clave = self._generar_clave(nom, doc_norm, muni)
+                self.participantes[clave] = item
+
+                lista = self.indice_por_nombre.setdefault(nom, [])
+                idx_existente = next(
+                    (i for i, x in enumerate(lista) if (doc_norm and x.get("documento") == doc_norm) or (not doc_norm and x.get("municipio") == muni)),
+                    None
+                )
+                if idx_existente is not None:
+                    lista[idx_existente] = item
+                else:
+                    lista.append(item)
+
                 insertados += 1
 
         self.guardar()
@@ -254,38 +379,61 @@ class ParticipantCache:
 
     def buscar_coincidencia(self, nombre_raw: str, municipio_hint: str = "") -> Optional[Dict[str, str]]:
         """
-        Busca un participante coincidente mediante Jaro-Winkler tokenizado y bonificación territorial.
-        Retorna el registro canónico si la similitud supera el umbral (0.78, o 0.72 si coincide municipio).
+        Busca un participante coincidente mediante coincidencia exacta (con desempate por municipio)
+        o Jaro-Winkler tokenizado con bonificación territorial reducida a 0.03 (desactivada en Santa Catalina).
         """
         nom_busqueda = limpiar_texto(nombre_raw)
         if not nom_busqueda or len(nom_busqueda) < 4:
             return None
 
+        mun_hint_limpio = limpiar_texto(municipio_hint)
+        if mun_hint_limpio:
+            try:
+                mun_norm = normalizar_territorio(mun_hint_limpio)
+                if mun_norm:
+                    mun_hint_limpio = mun_norm
+            except Exception:
+                pass
+
         with self._lock:
-            # 1. Coincidencia exacta directa (O(1))
-            if nom_busqueda in self.participantes:
-                res = dict(self.participantes[nom_busqueda])
-                res["score"] = 1.0
-                return res
-            items_copia = list(self.participantes.items())
+            # 1. Coincidencia exacta directa (O(1)) resolviendo homónimos por municipio
+            if nom_busqueda in self.indice_por_nombre:
+                candidatos = self.indice_por_nombre[nom_busqueda]
+                if len(candidatos) == 1:
+                    res = dict(candidatos[0])
+                    res["score"] = 1.0
+                    return res
+                elif len(candidatos) > 1:
+                    if mun_hint_limpio:
+                        for c in candidatos:
+                            if c.get("municipio") == mun_hint_limpio:
+                                res = dict(c)
+                                res["score"] = 1.0
+                                return res
+                    # Si no coincide o no hay hint, devolver el primer candidato
+                    res = dict(candidatos[0])
+                    res["score"] = 1.0
+                    return res
+
+            items_copia = list(self.participantes.values())
 
         # 2. Coincidencia difusa con Jaro-Winkler Tokenizado
         mejor_match = None
         mejor_score = 0.0
-        mun_hint_limpio = limpiar_texto(municipio_hint)
 
-        for clave_nom, data in items_copia:
-            score = token_jaro_winkler_similarity(nom_busqueda, clave_nom)
+        for data in items_copia:
+            score = token_jaro_winkler_similarity(nom_busqueda, data.get("nombre", ""))
 
-            # Bonificación territorial si el municipio concuerda
+            # Bonificación territorial reducida a 0.03 y desactivada en SANTA CATALINA
             if mun_hint_limpio and data.get("municipio") == mun_hint_limpio:
-                score += 0.08
+                if mun_hint_limpio != "SANTA CATALINA":
+                    score += 0.03
 
             if score > mejor_score:
                 mejor_score = score
                 mejor_match = data
 
-        # Umbral canónico: 0.78 (equivalente a 0.70 base + 0.08 si el municipio concuerda)
+        # Umbral canónico: 0.78
         umbral = 0.78
         if mejor_score >= umbral and mejor_match:
             logger.info(
