@@ -194,13 +194,13 @@ class GoogleSheetsService:
                             except Exception as e_dedup:
                                 logger.warning(f"No se pudo consultar duplicados por documento en gspread: {e_dedup}")
 
-                        # Deduplicar por nombre completo si es válido
-                        if nombre_candidato and nombre_candidato not in ("SIN NOMBRE", "NONE", "NULL", ""):
+                        # Deduplicar por nombre completo ÚNICAMENTE si no tiene documento de identidad válido (permite homónimos reales)
+                        if (not doc_candidato or doc_candidato in ("SIN DOCUMENTO", "NONE", "NULL", "0", "")) and nombre_candidato and nombre_candidato not in ("SIN NOMBRE", "NONE", "NULL", ""):
                             try:
                                 col_nombres = [str(x or "").strip().upper() for x in worksheet.col_values(col_nombre_idx)[1:]]
                                 if nombre_candidato in col_nombres:
                                     self._nombres_registrados.add((target_sheet_id, tab_name, nombre_candidato))
-                                    logger.info(f"Deduplicación gspread activa (ficha): Nombre '{nombre_candidato}' ya existe en {tab_name}.")
+                                    logger.info(f"Deduplicación gspread activa (ficha sin documento): Nombre '{nombre_candidato}' ya existe en {tab_name}.")
                                     return {
                                         "success": True,
                                         "method": "google_sheets_api",
@@ -278,11 +278,11 @@ class GoogleSheetsService:
                                             "message": f"Ficha con documento '{doc_candidato}' ({nombre_candidato}) ya existe en {tab_name}. Deduplicado exitosamente.",
                                             "updated_cells": 0
                                         }
-                                if nombre_candidato and nombre_candidato not in ("SIN NOMBRE", "NONE", "NULL", ""):
+                                if (not doc_candidato or doc_candidato in ("SIN DOCUMENTO", "NONE", "NULL", "0", "")) and nombre_candidato and nombre_candidato not in ("SIN NOMBRE", "NONE", "NULL", ""):
                                     col_noms = [str(r[col_nombre_idx - 1]).strip().upper() for r in rows_csv[1:] if len(r) >= col_nombre_idx]
                                     if nombre_candidato in col_noms:
                                         self._nombres_registrados.add((target_sheet_id, tab_name, nombre_candidato))
-                                        logger.info(f"Deduplicación remota GViz activa (ficha): Nombre '{nombre_candidato}' ya existe en {tab_name}.")
+                                        logger.info(f"Deduplicación remota GViz activa (ficha sin documento): Nombre '{nombre_candidato}' ya existe en {tab_name}.")
                                         return {
                                             "success": True,
                                             "method": "gviz_csv",
@@ -339,10 +339,12 @@ class GoogleSheetsService:
                             msg = "Registro insertado exitosamente en Google Sheets."
                             try:
                                 res_json = resp.json()
+                                if str(res_json.get("status", "")).lower() == "error":
+                                    raise RuntimeError(f"Apps Script reportó error: {res_json.get('message', 'Error desconocido')}")
                                 dedup = bool(res_json.get("deduplicated", False))
                                 if dedup:
                                     msg = res_json.get("message", "Registro ya existente en Google Sheets. Deduplicado exitosamente.")
-                            except Exception:
+                            except ValueError:
                                 pass
 
                             if doc_candidato and doc_candidato not in ("SIN DOCUMENTO", "NONE", "NULL", "0", ""):

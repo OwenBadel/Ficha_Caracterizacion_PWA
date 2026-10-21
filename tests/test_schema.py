@@ -94,20 +94,20 @@ def test_encuestadores_autorizados():
     casos = [
         ("pamela", "PAMELA VERGARA"),
         ("PAMELA VERGARA", "PAMELA VERGARA"),
-        ("vergara", "PAMELA VERGARA"),
+        ("pamela vergara", "PAMELA VERGARA"),
         ("karen", "KAREN TORRES"),
         ("karen torres", "KAREN TORRES"),
-        ("TORRES", "KAREN TORRES"),
+        ("KAREN TORRES", "KAREN TORRES"),
         ("wendy", "WENDY TAPIAS"),
         ("WENDY TAPIAS", "WENDY TAPIAS"),
-        ("tapias", "WENDY TAPIAS"),
+        ("wendy tapias", "WENDY TAPIAS"),
         ("gisel", "GISEL MORENO"),
         ("giselle", "GISEL MORENO"),
-        ("moreno", "GISEL MORENO"),
+        ("gisel moreno", "GISEL MORENO"),
         ("GISEL MORENO", "GISEL MORENO"),
         ("mauricio", "MAURICIO FORTICH"),
         ("mauricio fortich", "MAURICIO FORTICH"),
-        ("fortich", "MAURICIO FORTICH")
+        ("MAURICIO FORTICH", "MAURICIO FORTICH")
     ]
 
     for entrada, esperado in casos:

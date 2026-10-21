@@ -186,15 +186,16 @@ def normalizar_quien_diligencia(val: Optional[Any]) -> str:
         if s == persona:
             return persona
     s_clean = re.sub(r"[^A-Z\s]", "", s)
-    if "PAMELA" in s_clean or "VERGARA" in s_clean:
+    # Exigir coincidencia de nombre o nombre+apellido específico, evitando apellidos comunes aislados
+    if ("PAMELA" in s_clean and "VERGARA" in s_clean) or s_clean == "PAMELA":
         return "PAMELA VERGARA"
-    if "KAREN" in s_clean or "TORRES" in s_clean:
+    if ("KAREN" in s_clean and "TORRES" in s_clean) or s_clean == "KAREN":
         return "KAREN TORRES"
-    if "WENDY" in s_clean or "TAPIAS" in s_clean:
+    if ("WENDY" in s_clean and "TAPIAS" in s_clean) or s_clean == "WENDY":
         return "WENDY TAPIAS"
-    if "MAURICIO" in s_clean or "FORTICH" in s_clean:
+    if ("MAURICIO" in s_clean and "FORTICH" in s_clean) or s_clean == "MAURICIO":
         return "MAURICIO FORTICH"
-    if "GISEL" in s_clean or "GISELLE" in s_clean or "MORENO" in s_clean or "GISELE" in s_clean:
+    if (("GISEL" in s_clean or "GISELLE" in s_clean or "GISELE" in s_clean) and "MORENO" in s_clean) or s_clean in ["GISEL", "GISELLE"]:
         return "GISEL MORENO"
     return s
 
@@ -493,13 +494,15 @@ def normalizar_tiempo_horas(val: Optional[Any]) -> str:
         return ""
     if "HORA" in s or "MINUTO" in s or "DIA" in s or "SEMANA" in s:
         return s
+    if s in ["NINGUNO", "NINGUNA", "NO APLICA", "NO", "0", "0 HORAS", "POCAS VECES", "NADA"]:
+        return s if s != "0" else "0 HORAS"
     m = re.match(r"^(\d+(?:[\.,]\d+)?)\s*H?$", s)
     if m:
         num = m.group(1)
         return f"{num} HORA" if num == "1" else f"{num} HORAS"
     if re.search(r"\d", s):
         return f"{s} HORAS"
-    return f"{s} HORAS"
+    return s
 
 
 def normalizar_fecha_periodo(val: Optional[Any]) -> str:

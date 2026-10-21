@@ -111,8 +111,8 @@ function doPost(e) {
           }
         }
 
-        // Deduplicación por Nombre Completo (si no tenía documento o era homónimo exacto)
-        if (nomCandidato && nomCandidato !== "SINNOMBRE") {
+        // Deduplicación por Nombre Completo (ÚNICAMENTE si no tiene documento de identidad válido, permitiendo homónimos reales)
+        if ((!docCandidato || docCandidato === "SINDOCUMENTO" || docCandidato === "0") && nomCandidato && nomCandidato !== "SINNOMBRE") {
           const rangoNoms = sheet.getRange(2, colNomIdx, lastRow - 1, 1).getValues();
           for (let i = 0; i < rangoNoms.length; i++) {
             const nomExistente = normalizarTextoParaComparar(rangoNoms[i][0]);

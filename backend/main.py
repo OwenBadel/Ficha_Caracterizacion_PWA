@@ -54,25 +54,31 @@ PENDIENTES_FILE = PROJECT_DIR / "backend" / "pendientes_sincronizacion.json"
 IDEMPOTENCIA_FILE = PROJECT_DIR / "backend" / "idempotencia_cache.json"
 
 
+_PENDIENTES_LOCK = threading.Lock()
+
+
 def guardar_pendiente_local(tipo: str, fila: list, error: str):
-    """Guarda una fila en contingencia local si Google Sheets tiene timeout."""
-    try:
-        data = []
-        if PENDIENTES_FILE.exists():
-            try:
-                data = json.loads(PENDIENTES_FILE.read_text(encoding="utf-8"))
-            except Exception:
-                data = []
-        data.append({
-            "timestamp": datetime.now().isoformat(),
-            "tipo": tipo,
-            "fila": fila,
-            "error": error
-        })
-        PENDIENTES_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        logger.info(f"Registro ({tipo}) salvaguardado en contingencia local: {PENDIENTES_FILE}")
-    except Exception as e:
-        logger.error(f"Error guardando pendiente local: {e}")
+    """Guarda una fila en contingencia local de forma thread-safe y atómica si Google Sheets falla."""
+    with _PENDIENTES_LOCK:
+        try:
+            data = []
+            if PENDIENTES_FILE.exists():
+                try:
+                    data = json.loads(PENDIENTES_FILE.read_text(encoding="utf-8"))
+                except Exception:
+                    data = []
+            data.append({
+                "timestamp": datetime.now().isoformat(),
+                "tipo": tipo,
+                "fila": fila,
+                "error": error
+            })
+            tmp_file = PENDIENTES_FILE.with_suffix(".tmp")
+            tmp_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            tmp_file.replace(PENDIENTES_FILE)
+            logger.info(f"Registro ({tipo}) salvaguardado en contingencia local: {PENDIENTES_FILE}")
+        except Exception as e:
+            logger.error(f"Error guardando pendiente local: {e}")
 
 
 # =========================================================================
@@ -90,6 +96,15 @@ ACTIVE_RESULTS: Dict[str, Dict[str, Any]] = {}
 _CACHE_LOCK = threading.Lock()
 
 
+def obtener_idempotencia(clave: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Consulta segura del historial de idempotencia en memoria bajo lock."""
+    if not clave:
+        return None
+    with _CACHE_LOCK:
+        val = IDEMPOTENCY_CACHE.get(clave)
+        return dict(val) if val else None
+
+
 def cargar_idempotencia_disco():
     """Carga el historial de idempotencia persistido en disco al iniciar el servidor."""
     global IDEMPOTENCY_CACHE
@@ -105,11 +120,17 @@ def cargar_idempotencia_disco():
 
 
 def guardar_idempotencia_disco():
-    """Persiste en disco el historial de idempotencia para sobrevivir a reinicios."""
+    """Persiste en disco el historial de idempotencia y recorta en RAM a IDEMPOTENCY_CACHE_MAX."""
+    global IDEMPOTENCY_CACHE
     try:
         with _CACHE_LOCK:
-            copia = dict(list(IDEMPOTENCY_CACHE.items())[-IDEMPOTENCY_CACHE_MAX:])
-        IDEMPOTENCIA_FILE.write_text(json.dumps(copia, ensure_ascii=False, indent=2), encoding="utf-8")
+            if len(IDEMPOTENCY_CACHE) > IDEMPOTENCY_CACHE_MAX:
+                claves_a_mantener = list(IDEMPOTENCY_CACHE.keys())[-IDEMPOTENCY_CACHE_MAX:]
+                IDEMPOTENCY_CACHE = {k: IDEMPOTENCY_CACHE[k] for k in claves_a_mantener}
+            copia = dict(IDEMPOTENCY_CACHE)
+        tmp_file = IDEMPOTENCIA_FILE.with_suffix(".tmp")
+        tmp_file.write_text(json.dumps(copia, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp_file.replace(IDEMPOTENCIA_FILE)
     except Exception as e:
         logger.warning(f"Error guardando idempotencia en disco: {e}")
 
@@ -141,12 +162,13 @@ sheets_service = GoogleSheetsService()
 
 async def sincronizar_pendientes_sheets() -> Dict[str, Any]:
     """Vacía registros de la cola local de contingencia hacia Google Sheets bajo SHEETS_WRITE_SEMAPHORE."""
-    if not PENDIENTES_FILE.exists():
-        return {"success": True, "total_sincronizados": 0, "total_restantes": 0, "message": "No hay registros en cola."}
-    try:
-        data = json.loads(PENDIENTES_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return {"success": True, "total_sincronizados": 0, "total_restantes": 0, "message": "Cola vacía o inválida."}
+    with _PENDIENTES_LOCK:
+        if not PENDIENTES_FILE.exists():
+            return {"success": True, "total_sincronizados": 0, "total_restantes": 0, "message": "No hay registros en cola."}
+        try:
+            data = json.loads(PENDIENTES_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return {"success": True, "total_sincronizados": 0, "total_restantes": 0, "message": "Cola vacía o inválida."}
 
     if not data:
         return {"success": True, "total_sincronizados": 0, "total_restantes": 0, "message": "No hay registros en cola."}
@@ -162,7 +184,7 @@ async def sincronizar_pendientes_sheets() -> Dict[str, Any]:
                 if "anexo17" in str(tipo).lower():
                     vals = fila[1:] if len(fila) == 16 else fila
                     await run_in_threadpool(sheets_service.insertar_anexo17, valores_ordenados=vals, tipo_evaluacion=tipo)
-                elif tipo in ["PRE-TEST", "POST-TEST", "pre_test", "post_test", "test_pre-test", "test_post-test"]:
+                elif "test" in str(tipo).lower():
                     vals = fila[1:] if len(fila) == 15 else fila
                     await run_in_threadpool(sheets_service.insertar_test, valores_ordenados=vals, tipo_evaluacion=tipo)
                 else:
@@ -173,10 +195,22 @@ async def sincronizar_pendientes_sheets() -> Dict[str, Any]:
                 item["error"] = str(e)
                 fallidos.append(item)
 
-        try:
-            PENDIENTES_FILE.write_text(json.dumps(fallidos, ensure_ascii=False, indent=2), encoding="utf-8")
-        except Exception as e:
-            logger.error(f"Error actualizando PENDIENTES_FILE tras sincronización diferida: {e}")
+        with _PENDIENTES_LOCK:
+            try:
+                # Preservar ítems nuevos que hayan ingresado mientras se realizaba la subida
+                actuales = []
+                if PENDIENTES_FILE.exists():
+                    try:
+                        actuales = json.loads(PENDIENTES_FILE.read_text(encoding="utf-8"))
+                    except Exception:
+                        actuales = []
+                nuevos = [x for x in actuales if x not in data]
+                pendientes_finales = fallidos + nuevos
+                tmp_file = PENDIENTES_FILE.with_suffix(".tmp")
+                tmp_file.write_text(json.dumps(pendientes_finales, ensure_ascii=False, indent=2), encoding="utf-8")
+                tmp_file.replace(PENDIENTES_FILE)
+            except Exception as e:
+                logger.error(f"Error actualizando PENDIENTES_FILE tras sincronización diferida: {e}")
 
     if exitosos:
         logger.info(f"[Worker Contingencia] {len(exitosos)} registros sincronizados con éxito. Restantes en cola: {len(fallidos)}.")
@@ -438,7 +472,8 @@ async def _tarea_subida_sheets(
 
     except Exception as e:
         logger.error(f"Error en subida diferida a Google Sheets ({tipo}): {e}")
-        guardar_pendiente_local(tipo, fila, str(e))
+        tipo_contingencia = f"{tipo}_{tipo_evaluacion.lower()}" if tipo_evaluacion else tipo
+        guardar_pendiente_local(tipo_contingencia, fila, str(e))
 
 
 @app.post("/api/process-survey")
@@ -454,13 +489,13 @@ async def process_survey(
     Recibe las dos fotos obligatorias de la ficha, realiza extracción OCR multimodal con IA
     y registra la fila resultante en Google Sheets con control de concurrencia y deduplicación.
     """
-    # 0. Verificación inmediata de Idempotencia previa en memoria / disco
-    if client_item_id and client_item_id in IDEMPOTENCY_CACHE:
-        cached = dict(IDEMPOTENCY_CACHE[client_item_id])
-        cached["deduplicated"] = True
-        cached["message"] = f"Ficha ya procesada previamente ({cached.get('participante', '')}). Deduplicado por idempotencia de dispositivo."
+    # 0. Verificación inmediata de Idempotencia previa en memoria / disco bajo lock
+    cached_client = obtener_idempotencia(client_item_id)
+    if cached_client:
+        cached_client["deduplicated"] = True
+        cached_client["message"] = f"Ficha ya procesada previamente ({cached_client.get('participante', '')}). Deduplicado por idempotencia de dispositivo."
         logger.info(f"Idempotencia detectada para ficha client_item_id={client_item_id}. Retornando caché.")
-        return cached
+        return cached_client
 
     mime1 = resolver_mime_imagen(foto_anverso, "image/jpeg")
     mime2 = resolver_mime_imagen(foto_reverso, "image/jpeg")
@@ -479,16 +514,16 @@ async def process_survey(
         hash_img = hashlib.sha256(anverso_bytes + reverso_bytes).hexdigest()
         hash_key = f"hash_ficha_{hash_img}"
 
-        if hash_key in IDEMPOTENCY_CACHE:
-            cached = dict(IDEMPOTENCY_CACHE[hash_key])
-            cached["deduplicated"] = True
-            cached["message"] = f"Ficha ya procesada previamente ({cached.get('participante', '')}). Deduplicado por hash de imagen."
+        cached_hash = obtener_idempotencia(hash_key)
+        if cached_hash:
+            cached_hash["deduplicated"] = True
+            cached_hash["message"] = f"Ficha ya procesada previamente ({cached_hash.get('participante', '')}). Deduplicado por hash de imagen."
             logger.info(f"Idempotencia detectada por hash_key={hash_key}. Retornando resultado sin re-procesar.")
             if client_item_id:
                 with _CACHE_LOCK:
-                    IDEMPOTENCY_CACHE[client_item_id] = cached
+                    IDEMPOTENCY_CACHE[client_item_id] = cached_hash
                 guardar_idempotencia_disco()
-            return cached
+            return cached_hash
 
         primary_key = client_item_id or hash_key
 
@@ -497,7 +532,7 @@ async def process_survey(
             logger.info(f"Petición concurrente detectada para '{primary_key}'. Esperando a la tarea en vuelo...")
             event = ACTIVE_TASKS[primary_key]
             await event.wait()
-            cached = ACTIVE_RESULTS.get(primary_key) or IDEMPOTENCY_CACHE.get(primary_key)
+            cached = ACTIVE_RESULTS.get(primary_key) or obtener_idempotencia(primary_key)
             if cached:
                 cached_copy = dict(cached)
                 cached_copy["deduplicated"] = True
@@ -540,11 +575,20 @@ async def process_survey(
 
             # 5. Desacoplamiento de Google Sheets
             sheets_result = None
-            if modo == "sincrono":
-                async with SHEETS_WRITE_SEMAPHORE:
-                    sheets_result = await run_in_threadpool(sheets_service.insertar_encuesta, fila_ordenada)
+            if modo in ("sincrono", "inmediato"):
+                try:
+                    async with SHEETS_WRITE_SEMAPHORE:
+                        sheets_result = await run_in_threadpool(sheets_service.insertar_encuesta, fila_ordenada)
+                except Exception as e:
+                    logger.warning(f"Error en inserción directa de Ficha en Sheets (modo={modo}): {e}. Salvaguardando en contingencia local...")
+                    guardar_pendiente_local("ficha", fila_ordenada, str(e))
+                    sheets_result = {
+                        "success": False,
+                        "status": "contingencia_local",
+                        "error": str(e),
+                        "message": "Ficha salvaguardada en contingencia local por lentitud o error de Google Sheets. Se sincronizará automáticamente."
+                    }
             else:
-                guardar_pendiente_local("ficha_en_cola", fila_ordenada, "Encolado para subida asíncrona")
                 background_tasks.add_task(
                     _tarea_subida_sheets,
                     tipo="ficha",
@@ -615,13 +659,13 @@ async def process_test(
     realiza extracción OCR multimodal con IA (con reconciliación de participantes)
     y registra la fila resultante en Google Sheets con control de concurrencia y deduplicación atómica.
     """
-    # 0. Verificación inmediata de Idempotencia previa en memoria / disco
-    if client_item_id and client_item_id in IDEMPOTENCY_CACHE:
-        cached = dict(IDEMPOTENCY_CACHE[client_item_id])
-        cached["deduplicated"] = True
-        cached["message"] = f"Test ya procesado previamente ({cached.get('participante', '')}). Deduplicado por idempotencia de dispositivo."
+    # 0. Verificación inmediata de Idempotencia previa en memoria / disco bajo lock
+    cached_client = obtener_idempotencia(client_item_id)
+    if cached_client:
+        cached_client["deduplicated"] = True
+        cached_client["message"] = f"Test ya procesado previamente ({cached_client.get('participante', '')}). Deduplicado por idempotencia de dispositivo."
         logger.info(f"Idempotencia detectada para test client_item_id={client_item_id}. Retornando caché.")
-        return cached
+        return cached_client
 
     mime = resolver_mime_imagen(foto_test, "image/jpeg")
 
@@ -637,16 +681,16 @@ async def process_test(
         hash_img = hashlib.sha256(test_bytes).hexdigest()
         hash_key = f"hash_test_{hash_img}"
 
-        if hash_key in IDEMPOTENCY_CACHE:
-            cached = dict(IDEMPOTENCY_CACHE[hash_key])
-            cached["deduplicated"] = True
-            cached["message"] = f"Test ya procesado previamente ({cached.get('participante', '')}). Deduplicado por hash de imagen."
+        cached_hash = obtener_idempotencia(hash_key)
+        if cached_hash:
+            cached_hash["deduplicated"] = True
+            cached_hash["message"] = f"Test ya procesado previamente ({cached_hash.get('participante', '')}). Deduplicado por hash de imagen."
             logger.info(f"Idempotencia detectada por hash_key={hash_key}. Retornando resultado sin re-procesar.")
             if client_item_id:
                 with _CACHE_LOCK:
-                    IDEMPOTENCY_CACHE[client_item_id] = cached
+                    IDEMPOTENCY_CACHE[client_item_id] = cached_hash
                 guardar_idempotencia_disco()
-            return cached
+            return cached_hash
 
         primary_key = client_item_id or hash_key
 
@@ -655,7 +699,7 @@ async def process_test(
             logger.info(f"Petición concurrente detectada para test '{primary_key}'. Esperando a la tarea en vuelo...")
             event = ACTIVE_TASKS[primary_key]
             await event.wait()
-            cached = ACTIVE_RESULTS.get(primary_key) or IDEMPOTENCY_CACHE.get(primary_key)
+            cached = ACTIVE_RESULTS.get(primary_key) or obtener_idempotencia(primary_key)
             if cached:
                 cached_copy = dict(cached)
                 cached_copy["deduplicated"] = True
@@ -707,15 +751,25 @@ async def process_test(
 
             # 5. Desacoplamiento de Google Sheets
             sheets_result = None
-            if modo == "sincrono":
-                async with SHEETS_WRITE_SEMAPHORE:
-                    sheets_result = await run_in_threadpool(
-                        sheets_service.insertar_test,
-                        valores_ordenados=fila_ordenada,
-                        tipo_evaluacion=test_obj.tipo_evaluacion
-                    )
+            if modo in ("sincrono", "inmediato"):
+                try:
+                    async with SHEETS_WRITE_SEMAPHORE:
+                        sheets_result = await run_in_threadpool(
+                            sheets_service.insertar_test,
+                            valores_ordenados=fila_ordenada,
+                            tipo_evaluacion=test_obj.tipo_evaluacion
+                        )
+                except Exception as e:
+                    logger.warning(f"Error en inserción directa de Test en Sheets (modo={modo}): {e}. Salvaguardando en contingencia local...")
+                    tipo_contingencia = f"test_{test_obj.tipo_evaluacion.lower()}"
+                    guardar_pendiente_local(tipo_contingencia, fila_ordenada, str(e))
+                    sheets_result = {
+                        "success": False,
+                        "status": "contingencia_local",
+                        "error": str(e),
+                        "message": f"{test_obj.tipo_evaluacion} salvaguardado en contingencia local por fallo de Google Sheets. Se sincronizará automáticamente."
+                    }
             else:
-                guardar_pendiente_local(f"test_{test_obj.tipo_evaluacion.lower()}", fila_ordenada, "Encolado para subida asíncrona")
                 background_tasks.add_task(
                     _tarea_subida_sheets,
                     tipo="test",
@@ -789,13 +843,13 @@ async def process_anexo17(
     realiza extracción OCR multimodal con IA (con reconciliación de participantes Jaro-Winkler)
     y registra la fila resultante en Google Sheets con control de concurrencia y deduplicación atómica.
     """
-    # 0. Verificación de Idempotencia en memoria (por client_item_id de dispositivo)
-    if client_item_id and client_item_id in IDEMPOTENCY_CACHE:
-        cached = dict(IDEMPOTENCY_CACHE[client_item_id])
-        cached["deduplicated"] = True
-        cached["message"] = f"Registro ya procesado previamente ({cached.get('participante', '')}). Deduplicado por idempotencia de dispositivo."
+    # 0. Verificación de Idempotencia en memoria bajo lock (por client_item_id de dispositivo)
+    cached_client = obtener_idempotencia(client_item_id)
+    if cached_client:
+        cached_client["deduplicated"] = True
+        cached_client["message"] = f"Registro ya procesado previamente ({cached_client.get('participante', '')}). Deduplicado por idempotencia de dispositivo."
         logger.info(f"Idempotencia detectada para client_item_id={client_item_id}. Retornando caché sin duplicar.")
-        return cached
+        return cached_client
 
     f1 = foto_anverso or foto_test
     if not f1:
@@ -827,16 +881,16 @@ async def process_anexo17(
         hash_img = hashlib.sha256(bytes1 + (bytes2 or b"")).hexdigest()
         hash_key = f"hash_anexo17_{hash_img}"
 
-        if hash_key in IDEMPOTENCY_CACHE:
-            cached = dict(IDEMPOTENCY_CACHE[hash_key])
-            cached["deduplicated"] = True
-            cached["message"] = f"Anexo 17 ya procesado previamente ({cached.get('participante', '')}). Deduplicado por hash de imagen."
+        cached_hash = obtener_idempotencia(hash_key)
+        if cached_hash:
+            cached_hash["deduplicated"] = True
+            cached_hash["message"] = f"Anexo 17 ya procesado previamente ({cached_hash.get('participante', '')}). Deduplicado por hash de imagen."
             logger.info(f"Idempotencia detectada por hash_key={hash_key}. Retornando resultado sin re-procesar.")
             if client_item_id:
                 with _CACHE_LOCK:
-                    IDEMPOTENCY_CACHE[client_item_id] = cached
+                    IDEMPOTENCY_CACHE[client_item_id] = cached_hash
                 guardar_idempotencia_disco()
-            return cached
+            return cached_hash
 
         primary_key = client_item_id or hash_key
 
@@ -845,7 +899,7 @@ async def process_anexo17(
             logger.info(f"Petición concurrente detectada para anexo 17 '{primary_key}'. Esperando a la tarea en vuelo...")
             event = ACTIVE_TASKS[primary_key]
             await event.wait()
-            cached = ACTIVE_RESULTS.get(primary_key) or IDEMPOTENCY_CACHE.get(primary_key)
+            cached = ACTIVE_RESULTS.get(primary_key) or obtener_idempotencia(primary_key)
             if cached:
                 cached_copy = dict(cached)
                 cached_copy["deduplicated"] = True
@@ -905,15 +959,25 @@ async def process_anexo17(
 
             # 5. Desacoplamiento de Google Sheets
             sheets_result = None
-            if modo == "sincrono":
-                async with SHEETS_WRITE_SEMAPHORE:
-                    sheets_result = await run_in_threadpool(
-                        sheets_service.insertar_anexo17,
-                        valores_ordenados=fila_ordenada,
-                        tipo_evaluacion=test_obj.tipo_evaluacion
-                    )
+            if modo in ("sincrono", "inmediato"):
+                try:
+                    async with SHEETS_WRITE_SEMAPHORE:
+                        sheets_result = await run_in_threadpool(
+                            sheets_service.insertar_anexo17,
+                            valores_ordenados=fila_ordenada,
+                            tipo_evaluacion=test_obj.tipo_evaluacion
+                        )
+                except Exception as e:
+                    logger.warning(f"Error en inserción directa de Anexo 17 en Sheets (modo={modo}): {e}. Salvaguardando en contingencia local...")
+                    tipo_contingencia = f"anexo17_{test_obj.tipo_evaluacion.lower()}"
+                    guardar_pendiente_local(tipo_contingencia, fila_ordenada, str(e))
+                    sheets_result = {
+                        "success": False,
+                        "status": "contingencia_local",
+                        "error": str(e),
+                        "message": f"Anexo 17 ({test_obj.tipo_evaluacion}) salvaguardado en contingencia local por fallo de Google Sheets. Se sincronizará automáticamente."
+                    }
             else:
-                guardar_pendiente_local(f"anexo17_{test_obj.tipo_evaluacion.lower()}", fila_ordenada, "Encolado para subida asíncrona")
                 background_tasks.add_task(
                     _tarea_subida_sheets,
                     tipo="anexo17",

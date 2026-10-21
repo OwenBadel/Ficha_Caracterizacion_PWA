@@ -357,14 +357,30 @@ def _limpiar_bloque_json(texto: str) -> str:
 
 def optimizar_imagen_bytes(
     img_bytes: bytes,
-    max_dim: int = 1280,
+    max_dim: int = 1600,
     calidad: int = 90,
     auto_rotar: bool = True
 ) -> tuple[bytes, str]:
     """
-    Optimiza la imagen manteniendo alta resolución y nitidez para el modelo de visión (1400px).
-    Garantiza orientación vertical si fue capturada rotada solo si auto_rotar es True.
+    Optimiza la imagen manteniendo alta resolución y nitidez para el modelo de visión.
+    Si auto_rotar es False y la imagen ya viene optimizada desde el frontend
+    en formato JPEG con dimensiones adecuadas (<= max_dim), retorna los bytes directamente
+    evitando la doble compresión JPEG y preservando la nitidez de los trazos manuscritos.
     """
+    if not img_bytes:
+        return img_bytes, "image/jpeg"
+
+    # Si no requiere auto_rotar, verificar si ya es JPEG y cumple dimensiones sin recompresión
+    if not auto_rotar:
+        try:
+            from PIL import Image
+            import io
+            with Image.open(io.BytesIO(img_bytes)) as probe:
+                if probe.format == "JPEG" and max(probe.width, probe.height) <= max_dim:
+                    return img_bytes, "image/jpeg"
+        except Exception:
+            pass
+
     try:
         from PIL import Image, ImageOps
         import io
@@ -458,12 +474,50 @@ class VisionService:
         self.gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
         self.openai_api_key = os.getenv("OPENAI_API_KEY", "").strip()
         self.rate_limiter = rate_limiter or pipeline_rate_limiter
+        self._gemini_client = None
+        self._openai_client = None
+        self._init_clients()
 
         logger.info(
             f"VisionService inicializado -> Proveedor: '{self.provider}', "
             f"Gemini configurado: {bool(self.gemini_api_key)}, "
             f"OpenAI configurado: {bool(self.openai_api_key)}"
         )
+
+    def _init_clients(self):
+        """Inicializa los clientes HTTP persistentes para reutilizar pools de conexiones TLS."""
+        if self.gemini_api_key:
+            try:
+                from google import genai
+                self._gemini_client = genai.Client(api_key=self.gemini_api_key)
+            except Exception:
+                self._gemini_client = None
+        if self.openai_api_key:
+            try:
+                from openai import OpenAI
+                self._openai_client = OpenAI(api_key=self.openai_api_key)
+            except Exception:
+                self._openai_client = None
+
+    def _get_gemini_client(self):
+        """Retorna el cliente persistente de Gemini o lo instancia de forma lazy."""
+        if not self._gemini_client and self.gemini_api_key:
+            try:
+                from google import genai
+                self._gemini_client = genai.Client(api_key=self.gemini_api_key)
+            except Exception:
+                self._gemini_client = None
+        return self._gemini_client
+
+    def _get_openai_client(self):
+        """Retorna el cliente persistente de OpenAI o lo instancia de forma lazy."""
+        if not self._openai_client and self.openai_api_key:
+            try:
+                from openai import OpenAI
+                self._openai_client = OpenAI(api_key=self.openai_api_key)
+            except Exception:
+                self._openai_client = None
+        return self._openai_client
 
     def _optimizar_imagen(self, img_bytes: bytes, mime_type: str = "image/jpeg") -> tuple[bytes, str]:
         return optimizar_imagen_bytes(img_bytes)
@@ -825,7 +879,9 @@ class VisionService:
             from google import genai
             from google.genai import types
 
-            client = genai.Client(api_key=self.gemini_api_key)
+            client = self._get_gemini_client()
+            if not client:
+                client = genai.Client(api_key=self.gemini_api_key)
             part_1 = types.Part.from_bytes(data=img1, mime_type=mime1)
             part_2 = types.Part.from_bytes(data=img2, mime_type=mime2)
             prompt_completo = f"{SYSTEM_PROMPT}\n\n{USER_PROMPT}"
@@ -876,7 +932,9 @@ class VisionService:
             from google import genai
             from google.genai import types
 
-            client = genai.Client(api_key=self.gemini_api_key)
+            client = self._get_gemini_client()
+            if not client:
+                client = genai.Client(api_key=self.gemini_api_key)
             part = types.Part.from_bytes(data=img, mime_type=mime)
             prompt_completo = f"{SYSTEM_PROMPT_TEST}\n\n{USER_PROMPT_TEST}"
             contents = [prompt_completo, part]
@@ -931,7 +989,9 @@ class VisionService:
             from google import genai
             from google.genai import types
 
-            client = genai.Client(api_key=self.gemini_api_key)
+            client = self._get_gemini_client()
+            if not client:
+                client = genai.Client(api_key=self.gemini_api_key)
             part_1 = types.Part.from_bytes(data=img1, mime_type=mime1)
             prompt_completo = f"{SYSTEM_PROMPT_ANEXO17}\n\n{USER_PROMPT_ANEXO17}"
             contents = [prompt_completo, part_1]
@@ -979,8 +1039,11 @@ class VisionService:
         if not self.openai_api_key:
             raise ValueError("OPENAI_API_KEY no está configurada para fallback.")
 
-        from openai import OpenAI
-        client = OpenAI(api_key=self.openai_api_key)
+        client = self._get_openai_client()
+        if not client:
+            from openai import OpenAI
+            client = OpenAI(api_key=self.openai_api_key)
+
         b64_1 = base64.b64encode(img1).decode("utf-8")
         b64_2 = base64.b64encode(img2).decode("utf-8")
 
@@ -1007,8 +1070,11 @@ class VisionService:
         if not self.openai_api_key:
             raise ValueError("OPENAI_API_KEY no está configurada para fallback.")
 
-        from openai import OpenAI
-        client = OpenAI(api_key=self.openai_api_key)
+        client = self._get_openai_client()
+        if not client:
+            from openai import OpenAI
+            client = OpenAI(api_key=self.openai_api_key)
+
         b64 = base64.b64encode(img).decode("utf-8")
 
         response = client.chat.completions.create(
@@ -1039,8 +1105,11 @@ class VisionService:
         if not self.openai_api_key:
             raise ValueError("OPENAI_API_KEY no está configurada para fallback.")
 
-        from openai import OpenAI
-        client = OpenAI(api_key=self.openai_api_key)
+        client = self._get_openai_client()
+        if not client:
+            from openai import OpenAI
+            client = OpenAI(api_key=self.openai_api_key)
+
         b64_1 = base64.b64encode(img1).decode("utf-8")
         user_content = [
             {"type": "text", "text": USER_PROMPT_ANEXO17},

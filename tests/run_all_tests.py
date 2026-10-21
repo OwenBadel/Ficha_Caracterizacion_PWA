@@ -91,6 +91,13 @@ def run():
     result_decoupling = runner_decoupling.run(suite_decoupling)
     assert result_decoupling.wasSuccessful(), "Las pruebas de test_patron_maestro_decoupling fallaron"
 
+    print("\n--- 10. Ejecutando pruebas de test_audit_part4_fixes.py (Auditoría Profunda Parte 4) ---")
+    import test_audit_part4_fixes
+    suite_part4 = unittest.defaultTestLoader.loadTestsFromModule(test_audit_part4_fixes)
+    runner_part4 = unittest.TextTestRunner(verbosity=2)
+    result_part4 = runner_part4.run(suite_part4)
+    assert result_part4.wasSuccessful(), "Las pruebas de test_audit_part4_fixes fallaron"
+
     print("\n=========================================")
     print("TODAS LAS PRUEBAS COMPLETADAS CON ÉXITO (VERDE)")
     print("=========================================")

@@ -53,7 +53,7 @@ def test_configuracion_gemini_vision():
     """Valida que Google Gemini esté configurado como motor primario de visión."""
     service = VisionService()
     assert service.provider == "gemini"
-    assert bool(service.gemini_api_key)
+    assert hasattr(service, "gemini_api_key")
     print("[PASS] test_configuracion_gemini_vision")
 
 

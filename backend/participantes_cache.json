@@ -1,16 +1,9 @@
 {
-  "WILLIAM JAMES VILORIA": {
-    "nombre": "WILLIAM JAMES VILORIA",
-    "edad": "17",
-    "municipio": "SANTA CATALINA",
-    "eapb": "",
-    "documento": ""
-  },
-  "JUAN CAMILO ORTEGA|MAHATES": {
-    "nombre": "JUAN CAMILO ORTEGA",
-    "edad": "17",
+  "MARIA CAMILA PEREZ|1045123456": {
+    "nombre": "MARIA CAMILA PEREZ",
+    "edad": "16",
     "municipio": "MAHATES",
     "eapb": "NUEVA EPS",
-    "documento": ""
+    "documento": "1045123456"
   }
 }

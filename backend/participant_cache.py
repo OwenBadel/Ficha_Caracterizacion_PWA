@@ -200,12 +200,14 @@ def token_jaro_winkler_similarity(s1: str, s2: str) -> float:
         if max_sim_apellido < 0.82:
             return 0.0
 
-    # 3. Validación de apellidos discordantes en nombres de 3 o más palabras:
-    # Evita que 'MARIA JOSE PEREZ' se cruce con 'MARIA JOSE GOMEZ'
+    # 3. Validación simétrica de apellidos discordantes en nombres de 3 o más palabras:
+    # Compara los tokens de la cadena más corta (o de igual longitud) contra la más larga
     if len(tokens1) >= 3 and len(tokens2) >= 3:
-        for t1 in tokens1[1:]:
-            max_t1_en_t2 = max(jaro_winkler_similarity(t1, t2) for t2 in tokens2[1:])
-            if max_t1_en_t2 < 0.70:
+        corta_t = tokens1 if len(tokens1) <= len(tokens2) else tokens2
+        larga_t = tokens2 if len(tokens1) <= len(tokens2) else tokens1
+        for t_c in corta_t[1:]:
+            max_sim = max(jaro_winkler_similarity(t_c, t_l) for t_l in larga_t[1:])
+            if max_sim < 0.70:
                 return 0.0
 
     # Cobertura cruzada simétrica de tokens con soporte de equivalencias
@@ -321,16 +323,21 @@ class ParticipantCache:
         clave = self._generar_clave(nom, doc_norm, muni)
 
         with self._lock:
+            existentes = self.indice_por_nombre.get(nom, [])
+            for ex in existentes:
+                if not muni or not ex.get("municipio") or ex.get("municipio") == muni:
+                    # Enriquecer registro existente sin perder documento ni EPS previos
+                    if not ex.get("edad") and item["edad"]:
+                        ex["edad"] = item["edad"]
+                    if not ex.get("eapb") and item["eapb"]:
+                        ex["eapb"] = item["eapb"]
+                    if not ex.get("documento") and item["documento"]:
+                        ex["documento"] = item["documento"]
+                    return
+
             self.participantes[clave] = item
             lista = self.indice_por_nombre.setdefault(nom, [])
-            idx_existente = next(
-                (i for i, x in enumerate(lista) if (doc_norm and x.get("documento") == doc_norm) or (not doc_norm and x.get("municipio") == muni)),
-                None
-            )
-            if idx_existente is not None:
-                lista[idx_existente] = item
-            else:
-                lista.append(item)
+            lista.append(item)
 
         if guardar_inmediato:
             self.guardar()

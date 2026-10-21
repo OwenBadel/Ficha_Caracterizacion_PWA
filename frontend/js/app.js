@@ -187,6 +187,17 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Función de escape HTML seguro para prevenir XSS
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
   // -------------------------------------------------------------
   // TOASTS DE NOTIFICACIÓN MONOCROMÁTICOS (SIN EMOJIS)
   // -------------------------------------------------------------
@@ -209,7 +220,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     toast.innerHTML = `
       ${iconSvg}
-      <span>${cleanMessage}</span>
+      <span>${escapeHtml(cleanMessage)}</span>
     `;
     toastContainer.appendChild(toast);
     setTimeout(() => {
@@ -1486,7 +1497,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (item.status === 'error' && item.errorMsg) {
         errorBoxHtml = `
           <div class="rich-error-box" style="padding: 6px 8px; background-color: var(--color-danger-subtle); border-radius: var(--radius-sm); border: 1px solid rgba(239, 68, 68, 0.2); font-size: 0.68rem; color: var(--color-danger);">
-            <strong>Fallo:</strong> ${item.errorMsg}
+            <strong>Fallo:</strong> ${escapeHtml(item.errorMsg)}
           </div>
         `;
       }
@@ -1500,8 +1511,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const valStr = typeof v === 'object' ? JSON.stringify(v) : String(v);
             return `
               <div class="rich-extracted-row">
-                <span class="rich-extracted-key">${k}</span>
-                <span class="rich-extracted-val" title="${valStr}">${valStr}</span>
+                <span class="rich-extracted-key">${escapeHtml(k)}</span>
+                <span class="rich-extracted-val" title="${escapeHtml(valStr)}">${escapeHtml(valStr)}</span>
               </div>
             `;
           }).join('');
@@ -1541,13 +1552,13 @@ document.addEventListener('DOMContentLoaded', () => {
             ${thumbsHtml}
           </div>
           <div class="rich-details">
-            <div class="rich-meta-title">${metaTitulo}</div>
+            <div class="rich-meta-title">${escapeHtml(metaTitulo)}</div>
             <div class="rich-meta-sub">
               <span>${fecha}</span>
-              ${metaMunicipio ? `<span>· ${metaMunicipio}</span>` : ''}
+              ${metaMunicipio ? `<span>· ${escapeHtml(metaMunicipio)}</span>` : ''}
             </div>
             ${metaDocumento ? `
-              <div class="rich-meta-detail">Doc: ${metaDocumento}</div>
+              <div class="rich-meta-detail">Doc: ${escapeHtml(metaDocumento)}</div>
             ` : ''}
             ${item.deduplicated ? `
               <div class="rich-meta-detail" style="color: var(--color-info); font-weight: 500; font-size: 0.68rem; margin-top: 2px;">
@@ -1670,9 +1681,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (netStatusText) {
           netStatusText.textContent = `Gemini Online`;
           netStatusText.title = `Motor: Google Gemini | Patrón Maestro: ${maestroCount} registros`;
-        }
-        if (brandSubtitle) {
-          brandSubtitle.textContent = `Google Gemini • ${maestroCount} Maestros`;
         }
         if (masterCacheCount) {
           masterCacheCount.textContent = maestroCount;
@@ -1833,14 +1841,20 @@ document.addEventListener('DOMContentLoaded', () => {
       const draft = await window.surveyDB.obtenerBorradorActivo();
       if (draft && draft.foto1Blob && !state.foto1Blob) {
         console.log('[Auto-Recovery] Restaurando borrador de Foto 1 desde IndexedDB...');
-        state.foto1Blob = draft.foto1Blob;
-        state.foto1Mime = draft.foto1Mime || 'image/jpeg';
-        if (draft.tipo && (draft.tipo === 'ficha' || draft.tipo === 'anexo17')) {
-          setMode(draft.tipo);
+        // 1. Cambiar el modo PRIMERO si es distinto (antes de asignar foto1Blob, porque cambiarModo limpia el formulario)
+        if (draft.tipo && (draft.tipo === 'ficha' || draft.tipo === 'anexo17') && state.mode !== draft.tipo) {
+          cambiarModo(draft.tipo);
         }
         if (draft.extra && draft.extra.tipoEvaluacion) {
           state.tipoEvaluacion = draft.extra.tipoEvaluacion;
         }
+
+        // 2. Restaurar el blob en el estado y volver a persistir el borrador
+        state.foto1Blob = draft.foto1Blob;
+        state.foto1Mime = draft.foto1Mime || 'image/jpeg';
+        await window.surveyDB.guardarBorradorActivo(state.mode, state.foto1Blob, state.foto1Mime, {
+          tipoEvaluacion: state.tipoEvaluacion
+        });
 
         setPreviewBlob(imgPreview1, draft.foto1Blob);
         imgPreview1.style.display = 'block';

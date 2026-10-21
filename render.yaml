@@ -29,3 +29,15 @@ services:
         sync: false
       - key: GOOGLE_APPS_SCRIPT_URL_TESTS
         sync: false
+      - key: GOOGLE_SHEET_TAB_PRE_TEST
+        value: PRE-TEST
+      - key: GOOGLE_SHEET_TAB_POST_TEST
+        value: POST-TEST
+      - key: GOOGLE_SHEET_ID_ANEXO17
+        sync: false
+      - key: GOOGLE_APPS_SCRIPT_URL_ANEXO17
+        sync: false
+      - key: GOOGLE_SHEET_TAB_ANEXO17_PRE
+        value: PRE-TEST
+      - key: GOOGLE_SHEET_TAB_ANEXO17_POST
+        value: POST-TEST
