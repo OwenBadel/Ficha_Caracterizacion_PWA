@@ -874,9 +874,12 @@ class VisionService:
         if not self.gemini_api_key:
             raise ValueError("GEMINI_API_KEY no está configurada en las variables de entorno.")
 
-        primary_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
+        primary_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite").strip()
         candidate_models = [
             primary_model,
+            "gemini-3.5-flash-lite",
+            "gemini-3.5-flash",
+            "gemini-3.8-flash",
             "gemini-2.5-flash",
             "gemini-2.5-flash-lite"
         ]
@@ -927,9 +930,12 @@ class VisionService:
         if not self.gemini_api_key:
             raise ValueError("GEMINI_API_KEY no está configurada.")
 
-        primary_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
+        primary_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite").strip()
         candidate_models = [
             primary_model,
+            "gemini-3.5-flash-lite",
+            "gemini-3.5-flash",
+            "gemini-3.8-flash",
             "gemini-2.5-flash",
             "gemini-2.5-flash-lite"
         ]
@@ -984,9 +990,12 @@ class VisionService:
         if not self.gemini_api_key:
             raise ValueError("GEMINI_API_KEY no está configurada.")
 
-        primary_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
+        primary_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite").strip()
         candidate_models = [
             primary_model,
+            "gemini-3.5-flash-lite",
+            "gemini-3.5-flash",
+            "gemini-3.8-flash",
             "gemini-2.5-flash",
             "gemini-2.5-flash-lite"
         ]
