@@ -340,6 +340,181 @@ html, body {
   box-shadow: var(--shadow-sm);
 }
 
+/* Barra de Selección de Municipio para Anexo 17 */
+.anexo17-municipio-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  margin-top: 4px;
+  height: 28px;
+}
+
+.mun-bar-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-tertiary);
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.mun-bar-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.select-mun-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.select-mun-styled {
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--color-accent);
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  height: 24px;
+  padding: 0 22px 0 8px;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.15s ease;
+  letter-spacing: 0.02em;
+}
+
+.select-mun-styled:hover,
+.select-mun-styled:focus {
+  border-color: var(--color-accent);
+  background-color: var(--bg-hover);
+}
+
+.select-mun-arrow {
+  position: absolute;
+  right: 6px;
+  pointer-events: none;
+  color: var(--text-tertiary);
+}
+
+.btn-manage-mun {
+  height: 24px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 0.70rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-manage-mun:hover,
+.btn-manage-mun:active {
+  background-color: var(--bg-elevated);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+/* Modal y Chips de Gestión de Municipios */
+.mun-add-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.mun-input-field {
+  flex: 1;
+  height: 34px;
+  background-color: var(--bg-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0 10px;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.mun-input-field:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent);
+}
+
+.mun-chips-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  max-height: 140px;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.mun-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  transition: all 0.15s ease;
+}
+
+.mun-tag-chip.active-mun {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  background-color: var(--color-accent-subtle);
+}
+
+.mun-chip-select-btn {
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mun-chip-del-btn {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 0 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: color 0.15s ease;
+  line-height: 1;
+}
+
+.mun-chip-del-btn:hover {
+  color: var(--color-danger);
+}
+
 /* ---------------- 5. MICRO-BARRA DE PASO (ZERO-SCROLL) ---------------- */
 .step-micro-bar {
   display: flex;

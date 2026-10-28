@@ -78,11 +78,13 @@ class TestAnexo17Schema(unittest.TestCase):
         self.assertEqual(normalizar_fecha("14 de septiembre de 2020"), "14/09/2026")
 
     def test_normalizacion_municipio(self):
-        """Verifica que en Anexo 17 el municipio sea estrictamente SANTA CATALINA."""
+        """Verifica la normalización dinámica de municipios en Anexo 17 (SANTA CATALINA, TURBANA, etc.)."""
         self.assertEqual(normalizar_municipio("santa catalina"), "SANTA CATALINA")
-        self.assertEqual(normalizar_municipio("santa rosa"), "SANTA CATALINA")
-        self.assertEqual(normalizar_municipio("carmen de bolivar"), "SANTA CATALINA")
+        self.assertEqual(normalizar_municipio("turbana"), "TURBANA")
+        self.assertEqual(normalizar_municipio("TURBANA"), "TURBANA")
+        self.assertEqual(normalizar_municipio("santa rosa"), "SANTA ROSA")
         self.assertEqual(normalizar_municipio(""), "SANTA CATALINA")
+        self.assertEqual(normalizar_municipio("", default_municipio="TURBANA"), "TURBANA")
 
     def test_normalizacion_10_preguntas_por_letra(self):
         """Verifica que las opciones a, b, c mapeen exactamente al texto canónico prefijado."""
@@ -127,7 +129,7 @@ class TestAnexo17Schema(unittest.TestCase):
         raw_data = {
             "TIPO DE EVALUACIÓN": "PRE-TEST",
             "NOMBRE": "ANDREA CASTILLO",
-            "MUNICIPIO": "TURBACO",
+            "MUNICIPIO": "TURBANA",
             "FECHA": "14/10/2026",
             "EDAD": "14",
             "1. ¿QUÉ ES UN PROYECTO DE VIDA?": "un plan sobre lo que quiero lograr en el futuro",
@@ -148,7 +150,7 @@ class TestAnexo17Schema(unittest.TestCase):
         self.assertEqual(len(fila), 15)
         self.assertEqual(fila[0], "PRE-TEST")
         self.assertEqual(fila[1], "ANDREA CASTILLO")
-        self.assertEqual(fila[2], "SANTA CATALINA")
+        self.assertEqual(fila[2], "TURBANA")
         self.assertEqual(fila[3], "14/10/2026")
         self.assertEqual(fila[4], "14")
         self.assertTrue(fila[5].startswith("A."))

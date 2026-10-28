@@ -834,6 +834,7 @@ async def process_anexo17(
     foto_reverso: Optional[UploadFile] = File(None, description="Fotografía Página 2 del Anexo 17 (Preguntas 6 a 10)"),
     foto_test: Optional[UploadFile] = File(None, description="Compatibilidad con foto única"),
     tipo_evaluacion: Optional[str] = Form(None, description="Override opcional ('PRE-TEST', 'POST-TEST' o None para autodetección)"),
+    municipio: Optional[str] = Form(None, description="Municipio asignado u override para Anexo 17 (ej. 'SANTA CATALINA', 'TURBANA')"),
     modo: Optional[str] = Form("inmediato", description="Modo de sincronización ('inmediato' o 'batch')"),
     client_item_id: Optional[str] = Form(None, description="Identificador único del registro en el cliente (idempotencia)"),
     ya_orientada: Optional[str] = Form("false", description="Indica si la imagen ya fue orientada en el cliente")
@@ -916,7 +917,7 @@ async def process_anexo17(
                 f"Procesando Anexo 17 en modo '{modo}' (Client ID={client_item_id}). "
                 f"Pág 1={f1.filename} ({len(bytes1)/1024:.1f}KB), "
                 f"Pág 2={'Sí (' + str(len(bytes2)/1024) + 'KB)' if bytes2 else 'No'}, "
-                f"Override={tipo_evaluacion}"
+                f"Override={tipo_evaluacion}, Municipio={municipio}"
             )
 
             # 3. Extracción con IA de Visión bajo semáforo de concurrencia
@@ -930,6 +931,7 @@ async def process_anexo17(
                     mime_type_1=mime1,
                     mime_type_2=mime2,
                     tipo_evaluacion_override=tipo_evaluacion,
+                    municipio_override=municipio,
                     auto_rotar=auto_rotar
                 )
 
@@ -950,7 +952,7 @@ async def process_anexo17(
                         participant_cache.aprender_participante,
                         nombre=test_obj.nombre,
                         edad=test_obj.edad or "",
-                        municipio=test_obj.municipio or "SANTA CATALINA",
+                        municipio=test_obj.municipio or municipio or "SANTA CATALINA",
                         eapb="",
                         documento=""
                     )

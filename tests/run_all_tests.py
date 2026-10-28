@@ -98,6 +98,13 @@ def run():
     result_part4 = runner_part4.run(suite_part4)
     assert result_part4.wasSuccessful(), "Las pruebas de test_audit_part4_fixes fallaron"
 
+    print("\n--- 11. Ejecutando pruebas de test_anexo17_municipios.py (Municipios Dinámicos Anexo 17) ---")
+    import test_anexo17_municipios
+    suite_mun = unittest.defaultTestLoader.loadTestsFromModule(test_anexo17_municipios)
+    runner_mun = unittest.TextTestRunner(verbosity=2)
+    result_mun = runner_mun.run(suite_mun)
+    assert result_mun.wasSuccessful(), "Las pruebas de test_anexo17_municipios fallaron"
+
     print("\n=========================================")
     print("TODAS LAS PRUEBAS COMPLETADAS CON ÉXITO (VERDE)")
     print("=========================================")

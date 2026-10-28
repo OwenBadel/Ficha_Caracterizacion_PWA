@@ -103,6 +103,35 @@
       </div>
     </section>
 
+    <!-- SELECTOR DE MUNICIPIO PARA ANEXO 17 (DINÁMICO CON OPCIÓN EDITAR) -->
+    <section id="anexo17MunicipioBar" class="anexo17-municipio-bar" style="display: none;">
+      <div class="mun-bar-left">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+          <circle cx="12" cy="10" r="3"></circle>
+        </svg>
+        <span class="mun-bar-label">Municipio</span>
+      </div>
+      <div class="mun-bar-controls">
+        <div class="select-mun-wrapper">
+          <select id="selectMunicipioAnexo17" class="select-mun-styled" aria-label="Seleccionar Municipio de Anexo 17">
+            <option value="SANTA CATALINA">SANTA CATALINA</option>
+            <option value="TURBANA">TURBANA</option>
+          </select>
+          <svg class="select-mun-arrow" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </div>
+        <button id="btnGestionarMunicipiosAnexo17" class="btn-manage-mun" type="button" title="Gestionar o agregar municipios al Anexo 17">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 20h9"></path>
+            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+          </svg>
+          <span>Editar</span>
+        </button>
+      </div>
+    </section>
+
     <!-- MICRO-INDICADOR DE PASO (Reemplaza la tarjeta de 80px para arquitectura Zero-Scroll) -->
     <div class="step-micro-bar">
       <div class="step-micro-content">
@@ -440,6 +469,63 @@
       </div>
     </div>
 
+    <!-- MODAL GESTIÓN DE MUNICIPIOS (ANEXO 17) -->
+    <div id="municipiosBackdrop" class="drawer-backdrop" style="display: none;"></div>
+    <div id="modalGestionMunicipios" class="modal-card-dialog" style="display: none;">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+            <circle cx="12" cy="10" r="3"></circle>
+          </svg>
+          <div>
+            <h2>Municipios — Anexo 17</h2>
+            <p>Agregar o gestionar territorios para los formularios</p>
+          </div>
+        </div>
+        <button id="btnCloseMunicipiosModal" class="drawer-close" type="button" aria-label="Cerrar modal">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="import-box">
+          <div class="import-label">
+            <strong>Agregar Nuevo Municipio</strong>
+            <span>Se registrará en MAYÚSCULAS para las planillas y formularios</span>
+          </div>
+          <div class="mun-add-row">
+            <input type="text" id="inputNuevoMunicipio" class="mun-input-field" placeholder="Ej: TURBANA, TURBACO, MAHATES..." maxlength="45" autocomplete="off" />
+            <button id="btnGuardarNuevoMunicipio" class="btn-master-sub" type="button">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              <span>Agregar</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="import-label" style="margin-top: 14px;">
+          <strong>Municipios Disponibles en Lista:</strong>
+          <span>Toca un municipio para seleccionarlo o elimina los que no uses</span>
+        </div>
+        <div id="listaMunicipiosChips" class="mun-chips-container">
+          <!-- Renderizado dinámico de chips -->
+        </div>
+
+        <button id="btnRestaurarMunicipiosDefault" class="btn-master-reset" type="button" style="margin-top: 14px;">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+            <path d="M3 3v5h5"></path>
+          </svg>
+          <span>Restablecer Predeterminados (SANTA CATALINA y TURBANA)</span>
+        </button>
+      </div>
+    </div>
+
     <!-- MODAL DE PROCESAMIENTO / CARGA LIMPIO -->
     <div id="processingModal" class="processing-modal">
       <div class="processing-card">
@@ -454,7 +540,7 @@
 
   </div>
 
-  <script src="/static/js/db.js?v=23"></script>
-  <script src="/static/js/app.js?v=23"></script>
+  <script src="/static/js/db.js?v=24"></script>
+  <script src="/static/js/app.js?v=24"></script>
 </body>
 </html>

@@ -102,12 +102,39 @@ def normalizar_texto_base(val: Any) -> str:
     return texto
 
 
-def normalizar_municipio(val: Any) -> str:
+MUNICIPIOS_ANEXO17_PREDETERMINADOS: List[str] = [
+    "SANTA CATALINA",
+    "TURBANA"
+]
+
+
+def normalizar_municipio(val: Any, default_municipio: str = "SANTA CATALINA") -> str:
     """
-    Por directiva oficial exclusiva del proyecto para Anexo 17 (Pellízcate con Generación B+),
-    el municipio siempre es SANTA CATALINA. Es lo único que se consigna en la columna MUNICIPIO.
+    Normaliza el municipio para Anexo 17 (Pellízcate con Generación B+).
+    Admite SANTA CATALINA, TURBANA y municipios configurados/detectados en los formularios.
+    Si está en blanco o nulo, utiliza default_municipio ('SANTA CATALINA' por defecto).
     """
-    return "SANTA CATALINA"
+    txt = normalizar_texto_base(val)
+    if not txt or txt in ["NONE", "NULL", "N/A", "UNDEFINED", "0"]:
+        return default_municipio.upper().strip()
+
+    # Detección de municipios del proyecto en Bolívar
+    if "TURBANA" in txt:
+        return "TURBANA"
+    if "CATALINA" in txt:
+        return "SANTA CATALINA"
+    if "TURBACO" in txt:
+        return "TURBACO"
+    if "MAHATE" in txt:
+        return "MAHATES"
+    if "ARJONA" in txt:
+        return "ARJONA"
+    if "SANTA ROSA" in txt:
+        return "SANTA ROSA DEL SUR" if "SUR" in txt else "SANTA ROSA"
+
+    # Si es un nombre de municipio personalizado válido, conservarlo en mayúsculas limpio
+    limpio = re.sub(r"[^A-ZÁÉÍÓÚÑ\s]", "", txt).strip()
+    return limpio if len(limpio) >= 3 else default_municipio.upper().strip()
 
 
 # Mapeo exhaustivo de nombres de meses en español y abreviaturas comunes a representación numérica
@@ -406,7 +433,7 @@ class PrePostTestAnexo17(BaseModel):
         nombre_final = normalizar_texto_base(raw_nombre)
 
         # 3. Municipio
-        raw_mun = buscar_valor("MUNICIPIO", "TERRITORIO", "CIUDAD")
+        raw_mun = buscar_valor("MUNICIPIO", "TERRITORIO", "CIUDAD", "MUNICIPIO_OVERRIDE", "MUNICIPIO_SELECCIONADO")
         mun_final = normalizar_municipio(raw_mun)
 
         # 4. Fecha

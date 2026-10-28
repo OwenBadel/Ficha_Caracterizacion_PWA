@@ -114,8 +114,9 @@ class LocalSurveyDB {
    * @param {string} anversoMime
    * @param {string} reversoMime
    * @param {string} tipoEvaluacion 'AUTO', 'PRE-TEST', 'POST-TEST'
+   * @param {string} municipio 'SANTA CATALINA', 'TURBANA', etc.
    */
-  async guardarAnexo17(anversoBlob, reversoBlob = null, anversoMime = 'image/jpeg', reversoMime = 'image/jpeg', tipoEvaluacion = 'AUTO') {
+  async guardarAnexo17(anversoBlob, reversoBlob = null, anversoMime = 'image/jpeg', reversoMime = 'image/jpeg', tipoEvaluacion = 'AUTO', municipio = 'SANTA CATALINA') {
     await this.init();
     const id = 'anexo17_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
     const item = {
@@ -128,6 +129,7 @@ class LocalSurveyDB {
       anversoMime,
       reversoMime,
       tipoEvaluacion: tipoEvaluacion || 'AUTO',
+      municipio: municipio || 'SANTA CATALINA',
       createdAt: new Date().toISOString(),
       status: 'pending', // 'pending', 'syncing', 'synced', 'error'
       errorMsg: null,

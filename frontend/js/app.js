@@ -22,6 +22,10 @@ document.addEventListener('DOMContentLoaded', () => {
     fotoTestMime: 'image/jpeg',
     tipoEvaluacion: 'AUTO', // 'AUTO', 'PRE-TEST', 'POST-TEST'
 
+    // Municipios Anexo 17 dinámicos (Santa Catalina, Turbana, etc.)
+    anexo17Municipios: ['SANTA CATALINA', 'TURBANA'],
+    anexo17MunicipioActivo: 'SANTA CATALINA',
+
     isSyncing: false,
     drawerOpen: false,
     queueFilter: 'all' // 'all', 'pending', 'error', 'synced'
@@ -44,6 +48,18 @@ document.addEventListener('DOMContentLoaded', () => {
   // Selector Tipo de Test
   const testTypeBar = document.getElementById('testTypeBar');
   const pillBtns = document.querySelectorAll('.pill-btn');
+
+  // Selector y Gestión de Municipio Anexo 17
+  const anexo17MunicipioBar = document.getElementById('anexo17MunicipioBar');
+  const selectMunicipioAnexo17 = document.getElementById('selectMunicipioAnexo17');
+  const btnGestionarMunicipiosAnexo17 = document.getElementById('btnGestionarMunicipiosAnexo17');
+  const municipiosBackdrop = document.getElementById('municipiosBackdrop');
+  const modalGestionMunicipios = document.getElementById('modalGestionMunicipios');
+  const btnCloseMunicipiosModal = document.getElementById('btnCloseMunicipiosModal');
+  const inputNuevoMunicipio = document.getElementById('inputNuevoMunicipio');
+  const btnGuardarNuevoMunicipio = document.getElementById('btnGuardarNuevoMunicipio');
+  const listaMunicipiosChips = document.getElementById('listaMunicipiosChips');
+  const btnRestaurarMunicipiosDefault = document.getElementById('btnRestaurarMunicipiosDefault');
 
   // Banner
   const stepTag = document.getElementById('stepTag');
@@ -231,6 +247,240 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // -------------------------------------------------------------
+  // GESTIÓN DINÁMICA DE MUNICIPIOS (ANEXO 17)
+  // -------------------------------------------------------------
+  const MUNICIPIOS_DEFAULT_ANEXO17 = ['SANTA CATALINA', 'TURBANA'];
+
+  function cargarMunicipiosAnexo17DesdeStorage() {
+    try {
+      const raw = localStorage.getItem('anexo17_municipios');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          state.anexo17Municipios = parsed.map(m => String(m).trim().toUpperCase()).filter(Boolean);
+        }
+      }
+    } catch (_) {}
+
+    try {
+      const activo = localStorage.getItem('anexo17_municipio_activo');
+      if (activo && state.anexo17Municipios.includes(activo.trim().toUpperCase())) {
+        state.anexo17MunicipioActivo = activo.trim().toUpperCase();
+      } else {
+        state.anexo17MunicipioActivo = state.anexo17Municipios[0] || 'SANTA CATALINA';
+      }
+    } catch (_) {
+      state.anexo17MunicipioActivo = state.anexo17Municipios[0] || 'SANTA CATALINA';
+    }
+  }
+
+  function guardarMunicipiosAnexo17EnStorage() {
+    try {
+      localStorage.setItem('anexo17_municipios', JSON.stringify(state.anexo17Municipios));
+      localStorage.setItem('anexo17_municipio_activo', state.anexo17MunicipioActivo);
+    } catch (_) {}
+  }
+
+  function actualizarSelectMunicipiosAnexo17() {
+    if (!selectMunicipioAnexo17) return;
+    selectMunicipioAnexo17.innerHTML = '';
+    state.anexo17Municipios.forEach(mun => {
+      const opt = document.createElement('option');
+      opt.value = mun;
+      opt.textContent = mun;
+      if (mun === state.anexo17MunicipioActivo) opt.selected = true;
+      selectMunicipioAnexo17.appendChild(opt);
+    });
+  }
+
+  function renderizarChipsGestionMunicipios() {
+    if (!listaMunicipiosChips) return;
+    listaMunicipiosChips.innerHTML = '';
+
+    state.anexo17Municipios.forEach(mun => {
+      const chip = document.createElement('div');
+      const esActivo = mun === state.anexo17MunicipioActivo;
+      chip.className = `mun-tag-chip${esActivo ? ' active-mun' : ''}`;
+
+      const btnSelect = document.createElement('button');
+      btnSelect.type = 'button';
+      btnSelect.className = 'mun-chip-select-btn';
+      btnSelect.title = `Seleccionar ${mun}`;
+      btnSelect.innerHTML = `
+        <span>${escapeHtml(mun)}</span>
+        ${esActivo ? '<span style="font-size:0.65rem;">(Activo)</span>' : ''}
+      `;
+      btnSelect.addEventListener('click', () => {
+        state.anexo17MunicipioActivo = mun;
+        guardarMunicipiosAnexo17EnStorage();
+        actualizarSelectMunicipiosAnexo17();
+        renderizarChipsGestionMunicipios();
+        if (state.mode === 'anexo17') {
+          brandSubtitle.textContent = `Pre/Post Test — Anexo 17 (${mun})`;
+          setStepFicha(state.currentStep || 1);
+        }
+        showToast(`Municipio activo: ${mun}`, 'info');
+      });
+
+      chip.appendChild(btnSelect);
+
+      // Botón para eliminar (solo si hay más de 1 municipio en la lista)
+      if (state.anexo17Municipios.length > 1) {
+        const btnDel = document.createElement('button');
+        btnDel.type = 'button';
+        btnDel.className = 'mun-chip-del-btn';
+        btnDel.title = `Eliminar ${mun}`;
+        btnDel.innerHTML = `
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        `;
+        btnDel.addEventListener('click', (e) => {
+          e.stopPropagation();
+          eliminarMunicipioAnexo17(mun);
+        });
+        chip.appendChild(btnDel);
+      }
+
+      listaMunicipiosChips.appendChild(chip);
+    });
+  }
+
+  function abrirModalMunicipios() {
+    renderizarChipsGestionMunicipios();
+    if (inputNuevoMunicipio) inputNuevoMunicipio.value = '';
+    if (municipiosBackdrop) {
+      municipiosBackdrop.style.display = 'block';
+      municipiosBackdrop.classList.add('active');
+    }
+    if (modalGestionMunicipios) {
+      modalGestionMunicipios.style.display = 'block';
+      modalGestionMunicipios.classList.add('active');
+    }
+    setTimeout(() => {
+      if (inputNuevoMunicipio) inputNuevoMunicipio.focus();
+    }, 100);
+  }
+
+  function cerrarModalMunicipios() {
+    if (municipiosBackdrop) {
+      municipiosBackdrop.style.display = 'none';
+      municipiosBackdrop.classList.remove('active');
+    }
+    if (modalGestionMunicipios) {
+      modalGestionMunicipios.style.display = 'none';
+      modalGestionMunicipios.classList.remove('active');
+    }
+  }
+
+  function agregarNuevoMunicipioAnexo17(nuevoNombre) {
+    const limpio = (nuevoNombre || '').trim().toUpperCase().replace(/[^A-ZÁÉÍÓÚÑ\s]/g, '');
+    if (!limpio || limpio.length < 3) {
+      showToast('Ingresa un nombre de municipio válido (mínimo 3 letras).', 'error');
+      return;
+    }
+    if (state.anexo17Municipios.includes(limpio)) {
+      showToast(`El municipio "${limpio}" ya está en la lista.`, 'info');
+      state.anexo17MunicipioActivo = limpio;
+      guardarMunicipiosAnexo17EnStorage();
+      actualizarSelectMunicipiosAnexo17();
+      renderizarChipsGestionMunicipios();
+      if (state.mode === 'anexo17') {
+        brandSubtitle.textContent = `Pre/Post Test — Anexo 17 (${limpio})`;
+        setStepFicha(state.currentStep || 1);
+      }
+      return;
+    }
+
+    state.anexo17Municipios.push(limpio);
+    state.anexo17MunicipioActivo = limpio;
+    guardarMunicipiosAnexo17EnStorage();
+    actualizarSelectMunicipiosAnexo17();
+    renderizarChipsGestionMunicipios();
+    if (inputNuevoMunicipio) inputNuevoMunicipio.value = '';
+    if (state.mode === 'anexo17') {
+      brandSubtitle.textContent = `Pre/Post Test — Anexo 17 (${limpio})`;
+      setStepFicha(state.currentStep || 1);
+    }
+    showToast(`Municipio "${limpio}" agregado y seleccionado.`, 'success');
+  }
+
+  function eliminarMunicipioAnexo17(munAEliminar) {
+    if (state.anexo17Municipios.length <= 1) {
+      showToast('Debe haber al menos un municipio registrado.', 'error');
+      return;
+    }
+    state.anexo17Municipios = state.anexo17Municipios.filter(m => m !== munAEliminar);
+    if (state.anexo17MunicipioActivo === munAEliminar) {
+      state.anexo17MunicipioActivo = state.anexo17Municipios[0];
+    }
+    guardarMunicipiosAnexo17EnStorage();
+    actualizarSelectMunicipiosAnexo17();
+    renderizarChipsGestionMunicipios();
+    if (state.mode === 'anexo17') {
+      brandSubtitle.textContent = `Pre/Post Test — Anexo 17 (${state.anexo17MunicipioActivo})`;
+      setStepFicha(state.currentStep || 1);
+    }
+    showToast(`Municipio "${munAEliminar}" eliminado.`, 'info');
+  }
+
+  function restaurarMunicipiosPredeterminadosAnexo17() {
+    state.anexo17Municipios = [...MUNICIPIOS_DEFAULT_ANEXO17];
+    state.anexo17MunicipioActivo = 'SANTA CATALINA';
+    guardarMunicipiosAnexo17EnStorage();
+    actualizarSelectMunicipiosAnexo17();
+    renderizarChipsGestionMunicipios();
+    if (state.mode === 'anexo17') {
+      brandSubtitle.textContent = `Pre/Post Test — Anexo 17 (${state.anexo17MunicipioActivo})`;
+      setStepFicha(state.currentStep || 1);
+    }
+    showToast('Municipios restablecidos a SANTA CATALINA y TURBANA.', 'success');
+  }
+
+  // Listeners de Municipio Anexo 17
+  if (selectMunicipioAnexo17) {
+    selectMunicipioAnexo17.addEventListener('change', (e) => {
+      const val = e.target.value;
+      if (val) {
+        state.anexo17MunicipioActivo = val;
+        guardarMunicipiosAnexo17EnStorage();
+        if (state.mode === 'anexo17') {
+          brandSubtitle.textContent = `Pre/Post Test — Anexo 17 (${val})`;
+          setStepFicha(state.currentStep || 1);
+        }
+        showToast(`Municipio: ${val}`, 'info');
+      }
+    });
+  }
+
+  if (btnGestionarMunicipiosAnexo17) {
+    btnGestionarMunicipiosAnexo17.addEventListener('click', abrirModalMunicipios);
+  }
+  if (btnCloseMunicipiosModal) {
+    btnCloseMunicipiosModal.addEventListener('click', cerrarModalMunicipios);
+  }
+  if (municipiosBackdrop) {
+    municipiosBackdrop.addEventListener('click', cerrarModalMunicipios);
+  }
+  if (btnGuardarNuevoMunicipio) {
+    btnGuardarNuevoMunicipio.addEventListener('click', () => {
+      if (inputNuevoMunicipio) agregarNuevoMunicipioAnexo17(inputNuevoMunicipio.value);
+    });
+  }
+  if (inputNuevoMunicipio) {
+    inputNuevoMunicipio.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        agregarNuevoMunicipioAnexo17(inputNuevoMunicipio.value);
+      }
+    });
+  }
+  if (btnRestaurarMunicipiosDefault) {
+    btnRestaurarMunicipiosDefault.addEventListener('click', restaurarMunicipiosPredeterminadosAnexo17);
+  }
+
+  // -------------------------------------------------------------
   // CAMBIO DE MODO: FICHA VS ANEXO 4 VS ANEXO 17
   // -------------------------------------------------------------
   if (tabModoFicha) tabModoFicha.addEventListener('click', () => cambiarModo('ficha'));
@@ -247,6 +497,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (tabModoAnexo17) tabModoAnexo17.classList.remove('active');
       if (btnOpenMasterModal) btnOpenMasterModal.style.display = 'none';
       testTypeBar.style.display = 'none';
+      if (anexo17MunicipioBar) anexo17MunicipioBar.style.display = 'none';
       photosGridFicha.style.display = 'grid';
       photosSingleTest.style.display = 'none';
       brandSubtitle.textContent = 'Anexo 10 — Fichas de Caracterización (2 Páginas)';
@@ -259,6 +510,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (tabModoAnexo17) tabModoAnexo17.classList.remove('active');
       if (btnOpenMasterModal) btnOpenMasterModal.style.display = 'inline-flex';
       testTypeBar.style.display = 'flex';
+      if (anexo17MunicipioBar) anexo17MunicipioBar.style.display = 'none';
       photosGridFicha.style.display = 'none';
       photosSingleTest.style.display = 'flex';
       brandSubtitle.textContent = 'Pre/Post Test — Anexo 4 (SSR ITS)';
@@ -272,9 +524,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (tabModoAnexo4) tabModoAnexo4.classList.remove('active');
       if (btnOpenMasterModal) btnOpenMasterModal.style.display = 'inline-flex';
       testTypeBar.style.display = 'flex';
+      if (anexo17MunicipioBar) anexo17MunicipioBar.style.display = 'flex';
       photosGridFicha.style.display = 'grid'; // ¡Anexo 17 utiliza 2 páginas físicas!
       photosSingleTest.style.display = 'none';
-      brandSubtitle.textContent = 'Pre/Post Test — Anexo 17 (Santa Catalina)';
+      brandSubtitle.textContent = `Pre/Post Test — Anexo 17 (${state.anexo17MunicipioActivo})`;
       if (labelPlaceholder1) labelPlaceholder1.innerHTML = 'Página 1<br>(Datos y Preg. 1-5)';
       if (labelPlaceholder2) labelPlaceholder2.innerHTML = 'Página 2<br>(Preg. 6-10)';
       resetFichaForm();
@@ -656,7 +909,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (step === 1) {
       stepTag.textContent = esAnexo17 ? `Paso 1 de 2 • Anexo 17 (${state.tipoEvaluacion})` : 'Paso 1 de 2';
       stepTitle.textContent = esAnexo17 ? 'Foto 1: Página 1 (Datos y Preg. 1 a 5)' : 'Foto 1: Anverso (Frente)';
-      stepDesc.textContent = esAnexo17 ? 'Enfoca la primera hoja con el nombre y preguntas 1 a 5 (Santa Catalina).' : 'Enfoca la cara frontal de la ficha con buena iluminación.';
+      stepDesc.textContent = esAnexo17 ? `Enfoca la primera hoja con el nombre y preguntas 1 a 5 (${state.anexo17MunicipioActivo}).` : 'Enfoca la cara frontal de la ficha con buena iluminación.';
       stepBadge.textContent = '1/2';
       shutterLabel.textContent = esAnexo17 ? 'Tomar Foto Pág. 1 (Anexo 17)' : 'Tomar Foto 1 (Anverso)';
       slotFoto1.classList.add('active-slot');
@@ -843,7 +1096,8 @@ document.addEventListener('DOMContentLoaded', () => {
           state.foto2Blob,
           state.foto1Mime,
           state.foto2Mime,
-          state.tipoEvaluacion
+          state.tipoEvaluacion,
+          state.anexo17MunicipioActivo || 'SANTA CATALINA'
         );
         resetFichaForm();
       } else {
@@ -897,7 +1151,8 @@ document.addEventListener('DOMContentLoaded', () => {
           state.foto2Blob,
           state.foto1Mime,
           state.foto2Mime,
-          state.tipoEvaluacion
+          state.tipoEvaluacion,
+          state.anexo17MunicipioActivo || 'SANTA CATALINA'
         );
         resetFichaForm();
       } else {
@@ -1051,6 +1306,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (item.tipoEvaluacion && item.tipoEvaluacion !== 'AUTO') {
               formData.append('tipo_evaluacion', item.tipoEvaluacion);
+            }
+            if (item.municipio) {
+              formData.append('municipio', item.municipio);
+            } else if (state.anexo17MunicipioActivo) {
+              formData.append('municipio', state.anexo17MunicipioActivo);
             }
             formData.append('modo', 'batch');
             formData.append('client_item_id', item.id);
@@ -1253,6 +1513,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (item.tipoEvaluacion && item.tipoEvaluacion !== 'AUTO') {
           formData.append('tipo_evaluacion', item.tipoEvaluacion);
+        }
+        if (item.municipio) {
+          formData.append('municipio', item.municipio);
+        } else if (state.anexo17MunicipioActivo) {
+          formData.append('municipio', state.anexo17MunicipioActivo);
         }
         formData.append('modo', 'inmediato');
         formData.append('client_item_id', item.id);
@@ -1480,7 +1745,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Información de participante y municipio
       let metaTitulo = `Registro #${items.length - index}`;
-      let metaMunicipio = esAnexo17 ? 'SANTA CATALINA' : '';
+      let metaMunicipio = esAnexo17 ? (item.municipio || state.anexo17MunicipioActivo || 'SANTA CATALINA') : '';
       let metaDocumento = '';
 
       if (item.extractedData) {
@@ -1831,6 +2096,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Llamar al inicio
+  cargarMunicipiosAnexo17DesdeStorage();
+  actualizarSelectMunicipiosAnexo17();
   cargarResumenParticipantes();
   actualizarEstadisticasPatronMaestro();
 
